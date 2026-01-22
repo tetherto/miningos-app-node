@@ -1,0 +1,38 @@
+{
+  "dir_log": "logs",
+  "debug": 0,
+  "orks": {
+    "cluster-1": {
+      "rpcPublicKey": "RPC_PUBLIC_KEY"
+    }
+  },
+  "staticRootPath": "/home/user/dev/miningos-app-ui/build/",
+  "cacheTiming": {
+    "/auth/list-things": "15s",
+    "/auth/tail-log": "15s",
+    "/auth/actions/batch": "30s",
+    "/auth/actions/:type": "30s",
+    "/auth/actions/:type/:id": "30s",
+    "/auth/global/data": "30s"
+  },
+  "featureConfig": {
+    "comments": true,
+    "inventory": false,
+    "lvCabinetWidgets": true,
+    "poolStats": true,
+    "powerAvailable": true,
+    "reporting": true,
+    "settings": true,
+    "isOneMinItvEnabled": false,
+    "powerModeTimeline": false,
+    "totalSystemConsumptionChart": false,
+    "exportHistKpiDashboard": false,
+    "showMinerConsumptionDashboard": false,
+    "totalSystemConsumptionHeader": false,
+    "energyProvision": true,
+    "admeStats": true
+  },
+  "ttl": 300,
+  "site": "SITE_NAME",
+  "rpcTimeout" : 15000
+}

@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <title>Test Page</title>
+  <script type="text/javascript">
+    window.onload = function () {
+      const urlParams = new URLSearchParams(window.location.search)
+      const authToken = urlParams.get('authToken')
+      const error = urlParams.get('error')
+
+      if (authToken) {
+        document.getElementById('content').textContent = 'Auth token: ' + authToken
+      }
+      if (error) {
+        document.getElementById('content').textContent = 'Error: ' + error
+      }
+    };
+  </script>
+</head>
+
+<body>
+  <div id="content">Loading...</div>
+</body>
+
+</html>
