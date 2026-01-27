@@ -1,0 +1,17 @@
+{
+  "h0": {
+    "method": "google",
+    "credentials": {
+      "client": {
+        "id": "<CLIENT_ID>",
+        "secret": "<CLIENT_SECRET>"
+      }
+    },
+    "startRedirectPath": "/oauth/google",
+    "callbackUri": "http://localhost:3000/oauth/google/callback",
+    "callbackUriUI": "http://localhost:3030",
+    "users": [
+      {"email": "", "write": false}
+    ]
+  }
+}
