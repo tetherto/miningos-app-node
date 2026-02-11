@@ -3,6 +3,8 @@
 const test = require('brittle')
 const {
   getStartOfDay,
+  convertMsToSeconds,
+  getPeriodEndDate,
   aggregateByPeriod,
   getPeriodKey,
   isTimestampInPeriod,
@@ -122,10 +124,10 @@ test('getFilteredPeriodData - daily returns direct lookup', (t) => {
   t.pass()
 })
 
-test('getFilteredPeriodData - daily returns null for missing', (t) => {
+test('getFilteredPeriodData - daily returns empty object for missing with default filterFn', (t) => {
   const data = {}
-  const result = getFilteredPeriodData(data, 1700006400000, 'daily', () => null)
-  t.is(result, null, 'should return null for missing data')
+  const result = getFilteredPeriodData(data, 1700006400000, 'daily')
+  t.alike(result, {}, 'should return empty object for missing data with default filterFn')
   t.pass()
 })
 
@@ -143,5 +145,26 @@ test('getFilteredPeriodData - monthly filters with callback', (t) => {
   })
 
   t.is(result, 30, 'should sum values in period')
+  t.pass()
+})
+
+test('convertMsToSeconds - converts milliseconds to seconds', (t) => {
+  t.is(convertMsToSeconds(1700006400000), 1700006400, 'should convert ms to seconds')
+  t.is(convertMsToSeconds(1700006400500), 1700006400, 'should floor fractional seconds')
+  t.pass()
+})
+
+test('getPeriodEndDate - monthly returns next month', (t) => {
+  const monthStart = new Date(2023, 10, 1).getTime()
+  const result = getPeriodEndDate(monthStart, 'monthly')
+  t.is(result.getMonth(), 11, 'should be next month')
+  t.is(result.getFullYear(), 2023, 'should be same year')
+  t.pass()
+})
+
+test('getPeriodEndDate - yearly returns next year', (t) => {
+  const yearStart = new Date(2023, 0, 1).getTime()
+  const result = getPeriodEndDate(yearStart, 'yearly')
+  t.is(result.getFullYear(), 2024, 'should be next year')
   t.pass()
 })

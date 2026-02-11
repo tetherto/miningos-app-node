@@ -2,6 +2,7 @@
 
 const async = require('async')
 const { RPC_TIMEOUT, RPC_CONCURRENCY_LIMIT } = require('./constants')
+const { getStartOfDay } = require('./period.utils')
 
 const dateNowSec = () => Math.floor(Date.now() / 1000)
 
@@ -128,21 +129,20 @@ const requestRpcMapLimit = async (ctx, method, payload) => {
   })
 }
 
-const getStartOfDay = (ts) => Math.floor(ts / 86400000) * 86400000
-
-const safeDiv = (num, denom) => {
-  if (!denom || !num) return null
-  return num / denom
-}
-
-const runParallel = (tasks) => {
-  return new Promise((resolve, reject) => {
+const runParallel = (tasks) =>
+  new Promise((resolve, reject) => {
     async.parallel(tasks, (err, results) => {
-      if (err) return reject(err)
-      resolve(results)
+      if (err) reject(err)
+      else resolve(results)
     })
   })
-}
+
+const safeDiv = (numerator, denominator) =>
+  typeof numerator === 'number' &&
+    typeof denominator === 'number' &&
+    denominator !== 0
+    ? numerator / denominator
+    : null
 
 module.exports = {
   dateNowSec,

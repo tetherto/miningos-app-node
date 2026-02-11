@@ -149,7 +149,7 @@ function processConsumptionData (results) {
 function processTransactionData (results) {
   const daily = {}
   for (const res of results) {
-    if (res.error || !res) continue
+    if (!res || res.error) continue
     const data = Array.isArray(res) ? res : (res.data || res.result || [])
     if (!Array.isArray(data)) continue
     for (const tx of data) {
@@ -160,9 +160,8 @@ function processTransactionData (results) {
         if (!t) continue
         const ts = getStartOfDay(t.ts || t.timestamp || t.time)
         if (!ts) continue
-        if (!daily[ts]) daily[ts] = { revenueBTC: 0 }
-        const amount = t.changed_balance || t.amount || t.value || 0
-        daily[ts].revenueBTC += Math.abs(amount) / BTC_SATS
+        const day = daily[ts] ??= { revenueBTC: 0 }
+        day.revenueBTC += Math.abs(t.changed_balance || t.amount || t.value || 0) / BTC_SATS
       }
     }
   }

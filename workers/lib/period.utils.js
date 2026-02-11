@@ -4,6 +4,10 @@ const { PERIOD_TYPES, NON_METRIC_KEYS } = require('./constants')
 
 const getStartOfDay = (ts) => Math.floor(ts / 86400000) * 86400000
 
+const convertMsToSeconds = (timestampMs) => {
+  return Math.floor(timestampMs / 1000)
+}
+
 const PERIOD_CALCULATORS = {
   daily: (timestamp) => getStartOfDay(timestamp),
   monthly: (timestamp) => {
@@ -27,6 +31,7 @@ const aggregateByPeriod = (log, period, nonMetricKeys = []) => {
     let date
     try {
       date = new Date(Number(entry.ts))
+
       if (isNaN(date.getTime())) {
         return acc
       }
@@ -35,6 +40,7 @@ const aggregateByPeriod = (log, period, nonMetricKeys = []) => {
     }
 
     let groupKey
+
     if (period === PERIOD_TYPES.MONTHLY) {
       groupKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
     } else if (period === PERIOD_TYPES.YEARLY) {
@@ -65,24 +71,53 @@ const aggregateByPeriod = (log, period, nonMetricKeys = []) => {
       return acc
     }, {})
 
-    if (period === PERIOD_TYPES.MONTHLY) {
-      const [year, month] = groupKey.split('-').map(Number)
-      const newDate = new Date(year, month - 1, 1)
-      aggregated.ts = newDate.getTime()
-      aggregated.month = month
-      aggregated.year = year
-      aggregated.monthName = newDate.toLocaleString('en-US', { month: 'long' })
-    } else if (period === PERIOD_TYPES.YEARLY) {
-      const year = parseInt(groupKey)
-      const newDate = new Date(year, 0, 1)
-      aggregated.ts = newDate.getTime()
-      aggregated.year = year
+    try {
+      if (period === PERIOD_TYPES.MONTHLY) {
+        const [year, month] = groupKey.split('-').map(Number)
+
+        const newDate = new Date(year, month - 1, 1)
+        if (isNaN(newDate.getTime())) {
+          throw new Error(`Invalid date for monthly grouping: ${groupKey}`)
+        }
+
+        aggregated.ts = newDate.getTime()
+        aggregated.month = month
+        aggregated.year = year
+        aggregated.monthName = newDate.toLocaleString('en-US', { month: 'long' })
+      } else if (period === PERIOD_TYPES.YEARLY) {
+        const year = parseInt(groupKey)
+
+        const newDate = new Date(year, 0, 1)
+        if (isNaN(newDate.getTime())) {
+          throw new Error(`Invalid date for yearly grouping: ${groupKey}`)
+        }
+
+        aggregated.ts = newDate.getTime()
+        aggregated.year = year
+      }
+    } catch (error) {
+      aggregated.ts = entries[0].ts
+
+      try {
+        const fallbackDate = new Date(Number(entries[0].ts))
+        if (!isNaN(fallbackDate.getTime())) {
+          if (period === PERIOD_TYPES.MONTHLY) {
+            aggregated.month = fallbackDate.getMonth() + 1
+            aggregated.year = fallbackDate.getFullYear()
+            aggregated.monthName = fallbackDate.toLocaleString('en-US', { month: 'long' })
+          } else if (period === PERIOD_TYPES.YEARLY) {
+            aggregated.year = fallbackDate.getFullYear()
+          }
+        }
+      } catch (fallbackError) {
+        console.warn('Could not extract date info from fallback timestamp', fallbackError)
+      }
     }
 
     return aggregated
   })
 
-  return aggregatedResults.sort((a, b) => Number(a.ts) - Number(b.ts))
+  return aggregatedResults.sort((a, b) => Number(b.ts) - Number(a.ts))
 }
 
 const getPeriodKey = (timestamp, period) => {
@@ -90,22 +125,36 @@ const getPeriodKey = (timestamp, period) => {
   return calculator(timestamp)
 }
 
+const getPeriodEndDate = (periodTs, period) => {
+  const periodEnd = new Date(periodTs)
+
+  switch (period) {
+    case PERIOD_TYPES.MONTHLY:
+      periodEnd.setMonth(periodEnd.getMonth() + 1)
+      break
+    case PERIOD_TYPES.YEARLY:
+      periodEnd.setFullYear(periodEnd.getFullYear() + 1)
+      break
+  }
+
+  return periodEnd
+}
+
 const isTimestampInPeriod = (timestamp, periodTs, period) => {
   if (period === PERIOD_TYPES.DAILY) return timestamp === periodTs
 
-  const periodEnd = new Date(periodTs)
-  if (period === PERIOD_TYPES.MONTHLY) {
-    periodEnd.setMonth(periodEnd.getMonth() + 1)
-  } else if (period === PERIOD_TYPES.YEARLY) {
-    periodEnd.setFullYear(periodEnd.getFullYear() + 1)
-  }
-
+  const periodEnd = getPeriodEndDate(periodTs, period)
   return timestamp >= periodTs && timestamp < periodEnd.getTime()
 }
 
-const getFilteredPeriodData = (sourceData, periodTs, period, filterFn) => {
+const getFilteredPeriodData = (
+  sourceData,
+  periodTs,
+  period,
+  filterFn = (entries) => entries
+) => {
   if (period === PERIOD_TYPES.DAILY) {
-    return sourceData[periodTs] || null
+    return sourceData[periodTs] || (typeof filterFn === 'function' ? {} : 0)
   }
 
   const entriesInPeriod = Object.entries(sourceData).filter(([tsStr]) => {
@@ -118,6 +167,8 @@ const getFilteredPeriodData = (sourceData, periodTs, period, filterFn) => {
 
 module.exports = {
   getStartOfDay,
+  convertMsToSeconds,
+  getPeriodEndDate,
   aggregateByPeriod,
   getPeriodKey,
   isTimestampInPeriod,

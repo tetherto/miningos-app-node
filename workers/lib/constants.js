@@ -219,7 +219,7 @@ const MINERPOOL_EXT_DATA_KEYS = {
 
 const NON_METRIC_KEYS = [
   'ts',
-  'region',
+  'site',
   'year',
   'monthName',
   'month',
