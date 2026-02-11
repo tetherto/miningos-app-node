@@ -2,6 +2,7 @@
 
 const async = require('async')
 const { RPC_TIMEOUT, RPC_CONCURRENCY_LIMIT } = require('./constants')
+const { getStartOfDay } = require('./period.utils')
 
 const dateNowSec = () => Math.floor(Date.now() / 1000)
 
@@ -128,6 +129,14 @@ const requestRpcMapLimit = async (ctx, method, payload) => {
   })
 }
 
+const runParallel = (tasks) =>
+  new Promise((resolve, reject) => {
+    async.parallel(tasks, (err, results) => {
+      if (err) reject(err)
+      else resolve(results)
+    })
+  })
+
 module.exports = {
   dateNowSec,
   extractIps,
@@ -137,5 +146,7 @@ module.exports = {
   getAuthTokenFromHeaders,
   parseJsonQueryParam,
   requestRpcEachLimit,
-  requestRpcMapLimit
+  requestRpcMapLimit,
+  getStartOfDay,
+  runParallel
 }

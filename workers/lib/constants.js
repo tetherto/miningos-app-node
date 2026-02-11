@@ -108,7 +108,10 @@ const ENDPOINTS = {
   THING_CONFIG: '/auth/thing-config',
 
   // WebSocket endpoint
-  WEBSOCKET: '/ws'
+  WEBSOCKET: '/ws',
+
+  // Pool stats endpoints
+  POOL_STATS_AGGREGATE: '/auth/pool-stats/aggregate'
 }
 
 const HTTP_METHODS = {
@@ -183,6 +186,37 @@ const STATUS_CODES = {
   INTERNAL_SERVER_ERROR: 500
 }
 
+const RPC_METHODS = {
+  TAIL_LOG: 'tailLog',
+  GET_WRK_EXT_DATA: 'getWrkExtData'
+}
+
+const WORKER_TYPES = {
+  MINERPOOL: 'minerpool'
+}
+
+const PERIOD_TYPES = {
+  DAILY: 'daily',
+  WEEKLY: 'weekly',
+  MONTHLY: 'monthly'
+}
+
+const MINERPOOL_EXT_DATA_KEYS = {
+  TRANSACTIONS: 'transactions',
+  STATS: 'stats'
+}
+
+const BTC_SATS = 100000000
+
+const NON_METRIC_KEYS = [
+  'ts',
+  'site',
+  'year',
+  'monthName',
+  'month',
+  'period'
+]
+
 const RPC_TIMEOUT = 15000
 const RPC_CONCURRENCY_LIMIT = 2
 
@@ -202,5 +236,11 @@ module.exports = {
   STATUS_CODES,
   RPC_TIMEOUT,
   RPC_CONCURRENCY_LIMIT,
-  USER_SETTINGS_TYPE
+  USER_SETTINGS_TYPE,
+  RPC_METHODS,
+  WORKER_TYPES,
+  PERIOD_TYPES,
+  MINERPOOL_EXT_DATA_KEYS,
+  BTC_SATS,
+  NON_METRIC_KEYS
 }
