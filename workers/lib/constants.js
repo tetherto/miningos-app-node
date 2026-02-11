@@ -108,7 +108,10 @@ const ENDPOINTS = {
   THING_CONFIG: '/auth/thing-config',
 
   // WebSocket endpoint
-  WEBSOCKET: '/ws'
+  WEBSOCKET: '/ws',
+
+  // Finance endpoints
+  FINANCE_EBITDA: '/auth/finance/ebitda'
 }
 
 const HTTP_METHODS = {
@@ -183,6 +186,48 @@ const STATUS_CODES = {
   INTERNAL_SERVER_ERROR: 500
 }
 
+const RPC_METHODS = {
+  TAIL_LOG_RANGE_AGGR: 'tailLogCustomRangeAggr',
+  GET_WRK_EXT_DATA: 'getWrkExtData',
+  LIST_THINGS: 'listThings',
+  TAIL_LOG: 'tailLog'
+}
+
+const WORKER_TYPES = {
+  MINER: 'miner',
+  POWERMETER: 'powermeter',
+  MINERPOOL: 'minerpool',
+  MEMPOOL: 'mempool'
+}
+
+const AGGR_FIELDS = {
+  HASHRATE_SUM: 'hashrate_mhs_5m_sum_aggr',
+  SITE_POWER: 'site_power_w'
+}
+
+const PERIOD_TYPES = {
+  DAILY: 'daily',
+  WEEKLY: 'weekly',
+  MONTHLY: 'monthly',
+  YEARLY: 'yearly'
+}
+
+const MINERPOOL_EXT_DATA_KEYS = {
+  TRANSACTIONS: 'transactions',
+  STATS: 'stats'
+}
+
+const NON_METRIC_KEYS = [
+  'ts',
+  'site',
+  'year',
+  'monthName',
+  'month',
+  'period'
+]
+
+const BTC_SATS = 100000000
+
 const RPC_TIMEOUT = 15000
 const RPC_CONCURRENCY_LIMIT = 2
 
@@ -202,5 +247,12 @@ module.exports = {
   STATUS_CODES,
   RPC_TIMEOUT,
   RPC_CONCURRENCY_LIMIT,
-  USER_SETTINGS_TYPE
+  USER_SETTINGS_TYPE,
+  RPC_METHODS,
+  WORKER_TYPES,
+  AGGR_FIELDS,
+  PERIOD_TYPES,
+  MINERPOOL_EXT_DATA_KEYS,
+  NON_METRIC_KEYS,
+  BTC_SATS
 }
