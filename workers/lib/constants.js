@@ -108,7 +108,10 @@ const ENDPOINTS = {
   THING_CONFIG: '/auth/thing-config',
 
   // WebSocket endpoint
-  WEBSOCKET: '/ws'
+  WEBSOCKET: '/ws',
+
+  // Pools endpoints
+  POOLS_BALANCE_HISTORY: '/auth/pools/:pool/balance-history'
 }
 
 const HTTP_METHODS = {
@@ -183,6 +186,16 @@ const STATUS_CODES = {
   INTERNAL_SERVER_ERROR: 500
 }
 
+const RPC_METHODS = {
+  TAIL_LOG: 'tailLog'
+}
+
+const RANGE_BUCKETS = {
+  '1D': 86400000,
+  '1W': 604800000,
+  '1M': 2592000000
+}
+
 const RPC_TIMEOUT = 15000
 const RPC_CONCURRENCY_LIMIT = 2
 
@@ -202,5 +215,7 @@ module.exports = {
   STATUS_CODES,
   RPC_TIMEOUT,
   RPC_CONCURRENCY_LIMIT,
-  USER_SETTINGS_TYPE
+  USER_SETTINGS_TYPE,
+  RPC_METHODS,
+  RANGE_BUCKETS
 }

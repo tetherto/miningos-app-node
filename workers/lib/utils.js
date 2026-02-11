@@ -128,6 +128,8 @@ const requestRpcMapLimit = async (ctx, method, payload) => {
   })
 }
 
+const getStartOfDay = (ts) => Math.floor(ts / 86400000) * 86400000
+
 module.exports = {
   dateNowSec,
   extractIps,
@@ -137,5 +139,6 @@ module.exports = {
   getAuthTokenFromHeaders,
   parseJsonQueryParam,
   requestRpcEachLimit,
-  requestRpcMapLimit
+  requestRpcMapLimit,
+  getStartOfDay
 }
