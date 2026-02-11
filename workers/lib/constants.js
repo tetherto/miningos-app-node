@@ -108,7 +108,9 @@ const ENDPOINTS = {
   THING_CONFIG: '/auth/thing-config',
 
   // WebSocket endpoint
-  WEBSOCKET: '/ws'
+  WEBSOCKET: '/ws',
+
+  SITE_STATUS_LIVE: '/auth/site/status/live'
 }
 
 const HTTP_METHODS = {
@@ -166,7 +168,10 @@ const OPERATIONS = {
   THING_SETTINGS_READ: 'thing.settings.read',
   THING_SETTINGS_WRITE: 'thing.settings.write',
   WORKER_CONFIG_READ: 'worker.config.read',
-  THING_CONFIG_READ: 'thing.config.read'
+  THING_CONFIG_READ: 'thing.config.read',
+
+  // Site operations
+  SITE_STATUS_LIVE_READ: 'site.status.live.read'
 }
 
 const DEFAULTS = {
