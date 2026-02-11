@@ -128,6 +128,22 @@ const requestRpcMapLimit = async (ctx, method, payload) => {
   })
 }
 
+const getStartOfDay = (ts) => Math.floor(ts / 86400000) * 86400000
+
+const safeDiv = (num, denom) => {
+  if (!denom || !num) return null
+  return num / denom
+}
+
+const runParallel = (tasks) => {
+  return new Promise((resolve, reject) => {
+    async.parallel(tasks, (err, results) => {
+      if (err) return reject(err)
+      resolve(results)
+    })
+  })
+}
+
 module.exports = {
   dateNowSec,
   extractIps,
@@ -137,5 +153,8 @@ module.exports = {
   getAuthTokenFromHeaders,
   parseJsonQueryParam,
   requestRpcEachLimit,
-  requestRpcMapLimit
+  requestRpcMapLimit,
+  getStartOfDay,
+  safeDiv,
+  runParallel
 }

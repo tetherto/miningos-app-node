@@ -1,0 +1,147 @@
+'use strict'
+
+const test = require('brittle')
+const {
+  getStartOfDay,
+  aggregateByPeriod,
+  getPeriodKey,
+  isTimestampInPeriod,
+  getFilteredPeriodData
+} = require('../../../workers/lib/period.utils')
+
+test('getStartOfDay - returns start of day timestamp', (t) => {
+  const ts = 1700050000000
+  const result = getStartOfDay(ts)
+  t.ok(result <= ts, 'should be less than or equal to input')
+  t.is(result % 86400000, 0, 'should be divisible by 86400000')
+  t.pass()
+})
+
+test('getStartOfDay - already at start of day', (t) => {
+  const ts = 1700006400000
+  const result = getStartOfDay(ts)
+  t.is(result, ts, 'should return same timestamp if already start of day')
+  t.pass()
+})
+
+test('aggregateByPeriod - returns log unchanged for daily period', (t) => {
+  const log = [
+    { ts: 1700006400000, value: 10 },
+    { ts: 1700092800000, value: 20 }
+  ]
+  const result = aggregateByPeriod(log, 'daily')
+  t.is(result.length, 2, 'should return same length')
+  t.alike(result, log, 'should return same entries')
+  t.pass()
+})
+
+test('aggregateByPeriod - aggregates monthly', (t) => {
+  const log = [
+    { ts: 1700006400000, value: 10, region: 'us' },
+    { ts: 1700092800000, value: 20, region: 'us' }
+  ]
+  const result = aggregateByPeriod(log, 'monthly')
+  t.ok(result.length >= 1, 'should have at least one aggregated entry')
+  t.ok(result[0].month, 'should have month field')
+  t.ok(result[0].year, 'should have year field')
+  t.pass()
+})
+
+test('aggregateByPeriod - aggregates yearly', (t) => {
+  const log = [
+    { ts: 1700006400000, value: 10, region: 'us' },
+    { ts: 1700092800000, value: 20, region: 'us' }
+  ]
+  const result = aggregateByPeriod(log, 'yearly')
+  t.ok(result.length >= 1, 'should have at least one aggregated entry')
+  t.ok(result[0].year, 'should have year field')
+  t.pass()
+})
+
+test('aggregateByPeriod - handles empty log', (t) => {
+  const result = aggregateByPeriod([], 'monthly')
+  t.is(result.length, 0, 'should return empty array')
+  t.pass()
+})
+
+test('aggregateByPeriod - handles invalid timestamps', (t) => {
+  const log = [
+    { ts: 'invalid', value: 10 },
+    { ts: 1700006400000, value: 20 }
+  ]
+  const result = aggregateByPeriod(log, 'monthly')
+  t.ok(result.length >= 1, 'should skip invalid entries')
+  t.pass()
+})
+
+test('getPeriodKey - daily returns start of day', (t) => {
+  const ts = 1700050000000
+  const result = getPeriodKey(ts, 'daily')
+  t.is(result % 86400000, 0, 'should be start of day')
+  t.pass()
+})
+
+test('getPeriodKey - monthly returns start of month', (t) => {
+  const ts = 1700050000000
+  const result = getPeriodKey(ts, 'monthly')
+  const date = new Date(result)
+  t.is(date.getDate(), 1, 'should be first day of month')
+  t.pass()
+})
+
+test('getPeriodKey - yearly returns start of year', (t) => {
+  const ts = 1700050000000
+  const result = getPeriodKey(ts, 'yearly')
+  const date = new Date(result)
+  t.is(date.getMonth(), 0, 'should be January')
+  t.is(date.getDate(), 1, 'should be first day')
+  t.pass()
+})
+
+test('isTimestampInPeriod - daily exact match', (t) => {
+  const ts = 1700006400000
+  t.ok(isTimestampInPeriod(ts, ts, 'daily'), 'should match exact timestamp')
+  t.ok(!isTimestampInPeriod(ts + 86400000, ts, 'daily'), 'should not match different day')
+  t.pass()
+})
+
+test('isTimestampInPeriod - monthly range', (t) => {
+  const monthStart = new Date(2023, 10, 1).getTime()
+  const midMonth = new Date(2023, 10, 15).getTime()
+  const nextMonth = new Date(2023, 11, 1).getTime()
+
+  t.ok(isTimestampInPeriod(midMonth, monthStart, 'monthly'), 'mid-month should be in period')
+  t.ok(!isTimestampInPeriod(nextMonth, monthStart, 'monthly'), 'next month should not be in period')
+  t.pass()
+})
+
+test('getFilteredPeriodData - daily returns direct lookup', (t) => {
+  const data = { 1700006400000: { value: 42 } }
+  const result = getFilteredPeriodData(data, 1700006400000, 'daily', () => null)
+  t.alike(result, { value: 42 }, 'should return data for timestamp')
+  t.pass()
+})
+
+test('getFilteredPeriodData - daily returns null for missing', (t) => {
+  const data = {}
+  const result = getFilteredPeriodData(data, 1700006400000, 'daily', () => null)
+  t.is(result, null, 'should return null for missing data')
+  t.pass()
+})
+
+test('getFilteredPeriodData - monthly filters with callback', (t) => {
+  const monthStart = new Date(2023, 10, 1).getTime()
+  const day1 = new Date(2023, 10, 5).getTime()
+  const day2 = new Date(2023, 10, 15).getTime()
+  const data = {
+    [day1]: { value: 10 },
+    [day2]: { value: 20 }
+  }
+
+  const result = getFilteredPeriodData(data, monthStart, 'monthly', (entries) => {
+    return entries.reduce((sum, [, val]) => sum + val.value, 0)
+  })
+
+  t.is(result, 30, 'should sum values in period')
+  t.pass()
+})
