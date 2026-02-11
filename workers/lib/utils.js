@@ -128,6 +128,14 @@ const requestRpcMapLimit = async (ctx, method, payload) => {
   })
 }
 
+const runParallel = (tasks) =>
+  new Promise((resolve, reject) => {
+    async.parallel(tasks, (err, results) => {
+      if (err) reject(err)
+      else resolve(results)
+    })
+  })
+
 module.exports = {
   dateNowSec,
   extractIps,
@@ -137,5 +145,6 @@ module.exports = {
   getAuthTokenFromHeaders,
   parseJsonQueryParam,
   requestRpcEachLimit,
-  requestRpcMapLimit
+  requestRpcMapLimit,
+  runParallel
 }

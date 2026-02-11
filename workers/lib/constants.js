@@ -108,7 +108,10 @@ const ENDPOINTS = {
   THING_CONFIG: '/auth/thing-config',
 
   // WebSocket endpoint
-  WEBSOCKET: '/ws'
+  WEBSOCKET: '/ws',
+
+  // Pools endpoints
+  POOLS: '/auth/pools'
 }
 
 const HTTP_METHODS = {
@@ -183,6 +186,16 @@ const STATUS_CODES = {
   INTERNAL_SERVER_ERROR: 500
 }
 
+const RPC_METHODS = {
+  LIST_THINGS: 'listThings',
+  GET_WRK_EXT_DATA: 'getWrkExtData'
+}
+
+const MINERPOOL_EXT_DATA_KEYS = {
+  TRANSACTIONS: 'transactions',
+  STATS: 'stats'
+}
+
 const RPC_TIMEOUT = 15000
 const RPC_CONCURRENCY_LIMIT = 2
 
@@ -202,5 +215,7 @@ module.exports = {
   STATUS_CODES,
   RPC_TIMEOUT,
   RPC_CONCURRENCY_LIMIT,
-  USER_SETTINGS_TYPE
+  USER_SETTINGS_TYPE,
+  RPC_METHODS,
+  MINERPOOL_EXT_DATA_KEYS
 }
