@@ -12,6 +12,7 @@ const {
 } = require('../../../workers/lib/server/handlers/finance.handlers')
 
 test('getEnergyBalance - happy path', async (t) => {
+  const dayTs = 1700006400000
   const mockCtx = {
     conf: {
       orks: [{ rpcPublicKey: 'key1' }]
@@ -19,24 +20,28 @@ test('getEnergyBalance - happy path', async (t) => {
     net_r0: {
       jRequest: async (key, method, payload) => {
         if (method === 'tailLogCustomRangeAggr') {
-          return [{ data: { 1700006400000: { site_power_w: 5000 } } }]
+          return [{ type: 'powermeter', data: [{ ts: dayTs, val: { site_power_w: 5000 } }], error: null }]
         }
         if (method === 'getWrkExtData') {
           if (payload.query && payload.query.key === 'transactions') {
-            return { data: [{ transactions: [{ ts: 1700006400000, changed_balance: 50000, amount: 50000 }] }] }
+            return [{ ts: dayTs, transactions: [{ ts: dayTs, changed_balance: 0.5 }] }]
           }
-          if (payload.query && payload.query.key === 'prices') {
-            return { data: [{ prices: [{ ts: 1700006400000, price: 40000 }] }] }
+          if (payload.query && payload.query.key === 'HISTORICAL_PRICES') {
+            return [{ ts: dayTs, priceUSD: 40000 }]
           }
           if (payload.query && payload.query.key === 'current_price') {
-            return { data: { USD: 40000 } }
+            return [{ currentPrice: 40000 }]
           }
         }
         return {}
       }
     },
-    globalDataLib: {
-      getGlobalData: async () => []
+    globalDataBee: {
+      sub: () => ({
+        sub: () => ({
+          createReadStream: () => (async function * () {})()
+        })
+      })
     }
   }
 
@@ -53,9 +58,9 @@ test('getEnergyBalance - happy path', async (t) => {
 
 test('getEnergyBalance - missing start throws', async (t) => {
   const mockCtx = {
-    conf: { orks: [] },
+    conf: { orks: [], site: 'test-site' },
     net_r0: { jRequest: async () => ({}) },
-    globalDataLib: { getGlobalData: async () => [] }
+    globalDataBee: { sub: () => ({ sub: () => ({ createReadStream: () => (async function * () {})() }) }) }
   }
 
   const mockReq = { query: { end: 1700100000000 } }
@@ -71,9 +76,9 @@ test('getEnergyBalance - missing start throws', async (t) => {
 
 test('getEnergyBalance - missing end throws', async (t) => {
   const mockCtx = {
-    conf: { orks: [] },
+    conf: { orks: [], site: 'test-site' },
     net_r0: { jRequest: async () => ({}) },
-    globalDataLib: { getGlobalData: async () => [] }
+    globalDataBee: { sub: () => ({ sub: () => ({ createReadStream: () => (async function * () {})() }) }) }
   }
 
   const mockReq = { query: { start: 1700000000000 } }
@@ -89,9 +94,9 @@ test('getEnergyBalance - missing end throws', async (t) => {
 
 test('getEnergyBalance - invalid range throws', async (t) => {
   const mockCtx = {
-    conf: { orks: [] },
+    conf: { orks: [], site: 'test-site' },
     net_r0: { jRequest: async () => ({}) },
-    globalDataLib: { getGlobalData: async () => [] }
+    globalDataBee: { sub: () => ({ sub: () => ({ createReadStream: () => (async function * () {})() }) }) }
   }
 
   const mockReq = { query: { start: 1700100000000, end: 1700000000000 } }
@@ -113,8 +118,12 @@ test('getEnergyBalance - empty ork results', async (t) => {
     net_r0: {
       jRequest: async () => ({})
     },
-    globalDataLib: {
-      getGlobalData: async () => []
+    globalDataBee: {
+      sub: () => ({
+        sub: () => ({
+          createReadStream: () => (async function * () {})()
+        })
+      })
     }
   }
 
@@ -129,7 +138,20 @@ test('getEnergyBalance - empty ork results', async (t) => {
   t.pass()
 })
 
-test('processConsumptionData - processes valid data', (t) => {
+test('processConsumptionData - processes daily data from ORK', (t) => {
+  const results = [
+    [{ type: 'powermeter', data: [{ ts: 1700006400000, val: { site_power_w: 5000 } }], error: null }]
+  ]
+
+  const daily = processConsumptionData(results)
+  t.ok(typeof daily === 'object', 'should return object')
+  t.ok(Object.keys(daily).length > 0, 'should have entries')
+  const key = Object.keys(daily)[0]
+  t.is(daily[key].powerW, 5000, 'should extract power from val')
+  t.pass()
+})
+
+test('processConsumptionData - processes object-keyed data', (t) => {
   const results = [
     [{ data: { 1700006400000: { site_power_w: 5000 } } }]
   ]
@@ -147,13 +169,29 @@ test('processConsumptionData - handles error results', (t) => {
   t.pass()
 })
 
-test('processTransactionData - processes valid data', (t) => {
+test('processTransactionData - processes F2Pool data', (t) => {
   const results = [
-    [{ transactions: [{ ts: 1700006400000, changed_balance: 100000000 }] }]
+    [{ ts: 1700006400000, transactions: [{ created_at: 1700006400, changed_balance: 0.001 }] }]
   ]
 
   const daily = processTransactionData(results)
   t.ok(typeof daily === 'object', 'should return object')
+  t.ok(Object.keys(daily).length > 0, 'should have entries')
+  const key = Object.keys(daily)[0]
+  t.is(daily[key].revenueBTC, 0.001, 'should use changed_balance directly as BTC')
+  t.pass()
+})
+
+test('processTransactionData - processes Ocean data', (t) => {
+  const results = [
+    [{ ts: 1700006400000, transactions: [{ ts: 1700006400, satoshis_net_earned: 50000000 }] }]
+  ]
+
+  const daily = processTransactionData(results)
+  t.ok(typeof daily === 'object', 'should return object')
+  t.ok(Object.keys(daily).length > 0, 'should have entries')
+  const key = Object.keys(daily)[0]
+  t.is(daily[key].revenueBTC, 0.5, 'should convert sats to BTC')
   t.pass()
 })
 
@@ -165,27 +203,34 @@ test('processTransactionData - handles error results', (t) => {
   t.pass()
 })
 
-test('processPriceData - processes valid data', (t) => {
+test('processPriceData - processes mempool price data', (t) => {
   const results = [
-    [{ prices: [{ ts: 1700006400000, price: 40000 }] }]
+    [{ ts: 1700006400000, priceUSD: 40000 }]
   ]
 
   const daily = processPriceData(results)
   t.ok(typeof daily === 'object', 'should return object')
+  t.ok(Object.keys(daily).length > 0, 'should have entries')
+  const key = Object.keys(daily)[0]
+  t.is(daily[key], 40000, 'should extract priceUSD')
   t.pass()
 })
 
-test('extractCurrentPrice - extracts numeric price', (t) => {
-  const results = [{ data: 42000 }]
+test('extractCurrentPrice - extracts currentPrice from mempool data', (t) => {
+  const results = [
+    [{ currentPrice: 42000, blockHeight: 900000 }]
+  ]
   const price = extractCurrentPrice(results)
-  t.is(price, 42000, 'should extract numeric price')
+  t.is(price, 42000, 'should extract currentPrice')
   t.pass()
 })
 
-test('extractCurrentPrice - extracts object price', (t) => {
-  const results = [{ data: { USD: 42000 } }]
+test('extractCurrentPrice - extracts priceUSD', (t) => {
+  const results = [
+    [{ ts: 1700006400000, priceUSD: 42000 }]
+  ]
   const price = extractCurrentPrice(results)
-  t.is(price, 42000, 'should extract USD from object')
+  t.is(price, 42000, 'should extract priceUSD')
   t.pass()
 })
 
@@ -196,15 +241,27 @@ test('extractCurrentPrice - handles error results', (t) => {
   t.pass()
 })
 
-test('processCostsData - processes valid costs array', (t) => {
+test('processCostsData - processes dashboard format (energyCostsUSD)', (t) => {
   const costs = [
-    { key: '2023-11', value: { energyCostPerMWh: 50, operationalCostPerMWh: 10 } }
+    { region: 'site1', year: 2023, month: 11, energyCostsUSD: 50000, operationalCostsUSD: 10000 }
   ]
 
   const result = processCostsData(costs)
   t.ok(result['2023-11'], 'should have month key')
-  t.is(result['2023-11'].energyCostPerMWh, 50, 'should have energy cost')
-  t.is(result['2023-11'].operationalCostPerMWh, 10, 'should have operational cost')
+  t.is(result['2023-11'].energyCostUSD, 50000, 'should have energy cost')
+  t.is(result['2023-11'].operationalCostUSD, 10000, 'should have operational cost')
+  t.pass()
+})
+
+test('processCostsData - processes app-node format (energyCost)', (t) => {
+  const costs = [
+    { site: 'site1', year: 2023, month: 11, energyCost: 50000, operationalCost: 10000 }
+  ]
+
+  const result = processCostsData(costs)
+  t.ok(result['2023-11'], 'should have month key')
+  t.is(result['2023-11'].energyCostUSD, 50000, 'should have energy cost')
+  t.is(result['2023-11'].operationalCostUSD, 10000, 'should have operational cost')
   t.pass()
 })
 

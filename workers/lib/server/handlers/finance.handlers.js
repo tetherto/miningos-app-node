@@ -6,7 +6,8 @@ const {
   PERIOD_TYPES,
   MINERPOOL_EXT_DATA_KEYS,
   RPC_METHODS,
-  BTC_SATS
+  BTC_SATS,
+  GLOBAL_DATA_TYPES
 } = require('../../constants')
 const {
   requestRpcEachLimit,
@@ -31,8 +32,6 @@ async function getEnergyBalance (ctx, req) {
 
   const startDate = new Date(start).toISOString()
   const endDate = new Date(end).toISOString()
-  const startYearMonth = `${new Date(start).getFullYear()}-${String(new Date(start).getMonth() + 1).padStart(2, '0')}`
-  const endYearMonth = `${new Date(end).getFullYear()}-${String(new Date(end).getMonth() + 1).padStart(2, '0')}`
 
   const [consumptionResults, transactionResults, priceResults, currentPriceResults, productionCosts] = await runParallel([
     (cb) => requestRpcEachLimit(ctx, RPC_METHODS.TAIL_LOG_RANGE_AGGR, {
@@ -52,7 +51,7 @@ async function getEnergyBalance (ctx, req) {
 
     (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
       type: WORKER_TYPES.MEMPOOL,
-      query: { key: 'prices', start, end }
+      query: { key: 'HISTORICAL_PRICES', start, end }
     }).then(r => cb(null, r)).catch(cb),
 
     (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
@@ -60,10 +59,8 @@ async function getEnergyBalance (ctx, req) {
       query: { key: 'current_price' }
     }).then(r => cb(null, r)).catch(cb),
 
-    (cb) => ctx.globalDataLib.getGlobalData({
-      type: 'productionCosts',
-      range: { gte: startYearMonth, lte: endYearMonth }
-    }).then(r => cb(null, r)).catch(cb)
+    (cb) => getProductionCosts(ctx, req.query.site, start, end)
+      .then(r => cb(null, r)).catch(cb)
   ])
 
   const dailyConsumption = processConsumptionData(consumptionResults)
@@ -91,11 +88,9 @@ async function getEnergyBalance (ctx, req) {
 
     const monthKey = `${new Date(ts).getFullYear()}-${String(new Date(ts).getMonth() + 1).padStart(2, '0')}`
     const costs = costsByMonth[monthKey] || {}
-    const energyCostPerMWh = costs.energyCostPerMWh || 0
-    const operationalCostPerMWh = costs.operationalCostPerMWh || 0
-
-    const energyCostUSD = powerMWh * energyCostPerMWh
-    const totalCostUSD = powerMWh * (energyCostPerMWh + operationalCostPerMWh)
+    const daysInMonth = new Date(new Date(ts).getFullYear(), new Date(ts).getMonth() + 1, 0).getDate()
+    const energyCostUSD = (costs.energyCostUSD || 0) / daysInMonth
+    const totalCostUSD = ((costs.energyCostUSD || 0) + (costs.operationalCostUSD || 0)) / daysInMonth
 
     log.push({
       ts,
@@ -125,17 +120,20 @@ function processConsumptionData (results) {
     const data = Array.isArray(res) ? res : (res.data || res.result || [])
     if (!Array.isArray(data)) continue
     for (const entry of data) {
-      if (!entry) continue
+      if (!entry || entry.error) continue
       const items = entry.data || entry.items || entry
       if (Array.isArray(items)) {
         for (const item of items) {
           const ts = getStartOfDay(item.ts || item.timestamp)
+          if (!ts) continue
           if (!daily[ts]) daily[ts] = { powerW: 0 }
-          daily[ts].powerW += (item[AGGR_FIELDS.SITE_POWER] || item.site_power_w || 0)
+          const val = item.val || item
+          daily[ts].powerW += (val[AGGR_FIELDS.SITE_POWER] || val.site_power_w || 0)
         }
       } else if (typeof items === 'object') {
         for (const [key, val] of Object.entries(items)) {
           const ts = getStartOfDay(Number(key))
+          if (!ts) continue
           if (!daily[ts]) daily[ts] = { powerW: 0 }
           const power = typeof val === 'object' ? (val[AGGR_FIELDS.SITE_POWER] || val.site_power_w || 0) : (Number(val) || 0)
           daily[ts].powerW += power
@@ -144,6 +142,11 @@ function processConsumptionData (results) {
     }
   }
   return daily
+}
+
+function normalizeTimestampMs (ts) {
+  if (!ts) return 0
+  return ts < 1e12 ? ts * 1000 : ts
 }
 
 function processTransactionData (results) {
@@ -158,10 +161,15 @@ function processTransactionData (results) {
       if (!Array.isArray(txList)) continue
       for (const t of txList) {
         if (!t) continue
-        const ts = getStartOfDay(t.ts || t.timestamp || t.time)
+        const rawTs = t.ts || t.created_at || t.timestamp || t.time
+        const ts = getStartOfDay(normalizeTimestampMs(rawTs))
         if (!ts) continue
         const day = daily[ts] ??= { revenueBTC: 0 }
-        day.revenueBTC += Math.abs(t.changed_balance || t.amount || t.value || 0) / BTC_SATS
+        if (t.satoshis_net_earned) {
+          day.revenueBTC += Math.abs(t.satoshis_net_earned) / BTC_SATS
+        } else {
+          day.revenueBTC += Math.abs(t.changed_balance || t.amount || t.value || 0)
+        }
       }
     }
   }
@@ -176,21 +184,11 @@ function processPriceData (results) {
     if (!Array.isArray(data)) continue
     for (const entry of data) {
       if (!entry) continue
-      const items = entry.data || entry.prices || entry
-      if (Array.isArray(items)) {
-        for (const item of items) {
-          const ts = getStartOfDay(item.ts || item.timestamp || item.time)
-          if (ts && item.price) {
-            daily[ts] = item.price
-          }
-        }
-      } else if (typeof items === 'object' && !Array.isArray(items)) {
-        for (const [key, val] of Object.entries(items)) {
-          const ts = getStartOfDay(Number(key))
-          if (ts) {
-            daily[ts] = typeof val === 'object' ? (val.USD || val.price || 0) : Number(val) || 0
-          }
-        }
+      const rawTs = entry.ts || entry.timestamp || entry.time
+      const ts = getStartOfDay(normalizeTimestampMs(rawTs))
+      const price = entry.priceUSD || entry.price
+      if (ts && price) {
+        daily[ts] = price
       }
     }
   }
@@ -200,25 +198,47 @@ function processPriceData (results) {
 function extractCurrentPrice (results) {
   for (const res of results) {
     if (res.error || !res) continue
-    const data = Array.isArray(res) ? res[0] : res
-    if (!data) continue
-    const price = data.data || data.result || data
-    if (typeof price === 'number') return price
-    if (typeof price === 'object') return price.USD || price.price || price.current_price || 0
+    const data = Array.isArray(res) ? res : [res]
+    for (const entry of data) {
+      if (!entry) continue
+      if (entry.currentPrice) return entry.currentPrice
+      if (entry.priceUSD) return entry.priceUSD
+      if (entry.price) return entry.price
+    }
   }
   return 0
+}
+
+async function getProductionCosts (ctx, site, start, end) {
+  if (!site) return []
+
+  const db = ctx.globalDataBee
+    .sub(GLOBAL_DATA_TYPES.PRODUCTION_COSTS)
+    .sub(site)
+  const stream = db.createReadStream()
+  const entries = []
+
+  for await (const entry of stream) {
+    entries.push(JSON.parse(entry.value.toString()))
+  }
+
+  const startDate = new Date(start)
+  const endDate = new Date(end)
+  return entries.filter(entry => {
+    const entryDate = new Date(entry.year, entry.month - 1, 1)
+    return entryDate >= startDate && entryDate <= endDate
+  })
 }
 
 function processCostsData (costs) {
   const byMonth = {}
   if (!Array.isArray(costs)) return byMonth
   for (const entry of costs) {
-    if (!entry || !entry.key) continue
-    const key = entry.key
-    const data = entry.value || entry.data || entry
+    if (!entry || !entry.year || !entry.month) continue
+    const key = `${entry.year}-${String(entry.month).padStart(2, '0')}`
     byMonth[key] = {
-      energyCostPerMWh: data.energyCostPerMWh || data.energy_cost_per_mwh || 0,
-      operationalCostPerMWh: data.operationalCostPerMWh || data.operational_cost_per_mwh || 0
+      energyCostUSD: entry.energyCostsUSD || entry.energyCost || 0,
+      operationalCostUSD: entry.operationalCostsUSD || entry.operationalCost || 0
     }
   }
   return byMonth
@@ -251,6 +271,7 @@ function calculateSummary (log) {
 
 module.exports = {
   getEnergyBalance,
+  getProductionCosts,
   processConsumptionData,
   processTransactionData,
   processPriceData,
