@@ -3,7 +3,7 @@
 const test = require('brittle')
 const {
   getPoolBalanceHistory,
-  flattenSnapshots,
+  flattenTransactionResults,
   groupByBucket
 } = require('../../../workers/lib/server/handlers/pools.handlers')
 
@@ -14,7 +14,14 @@ test('getPoolBalanceHistory - happy path', async (t) => {
     },
     net_r0: {
       jRequest: async () => {
-        return [{ data: [{ ts: 1700006400000, balance: 50000, hashrate: 120000, revenue: 100, tag: 'pool1' }] }]
+        return [{
+          ts: '1700006400000',
+          transactions: [{
+            username: 'user1',
+            changed_balance: 0.001,
+            mining_extra: { hash_rate: 611000000000000 }
+          }]
+        }]
       }
     }
   }
@@ -29,9 +36,8 @@ test('getPoolBalanceHistory - happy path', async (t) => {
   t.ok(Array.isArray(result.log), 'log should be array')
   t.ok(result.log.length > 0, 'should have entries')
   const entry = result.log[0]
-  t.ok(entry.hashrate !== undefined, 'should include hashrate')
-  t.is(entry.hashrate, 120000, 'hashrate should match source data')
-  t.ok(entry.snapshotCount === undefined, 'should not include snapshotCount')
+  t.ok(entry.hashrate > 0, 'should include hashrate')
+  t.ok(entry.revenue > 0, 'should include revenue')
   t.pass()
 })
 
@@ -41,9 +47,10 @@ test('getPoolBalanceHistory - with pool filter', async (t) => {
     net_r0: {
       jRequest: async () => {
         return [{
-          data: [
-            { ts: 1700006400000, balance: 50000, tag: 'pool1' },
-            { ts: 1700006400000, balance: 30000, tag: 'pool2' }
+          ts: '1700006400000',
+          transactions: [
+            { username: 'user1', changed_balance: 0.001 },
+            { username: 'user2', changed_balance: 0.002 }
           ]
         }]
       }
@@ -52,11 +59,39 @@ test('getPoolBalanceHistory - with pool filter', async (t) => {
 
   const mockReq = {
     query: { start: 1700000000000, end: 1700100000000 },
-    params: { pool: 'pool1' }
+    params: { pool: 'user1' }
   }
 
   const result = await getPoolBalanceHistory(mockCtx, mockReq, {})
   t.ok(result.log, 'should return log array')
+  t.ok(result.log.length > 0, 'should have entries')
+  t.ok(result.log[0].revenue > 0, 'should have filtered revenue')
+  t.pass()
+})
+
+test('getPoolBalanceHistory - "all" pool filter returns all pools', async (t) => {
+  const mockCtx = {
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: {
+      jRequest: async () => {
+        return [{
+          ts: '1700006400000',
+          transactions: [
+            { username: 'user1', changed_balance: 0.001 },
+            { username: 'user2', changed_balance: 0.002 }
+          ]
+        }]
+      }
+    }
+  }
+
+  const mockReq = {
+    query: { start: 1700000000000, end: 1700100000000 },
+    params: { pool: 'all' }
+  }
+
+  const result = await getPoolBalanceHistory(mockCtx, mockReq, {})
+  t.ok(result.log.length > 0, 'should return entries for all pools')
   t.pass()
 })
 
@@ -102,47 +137,71 @@ test('getPoolBalanceHistory - empty ork results', async (t) => {
   t.pass()
 })
 
-test('flattenSnapshots - flattens ork results', (t) => {
+test('flattenTransactionResults - extracts daily entries from ext-data', (t) => {
   const results = [
-    [{ data: [{ ts: 1, balance: 100 }, { ts: 2, balance: 200 }] }]
+    [{
+      ts: '1700006400000',
+      transactions: [
+        { username: 'user1', changed_balance: 0.001, mining_extra: { hash_rate: 500000 } },
+        { username: 'user2', changed_balance: 0.002, mining_extra: { hash_rate: 600000 } }
+      ]
+    }]
   ]
-  const flat = flattenSnapshots(results)
-  t.ok(flat.length >= 1, 'should flatten snapshots')
+  const entries = flattenTransactionResults(results, null)
+  t.is(entries.length, 1, 'should have 1 daily entry')
+  t.ok(entries[0].revenue > 0, 'should have revenue')
+  t.ok(entries[0].hashrate > 0, 'should have hashrate')
   t.pass()
 })
 
-test('flattenSnapshots - handles error results', (t) => {
+test('flattenTransactionResults - filters by pool', (t) => {
+  const results = [
+    [{
+      ts: '1700006400000',
+      transactions: [
+        { username: 'user1', changed_balance: 0.001 },
+        { username: 'user2', changed_balance: 0.002 }
+      ]
+    }]
+  ]
+  const entries = flattenTransactionResults(results, 'user1')
+  t.is(entries.length, 1, 'should have 1 entry')
+  t.is(entries[0].revenue, 0.001, 'should only include user1 revenue')
+  t.pass()
+})
+
+test('flattenTransactionResults - handles error results', (t) => {
   const results = [{ error: 'timeout' }]
-  const flat = flattenSnapshots(results)
-  t.is(flat.length, 0, 'should be empty for errors')
+  const entries = flattenTransactionResults(results, null)
+  t.is(entries.length, 0, 'should be empty for errors')
   t.pass()
 })
 
 test('groupByBucket - groups by daily bucket', (t) => {
-  const snapshots = [
-    { ts: 1700006400000, balance: 100 },
-    { ts: 1700050000000, balance: 200 },
-    { ts: 1700092800000, balance: 300 }
+  const entries = [
+    { ts: 1700006400000, revenue: 100 },
+    { ts: 1700050000000, revenue: 200 },
+    { ts: 1700092800000, revenue: 300 }
   ]
   const bucketSize = 86400000
-  const buckets = groupByBucket(snapshots, bucketSize)
+  const buckets = groupByBucket(entries, bucketSize)
   t.ok(typeof buckets === 'object', 'should return object')
   t.ok(Object.keys(buckets).length >= 1, 'should have at least one bucket')
   t.pass()
 })
 
-test('groupByBucket - handles empty snapshots', (t) => {
+test('groupByBucket - handles empty entries', (t) => {
   const buckets = groupByBucket([], 86400000)
   t.is(Object.keys(buckets).length, 0, 'should be empty')
   t.pass()
 })
 
 test('groupByBucket - handles missing timestamps', (t) => {
-  const snapshots = [
-    { balance: 100 },
-    { ts: 1700006400000, balance: 200 }
+  const entries = [
+    { revenue: 100 },
+    { ts: 1700006400000, revenue: 200 }
   ]
-  const buckets = groupByBucket(snapshots, 86400000)
+  const buckets = groupByBucket(entries, 86400000)
   t.ok(Object.keys(buckets).length >= 1, 'should skip items without ts')
   t.pass()
 })

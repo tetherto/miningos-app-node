@@ -187,7 +187,13 @@ const STATUS_CODES = {
 }
 
 const RPC_METHODS = {
-  TAIL_LOG: 'tailLog'
+  TAIL_LOG: 'tailLog',
+  GET_WRK_EXT_DATA: 'getWrkExtData'
+}
+
+const MINERPOOL_EXT_DATA_KEYS = {
+  TRANSACTIONS: 'transactions',
+  STATS: 'stats'
 }
 
 const RANGE_BUCKETS = {
@@ -217,5 +223,6 @@ module.exports = {
   RPC_CONCURRENCY_LIMIT,
   USER_SETTINGS_TYPE,
   RPC_METHODS,
+  MINERPOOL_EXT_DATA_KEYS,
   RANGE_BUCKETS
 }
