@@ -57,13 +57,6 @@ async function getPools (ctx, req) {
   return { pools: result, summary }
 }
 
-/**
- * Extracts pool stats from ext-data RPC results.
- * The ext-data response structure is:
- *   [ orkResult1, orkResult2, ... ]
- * where each orkResult is:
- *   [ { ts, stats: [ {poolType, username, hashrate, balance, ...}, ... ], ... } ]
- */
 function flattenPoolStats (results) {
   const pools = []
   const seen = new Set()
