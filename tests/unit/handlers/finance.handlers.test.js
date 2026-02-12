@@ -7,6 +7,8 @@ const {
   processTransactionData,
   processPriceData,
   extractCurrentPrice,
+  processEnergyData,
+  extractNominalPower,
   processCostsData,
   calculateSummary
 } = require('../../../workers/lib/server/handlers/finance.handlers')
@@ -32,16 +34,18 @@ test('getEnergyBalance - happy path', async (t) => {
           if (payload.query && payload.query.key === 'current_price') {
             return [{ currentPrice: 40000 }]
           }
+          if (payload.query && payload.query.key === 'stats-history') {
+            return []
+          }
+        }
+        if (method === 'getGlobalConfig') {
+          return { nominalPowerAvailability_MW: 10 }
         }
         return {}
       }
     },
-    globalDataBee: {
-      sub: () => ({
-        sub: () => ({
-          createReadStream: () => (async function * () {})()
-        })
-      })
+    globalDataLib: {
+      getGlobalData: async () => []
     }
   }
 
@@ -60,7 +64,7 @@ test('getEnergyBalance - missing start throws', async (t) => {
   const mockCtx = {
     conf: { orks: [], site: 'test-site' },
     net_r0: { jRequest: async () => ({}) },
-    globalDataBee: { sub: () => ({ sub: () => ({ createReadStream: () => (async function * () {})() }) }) }
+    globalDataLib: { getGlobalData: async () => [] }
   }
 
   const mockReq = { query: { end: 1700100000000 } }
@@ -78,7 +82,7 @@ test('getEnergyBalance - missing end throws', async (t) => {
   const mockCtx = {
     conf: { orks: [], site: 'test-site' },
     net_r0: { jRequest: async () => ({}) },
-    globalDataBee: { sub: () => ({ sub: () => ({ createReadStream: () => (async function * () {})() }) }) }
+    globalDataLib: { getGlobalData: async () => [] }
   }
 
   const mockReq = { query: { start: 1700000000000 } }
@@ -96,7 +100,7 @@ test('getEnergyBalance - invalid range throws', async (t) => {
   const mockCtx = {
     conf: { orks: [], site: 'test-site' },
     net_r0: { jRequest: async () => ({}) },
-    globalDataBee: { sub: () => ({ sub: () => ({ createReadStream: () => (async function * () {})() }) }) }
+    globalDataLib: { getGlobalData: async () => [] }
   }
 
   const mockReq = { query: { start: 1700100000000, end: 1700000000000 } }
@@ -243,25 +247,25 @@ test('extractCurrentPrice - handles error results', (t) => {
 
 test('processCostsData - processes dashboard format (energyCostsUSD)', (t) => {
   const costs = [
-    { region: 'site1', year: 2023, month: 11, energyCostsUSD: 50000, operationalCostsUSD: 10000 }
+    { region: 'site1', year: 2023, month: 11, energyCostsUSD: 30000, operationalCostsUSD: 6000 }
   ]
 
   const result = processCostsData(costs)
   t.ok(result['2023-11'], 'should have month key')
-  t.is(result['2023-11'].energyCostUSD, 50000, 'should have energy cost')
-  t.is(result['2023-11'].operationalCostUSD, 10000, 'should have operational cost')
+  t.is(result['2023-11'].energyCostPerDay, 1000, 'should have daily energy cost (30000/30)')
+  t.is(result['2023-11'].operationalCostPerDay, 200, 'should have daily operational cost (6000/30)')
   t.pass()
 })
 
 test('processCostsData - processes app-node format (energyCost)', (t) => {
   const costs = [
-    { site: 'site1', year: 2023, month: 11, energyCost: 50000, operationalCost: 10000 }
+    { site: 'site1', year: 2023, month: 11, energyCost: 30000, operationalCost: 6000 }
   ]
 
   const result = processCostsData(costs)
   t.ok(result['2023-11'], 'should have month key')
-  t.is(result['2023-11'].energyCostUSD, 50000, 'should have energy cost')
-  t.is(result['2023-11'].operationalCostUSD, 10000, 'should have operational cost')
+  t.is(result['2023-11'].energyCostPerDay, 1000, 'should have daily energy cost (30000/30)')
+  t.is(result['2023-11'].operationalCostPerDay, 200, 'should have daily operational cost (6000/30)')
   t.pass()
 })
 

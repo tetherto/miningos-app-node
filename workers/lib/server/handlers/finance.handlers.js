@@ -33,7 +33,16 @@ async function getEnergyBalance (ctx, req) {
   const startDate = new Date(start).toISOString()
   const endDate = new Date(end).toISOString()
 
-  const [consumptionResults, transactionResults, priceResults, currentPriceResults, productionCosts] = await runParallel([
+  const [
+    consumptionResults,
+    transactionResults,
+    priceResults,
+    currentPriceResults,
+    productionCosts,
+    activeEnergyInResults,
+    uteEnergyResults,
+    globalConfigResults
+  ] = await runParallel([
     (cb) => requestRpcEachLimit(ctx, RPC_METHODS.TAIL_LOG_RANGE_AGGR, {
       keys: [{
         type: WORKER_TYPES.POWERMETER,
@@ -60,6 +69,19 @@ async function getEnergyBalance (ctx, req) {
     }).then(r => cb(null, r)).catch(cb),
 
     (cb) => getProductionCosts(ctx, req.query.site, start, end)
+      .then(r => cb(null, r)).catch(cb),
+
+    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+      type: WORKER_TYPES.ELECTRICITY,
+      query: { key: 'stats-history', start, end, groupRange: '1D' }
+    }).then(r => cb(null, r)).catch(cb),
+
+    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+      type: WORKER_TYPES.ELECTRICITY,
+      query: { key: 'stats-history', start, end, groupRange: '1D' }
+    }).then(r => cb(null, r)).catch(cb),
+
+    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GLOBAL_CONFIG, {})
       .then(r => cb(null, r)).catch(cb)
   ])
 
@@ -68,6 +90,9 @@ async function getEnergyBalance (ctx, req) {
   const dailyPrices = processPriceData(priceResults)
   const currentBtcPrice = extractCurrentPrice(currentPriceResults)
   const costsByMonth = processCostsData(productionCosts)
+  const dailyActiveEnergyIn = processEnergyData(activeEnergyInResults, AGGR_FIELDS.ACTIVE_ENERGY_IN)
+  const dailyUteEnergy = processEnergyData(uteEnergyResults, AGGR_FIELDS.UTE_ENERGY)
+  const nominalPowerMW = extractNominalPower(globalConfigResults)
 
   const allDays = new Set([
     ...Object.keys(dailyConsumption),
@@ -88,14 +113,33 @@ async function getEnergyBalance (ctx, req) {
 
     const monthKey = `${new Date(ts).getFullYear()}-${String(new Date(ts).getMonth() + 1).padStart(2, '0')}`
     const costs = costsByMonth[monthKey] || {}
-    const daysInMonth = new Date(new Date(ts).getFullYear(), new Date(ts).getMonth() + 1, 0).getDate()
-    const energyCostUSD = (costs.energyCostUSD || 0) / daysInMonth
-    const totalCostUSD = ((costs.energyCostUSD || 0) + (costs.operationalCostUSD || 0)) / daysInMonth
+    const energyCostUSD = costs.energyCostPerDay || 0
+    const totalCostUSD = energyCostUSD + (costs.operationalCostPerDay || 0)
+
+    const activeEnergyIn = dailyActiveEnergyIn[dayTs] || 0
+    const uteEnergy = dailyUteEnergy[dayTs] || 0
+    const consumptionMWh = powerMWh
+
+    const curtailmentMWh = activeEnergyIn > 0
+      ? activeEnergyIn - consumptionMWh
+      : null
+    const curtailmentRate = curtailmentMWh !== null
+      ? safeDiv(curtailmentMWh, consumptionMWh)
+      : null
+
+    const operationalIssuesRate = uteEnergy > 0
+      ? safeDiv(uteEnergy - consumptionMWh, uteEnergy)
+      : null
+
+    const actualPowerMW = powerW / 1000000
+    const powerUtilization = nominalPowerMW > 0
+      ? safeDiv(actualPowerMW, nominalPowerMW)
+      : null
 
     log.push({
       ts,
       powerW,
-      consumptionMWh: powerMWh,
+      consumptionMWh,
       revenueBTC,
       revenueUSD,
       btcPrice,
@@ -103,7 +147,11 @@ async function getEnergyBalance (ctx, req) {
       totalCostUSD,
       energyRevenuePerMWh: safeDiv(revenueUSD, powerMWh),
       allInCostPerMWh: safeDiv(totalCostUSD, powerMWh),
-      profitUSD: revenueUSD - totalCostUSD
+      profitUSD: revenueUSD - totalCostUSD,
+      curtailmentMWh,
+      curtailmentRate,
+      operationalIssuesRate,
+      powerUtilization
     })
   }
 
@@ -209,22 +257,55 @@ function extractCurrentPrice (results) {
   return 0
 }
 
-async function getProductionCosts (ctx, site, start, end) {
-  if (!site) return []
-
-  const db = ctx.globalDataBee
-    .sub(GLOBAL_DATA_TYPES.PRODUCTION_COSTS)
-    .sub(site)
-  const stream = db.createReadStream()
-  const entries = []
-
-  for await (const entry of stream) {
-    entries.push(JSON.parse(entry.value.toString()))
+function processEnergyData (results, aggrField) {
+  const daily = {}
+  for (const res of results) {
+    if (!res || res.error) continue
+    const data = Array.isArray(res) ? res : (res.data || res.result || [])
+    if (!Array.isArray(data)) continue
+    for (const entry of data) {
+      if (!entry) continue
+      const items = Array.isArray(entry) ? entry : (entry.data || entry)
+      if (Array.isArray(items)) {
+        for (const item of items) {
+          if (!item) continue
+          const ts = getStartOfDay(item.ts || item.timestamp)
+          if (!ts) continue
+          const energyAggr = item[AGGR_FIELDS.ENERGY_AGGR]
+          if (energyAggr && energyAggr[aggrField]) {
+            daily[ts] = (daily[ts] || 0) + Number(energyAggr[aggrField])
+          }
+        }
+      }
+    }
   }
+  return daily
+}
+
+function extractNominalPower (results) {
+  for (const res of results) {
+    if (!res || res.error) continue
+    const data = Array.isArray(res) ? res : [res]
+    for (const entry of data) {
+      if (!entry) continue
+      if (entry.nominalPowerAvailability_MW) return entry.nominalPowerAvailability_MW
+    }
+  }
+  return 0
+}
+
+async function getProductionCosts (ctx, site, start, end) {
+  if (!ctx.globalDataLib) return []
+  const costs = await ctx.globalDataLib.getGlobalData({
+    type: GLOBAL_DATA_TYPES.PRODUCTION_COSTS
+  })
+  if (!Array.isArray(costs)) return []
 
   const startDate = new Date(start)
   const endDate = new Date(end)
-  return entries.filter(entry => {
+  return costs.filter(entry => {
+    if (!entry || !entry.year || !entry.month) return false
+    if (site && entry.site !== site) return false
     const entryDate = new Date(entry.year, entry.month - 1, 1)
     return entryDate >= startDate && entryDate <= endDate
   })
@@ -236,9 +317,10 @@ function processCostsData (costs) {
   for (const entry of costs) {
     if (!entry || !entry.year || !entry.month) continue
     const key = `${entry.year}-${String(entry.month).padStart(2, '0')}`
+    const daysInMonth = new Date(entry.year, entry.month, 0).getDate()
     byMonth[key] = {
-      energyCostUSD: entry.energyCostsUSD || entry.energyCost || 0,
-      operationalCostUSD: entry.operationalCostsUSD || entry.operationalCost || 0
+      energyCostPerDay: (entry.energyCost || entry.energyCostsUSD || 0) / daysInMonth,
+      operationalCostPerDay: (entry.operationalCost || entry.operationalCostsUSD || 0) / daysInMonth
     }
   }
   return byMonth
@@ -246,7 +328,18 @@ function processCostsData (costs) {
 
 function calculateSummary (log) {
   if (!log.length) {
-    return { totalRevenueBTC: 0, totalRevenueUSD: 0, totalCostUSD: 0, totalProfitUSD: 0, avgCostPerMWh: null, avgRevenuePerMWh: null, totalConsumptionMWh: 0 }
+    return {
+      totalRevenueBTC: 0,
+      totalRevenueUSD: 0,
+      totalCostUSD: 0,
+      totalProfitUSD: 0,
+      avgCostPerMWh: null,
+      avgRevenuePerMWh: null,
+      totalConsumptionMWh: 0,
+      avgCurtailmentRate: null,
+      avgOperationalIssuesRate: null,
+      avgPowerUtilization: null
+    }
   }
 
   const totals = log.reduce((acc, entry) => {
@@ -255,8 +348,32 @@ function calculateSummary (log) {
     acc.costUSD += entry.totalCostUSD || 0
     acc.profitUSD += entry.profitUSD || 0
     acc.consumptionMWh += entry.consumptionMWh || 0
+    if (entry.curtailmentRate !== null && entry.curtailmentRate !== undefined) {
+      acc.curtailmentRateSum += entry.curtailmentRate
+      acc.curtailmentRateCount++
+    }
+    if (entry.operationalIssuesRate !== null && entry.operationalIssuesRate !== undefined) {
+      acc.operationalIssuesRateSum += entry.operationalIssuesRate
+      acc.operationalIssuesRateCount++
+    }
+    if (entry.powerUtilization !== null && entry.powerUtilization !== undefined) {
+      acc.powerUtilizationSum += entry.powerUtilization
+      acc.powerUtilizationCount++
+    }
     return acc
-  }, { revenueBTC: 0, revenueUSD: 0, costUSD: 0, profitUSD: 0, consumptionMWh: 0 })
+  }, {
+    revenueBTC: 0,
+    revenueUSD: 0,
+    costUSD: 0,
+    profitUSD: 0,
+    consumptionMWh: 0,
+    curtailmentRateSum: 0,
+    curtailmentRateCount: 0,
+    operationalIssuesRateSum: 0,
+    operationalIssuesRateCount: 0,
+    powerUtilizationSum: 0,
+    powerUtilizationCount: 0
+  })
 
   return {
     totalRevenueBTC: totals.revenueBTC,
@@ -265,7 +382,10 @@ function calculateSummary (log) {
     totalProfitUSD: totals.profitUSD,
     avgCostPerMWh: safeDiv(totals.costUSD, totals.consumptionMWh),
     avgRevenuePerMWh: safeDiv(totals.revenueUSD, totals.consumptionMWh),
-    totalConsumptionMWh: totals.consumptionMWh
+    totalConsumptionMWh: totals.consumptionMWh,
+    avgCurtailmentRate: safeDiv(totals.curtailmentRateSum, totals.curtailmentRateCount),
+    avgOperationalIssuesRate: safeDiv(totals.operationalIssuesRateSum, totals.operationalIssuesRateCount),
+    avgPowerUtilization: safeDiv(totals.powerUtilizationSum, totals.powerUtilizationCount)
   }
 }
 
@@ -276,6 +396,8 @@ module.exports = {
   processTransactionData,
   processPriceData,
   extractCurrentPrice,
+  processEnergyData,
+  extractNominalPower,
   processCostsData,
   calculateSummary
 }

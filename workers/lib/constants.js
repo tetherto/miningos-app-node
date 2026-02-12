@@ -190,19 +190,24 @@ const RPC_METHODS = {
   TAIL_LOG_RANGE_AGGR: 'tailLogCustomRangeAggr',
   GET_WRK_EXT_DATA: 'getWrkExtData',
   LIST_THINGS: 'listThings',
-  TAIL_LOG: 'tailLog'
+  TAIL_LOG: 'tailLog',
+  GLOBAL_CONFIG: 'getGlobalConfig'
 }
 
 const WORKER_TYPES = {
   MINER: 'miner',
   POWERMETER: 'powermeter',
   MINERPOOL: 'minerpool',
-  MEMPOOL: 'mempool'
+  MEMPOOL: 'mempool',
+  ELECTRICITY: 'electricity'
 }
 
 const AGGR_FIELDS = {
   HASHRATE_SUM: 'hashrate_mhs_5m_sum_aggr',
-  SITE_POWER: 'site_power_w'
+  SITE_POWER: 'site_power_w',
+  ENERGY_AGGR: 'energy_aggr',
+  ACTIVE_ENERGY_IN: 'active_energy_in_aggr',
+  UTE_ENERGY: 'ute_energy_aggr'
 }
 
 const PERIOD_TYPES = {
