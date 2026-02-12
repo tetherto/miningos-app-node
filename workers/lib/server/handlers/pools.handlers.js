@@ -55,11 +55,6 @@ async function getPoolBalanceHistory (ctx, req) {
   return { log }
 }
 
-/**
- * Flattens ext-data transaction results into daily entries.
- * The ext-data response structure for transactions:
- *   [ { ts, stats, transactions: [{username, changed_balance, mining_extra: {hash_rate, ...}}, ...] }, ... ]
- */
 function flattenTransactionResults (results, poolFilter) {
   const daily = []
   for (const res of results) {
