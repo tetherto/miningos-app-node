@@ -49,12 +49,6 @@ async function getPoolStatsAggregate (ctx, req) {
   return { log: aggregated, summary }
 }
 
-/**
- * Processes ext-data transaction results into daily entries.
- * The ext-data response for transactions with start/end:
- *   [ { ts, transactions: [{username, changed_balance, mining_extra: {hash_rate, ...}}, ...] }, ... ]
- * changed_balance is already in BTC (not satoshis).
- */
 function processTransactionData (results, poolFilter) {
   const daily = {}
   for (const res of results) {
