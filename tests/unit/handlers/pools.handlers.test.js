@@ -3,8 +3,7 @@
 const test = require('brittle')
 const {
   getPoolStatsAggregate,
-  processStatsData,
-  processRevenueData,
+  processTransactionData,
   calculateAggregateSummary
 } = require('../../../workers/lib/server/handlers/pools.handlers')
 
@@ -14,14 +13,15 @@ test('getPoolStatsAggregate - happy path', async (t) => {
       orks: [{ rpcPublicKey: 'key1' }]
     },
     net_r0: {
-      jRequest: async (key, method, payload) => {
-        if (method === 'tailLog') {
-          return [{ data: [{ ts: 1700006400000, balance: 50000, hashrate: 100, worker_count: 5, tag: 'pool1' }] }]
-        }
-        if (method === 'getWrkExtData') {
-          return { data: [{ transactions: [{ ts: 1700006400000, changed_balance: 50000000, tag: 'pool1' }] }] }
-        }
-        return {}
+      jRequest: async () => {
+        return [{
+          ts: '1700006400000',
+          transactions: [{
+            username: 'user1',
+            changed_balance: 0.001,
+            mining_extra: { hash_rate: 611000000000000 }
+          }]
+        }]
       }
     }
   }
@@ -34,10 +34,8 @@ test('getPoolStatsAggregate - happy path', async (t) => {
   t.ok(result.log, 'should return log array')
   t.ok(result.summary, 'should return summary')
   t.ok(Array.isArray(result.log), 'log should be array')
-  if (result.log.length > 0) {
-    const entry = result.log[0]
-    t.ok(entry.snapshotCount === undefined, 'should not include snapshotCount')
-  }
+  t.ok(result.log.length > 0, 'should have entries')
+  t.ok(result.log[0].revenueBTC > 0, 'should have revenue')
   t.pass()
 })
 
@@ -45,26 +43,25 @@ test('getPoolStatsAggregate - with pool filter', async (t) => {
   const mockCtx = {
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
     net_r0: {
-      jRequest: async (key, method) => {
-        if (method === 'tailLog') {
-          return [{
-            data: [
-              { ts: 1700006400000, balance: 50000, hashrate: 100, tag: 'pool1' },
-              { ts: 1700006400000, balance: 30000, hashrate: 200, tag: 'pool2' }
-            ]
-          }]
-        }
-        return { data: [] }
+      jRequest: async () => {
+        return [{
+          ts: '1700006400000',
+          transactions: [
+            { username: 'user1', changed_balance: 0.001 },
+            { username: 'user2', changed_balance: 0.002 }
+          ]
+        }]
       }
     }
   }
 
   const mockReq = {
-    query: { start: 1700000000000, end: 1700100000000, pool: 'pool1' }
+    query: { start: 1700000000000, end: 1700100000000, pool: 'user1' }
   }
 
   const result = await getPoolStatsAggregate(mockCtx, mockReq, {})
   t.ok(result.log, 'should return filtered log')
+  t.ok(result.log.length > 0, 'should have entries')
   t.pass()
 })
 
@@ -110,49 +107,47 @@ test('getPoolStatsAggregate - empty ork results', async (t) => {
   t.pass()
 })
 
-test('processStatsData - processes valid stats', (t) => {
-  const results = [
-    [{ data: [{ ts: 1700006400000, balance: 50000, hashrate: 100, worker_count: 5 }] }]
-  ]
-  const daily = processStatsData(results, null)
-  t.ok(typeof daily === 'object', 'should return object')
-  t.pass()
-})
-
-test('processStatsData - handles error results', (t) => {
-  const results = [{ error: 'timeout' }]
-  const daily = processStatsData(results, null)
-  t.is(Object.keys(daily).length, 0, 'should be empty')
-  t.pass()
-})
-
-test('processStatsData - filters by pool', (t) => {
+test('processTransactionData - processes valid transactions', (t) => {
   const results = [
     [{
-      data: [
-        { ts: 1700006400000, balance: 50000, tag: 'pool1' },
-        { ts: 1700006400000, balance: 30000, tag: 'pool2' }
+      ts: '1700006400000',
+      transactions: [
+        { username: 'user1', changed_balance: 0.001, mining_extra: { hash_rate: 500000 } },
+        { username: 'user2', changed_balance: 0.002, mining_extra: { hash_rate: 600000 } }
       ]
     }]
   ]
-  const daily = processStatsData(results, 'pool1')
-  t.ok(typeof daily === 'object', 'should return filtered data')
-  t.pass()
-})
-
-test('processRevenueData - processes valid transactions', (t) => {
-  const results = [
-    [{ transactions: [{ ts: 1700006400000, changed_balance: 100000000 }] }]
-  ]
-  const daily = processRevenueData(results, null)
+  const daily = processTransactionData(results, null)
   t.ok(typeof daily === 'object', 'should return object')
+  const keys = Object.keys(daily)
+  t.ok(keys.length > 0, 'should have entries')
+  const entry = daily[keys[0]]
+  t.ok(entry.revenueBTC > 0, 'should have revenue')
+  t.ok(entry.hashrate > 0, 'should have hashrate')
   t.pass()
 })
 
-test('processRevenueData - handles error results', (t) => {
+test('processTransactionData - handles error results', (t) => {
   const results = [{ error: 'timeout' }]
-  const daily = processRevenueData(results, null)
+  const daily = processTransactionData(results, null)
   t.is(Object.keys(daily).length, 0, 'should be empty')
+  t.pass()
+})
+
+test('processTransactionData - filters by pool', (t) => {
+  const results = [
+    [{
+      ts: '1700006400000',
+      transactions: [
+        { username: 'user1', changed_balance: 0.001 },
+        { username: 'user2', changed_balance: 0.002 }
+      ]
+    }]
+  ]
+  const daily = processTransactionData(results, 'user1')
+  const keys = Object.keys(daily)
+  t.ok(keys.length > 0, 'should have entries')
+  t.is(daily[keys[0]].revenueBTC, 0.001, 'should only include user1 revenue')
   t.pass()
 })
 

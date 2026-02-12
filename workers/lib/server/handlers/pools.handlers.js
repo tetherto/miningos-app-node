@@ -4,13 +4,11 @@ const {
   WORKER_TYPES,
   PERIOD_TYPES,
   MINERPOOL_EXT_DATA_KEYS,
-  RPC_METHODS,
-  BTC_SATS
+  RPC_METHODS
 } = require('../../constants')
 const {
   requestRpcEachLimit,
-  getStartOfDay,
-  runParallel
+  getStartOfDay
 } = require('../../utils')
 const { aggregateByPeriod } = require('../../period.utils')
 
@@ -28,42 +26,22 @@ async function getPoolStatsAggregate (ctx, req) {
     throw new Error('ERR_INVALID_DATE_RANGE')
   }
 
-  const [statsResults, transactionResults] = await runParallel([
-    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.TAIL_LOG, {
-      key: 'stat-3h',
-      type: WORKER_TYPES.MINERPOOL,
-      start,
-      end
-    }).then(r => cb(null, r)).catch(cb),
+  const transactionResults = await requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+    type: WORKER_TYPES.MINERPOOL,
+    query: { key: MINERPOOL_EXT_DATA_KEYS.TRANSACTIONS, start, end }
+  })
 
-    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
-      type: WORKER_TYPES.MINERPOOL,
-      query: { key: MINERPOOL_EXT_DATA_KEYS.TRANSACTIONS, start, end }
-    }).then(r => cb(null, r)).catch(cb)
-  ])
+  const dailyData = processTransactionData(transactionResults, poolFilter)
 
-  const dailyStats = processStatsData(statsResults, poolFilter)
-  const dailyRevenue = processRevenueData(transactionResults, poolFilter)
-
-  const allDays = new Set([
-    ...Object.keys(dailyStats),
-    ...Object.keys(dailyRevenue)
-  ])
-
-  const log = []
-  for (const dayTs of [...allDays].sort()) {
-    const ts = Number(dayTs)
-    const stats = dailyStats[dayTs] || {}
-    const revenue = dailyRevenue[dayTs] || {}
-
-    log.push({
-      ts,
-      balance: stats.balance || 0,
-      hashrate: stats.hashrate || 0,
-      workerCount: stats.workerCount || 0,
-      revenueBTC: revenue.revenueBTC || 0
-    })
-  }
+  const log = Object.entries(dailyData)
+    .sort(([a], [b]) => Number(a) - Number(b))
+    .map(([ts, data]) => ({
+      ts: Number(ts),
+      balance: data.revenueBTC,
+      hashrate: data.hashCount > 0 ? data.hashrate / data.hashCount : 0,
+      workerCount: 0,
+      revenueBTC: data.revenueBTC
+    }))
 
   const aggregated = aggregateByPeriod(log, range)
   const summary = calculateAggregateSummary(aggregated)
@@ -71,62 +49,37 @@ async function getPoolStatsAggregate (ctx, req) {
   return { log: aggregated, summary }
 }
 
-function processStatsData (results, poolFilter) {
+/**
+ * Processes ext-data transaction results into daily entries.
+ * The ext-data response for transactions with start/end:
+ *   [ { ts, transactions: [{username, changed_balance, mining_extra: {hash_rate, ...}}, ...] }, ... ]
+ * changed_balance is already in BTC (not satoshis).
+ */
+function processTransactionData (results, poolFilter) {
   const daily = {}
   for (const res of results) {
     if (res.error || !res) continue
     const data = Array.isArray(res) ? res : (res.data || res.result || [])
     if (!Array.isArray(data)) continue
+
     for (const entry of data) {
       if (!entry) continue
-      const items = entry.data || entry.items || entry
-      if (Array.isArray(items)) {
-        for (const item of items) {
-          if (poolFilter && item.tag !== poolFilter && item.pool !== poolFilter && item.id !== poolFilter) continue
-          const ts = getStartOfDay(item.ts || item.timestamp)
-          if (!ts) continue
-          if (!daily[ts]) daily[ts] = { balance: 0, hashrate: 0, workerCount: 0, count: 0 }
-          daily[ts].balance = item.balance || daily[ts].balance
-          daily[ts].hashrate += (item.hashrate || 0)
-          daily[ts].workerCount += (item.worker_count || item.workerCount || 0)
-          daily[ts].count += 1
-        }
-      } else if (typeof items === 'object') {
-        for (const [key, val] of Object.entries(items)) {
-          if (!val || typeof val !== 'object') continue
-          if (poolFilter && val.tag !== poolFilter && val.pool !== poolFilter && key !== poolFilter) continue
-          const ts = getStartOfDay(val.ts || val.timestamp || Number(key))
-          if (!ts) continue
-          if (!daily[ts]) daily[ts] = { balance: 0, hashrate: 0, workerCount: 0, count: 0 }
-          daily[ts].balance = val.balance || daily[ts].balance
-          daily[ts].hashrate += (val.hashrate || 0)
-          daily[ts].workerCount += (val.worker_count || val.workerCount || 0)
-          daily[ts].count += 1
-        }
-      }
-    }
-  }
-  return daily
-}
+      const ts = getStartOfDay(Number(entry.ts))
+      if (!ts) continue
 
-function processRevenueData (results, poolFilter) {
-  const daily = {}
-  for (const res of results) {
-    if (res.error || !res) continue
-    const data = Array.isArray(res) ? res : (res.data || res.result || [])
-    if (!Array.isArray(data)) continue
-    for (const tx of data) {
-      if (!tx) continue
-      const txList = tx.data || tx.transactions || tx
-      if (!Array.isArray(txList)) continue
-      for (const t of txList) {
-        if (!t) continue
-        if (poolFilter && t.tag !== poolFilter && t.pool !== poolFilter && t.id !== poolFilter) continue
-        const ts = getStartOfDay(t.ts || t.timestamp || t.time)
-        if (!ts) continue
-        if (!daily[ts]) daily[ts] = { revenueBTC: 0 }
-        const amount = t.changed_balance || t.amount || t.value || 0
-        daily[ts].revenueBTC += Math.abs(amount) / BTC_SATS
+      const txs = entry.transactions || []
+      if (!Array.isArray(txs) || txs.length === 0) continue
+
+      for (const tx of txs) {
+        if (!tx) continue
+        if (poolFilter && tx.username !== poolFilter) continue
+
+        if (!daily[ts]) daily[ts] = { revenueBTC: 0, hashrate: 0, hashCount: 0 }
+        daily[ts].revenueBTC += Math.abs(tx.changed_balance || 0)
+        if (tx.mining_extra?.hash_rate) {
+          daily[ts].hashrate += tx.mining_extra.hash_rate
+          daily[ts].hashCount++
+        }
       }
     }
   }
@@ -164,7 +117,6 @@ function calculateAggregateSummary (log) {
 
 module.exports = {
   getPoolStatsAggregate,
-  processStatsData,
-  processRevenueData,
+  processTransactionData,
   calculateAggregateSummary
 }
