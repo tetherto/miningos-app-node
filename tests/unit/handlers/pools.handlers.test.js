@@ -34,6 +34,10 @@ test('getPoolStatsAggregate - happy path', async (t) => {
   t.ok(result.log, 'should return log array')
   t.ok(result.summary, 'should return summary')
   t.ok(Array.isArray(result.log), 'log should be array')
+  if (result.log.length > 0) {
+    const entry = result.log[0]
+    t.ok(entry.snapshotCount === undefined, 'should not include snapshotCount')
+  }
   t.pass()
 })
 

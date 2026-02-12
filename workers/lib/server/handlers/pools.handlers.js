@@ -61,8 +61,7 @@ async function getPoolStatsAggregate (ctx, req) {
       balance: stats.balance || 0,
       hashrate: stats.hashrate || 0,
       workerCount: stats.workerCount || 0,
-      revenueBTC: revenue.revenueBTC || 0,
-      snapshotCount: stats.count || 0
+      revenueBTC: revenue.revenueBTC || 0
     })
   }
 
