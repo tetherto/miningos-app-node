@@ -3,9 +3,7 @@
 const test = require('brittle')
 const {
   getPools,
-  flattenResults,
-  flattenStatsResults,
-  mergePoolData,
+  flattenPoolStats,
   calculatePoolsSummary
 } = require('../../../workers/lib/server/handlers/pools.handlers')
 
@@ -16,13 +14,16 @@ test('getPools - happy path', async (t) => {
     },
     net_r0: {
       jRequest: async (key, method, payload) => {
-        if (method === 'listThings') {
-          return [{ id: 'pool1', name: 'Pool 1', tag: 't-minerpool', status: 1 }]
-        }
         if (method === 'getWrkExtData') {
-          return { data: [{ data: { pool1: { hashrate: 100000, worker_count: 5, balance: 50000 } } }] }
+          return [{
+            ts: '1770000000000',
+            stats: [
+              { poolType: 'f2pool', username: 'user1', hashrate: 100000, worker_count: 5, balance: 0.5, timestamp: 1770000000000 },
+              { poolType: 'ocean', username: 'user2', hashrate: 200000, worker_count: 10, balance: 1.2, timestamp: 1770000000000 }
+            ]
+          }]
         }
-        return {}
+        return []
       }
     }
   }
@@ -32,6 +33,8 @@ test('getPools - happy path', async (t) => {
   t.ok(result.pools, 'should return pools array')
   t.ok(result.summary, 'should return summary')
   t.ok(Array.isArray(result.pools), 'pools should be array')
+  t.is(result.pools.length, 2, 'should have 2 pools')
+  t.is(result.summary.poolCount, 2, 'summary should count 2 pools')
   t.pass()
 })
 
@@ -39,21 +42,21 @@ test('getPools - with filter', async (t) => {
   const mockCtx = {
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
     net_r0: {
-      jRequest: async (key, method) => {
-        if (method === 'listThings') {
-          return [
-            { id: 'pool1', name: 'Pool 1', status: 1 },
-            { id: 'pool2', name: 'Pool 2', status: 0 }
-          ]
-        }
-        return { data: [] }
-      }
+      jRequest: async () => [{
+        ts: '1770000000000',
+        stats: [
+          { poolType: 'f2pool', username: 'user1', hashrate: 100000, worker_count: 5, balance: 0.5 },
+          { poolType: 'ocean', username: 'user2', hashrate: 200000, worker_count: 10, balance: 0 }
+        ]
+      }]
     }
   }
 
-  const mockReq = { query: { filter: '{"status":1}' } }
+  const mockReq = { query: { filter: '{"pool":"f2pool"}' } }
   const result = await getPools(mockCtx, mockReq, {})
   t.ok(result.pools, 'should return filtered pools')
+  t.is(result.pools.length, 1, 'should have 1 pool after filter')
+  t.is(result.pools[0].pool, 'f2pool', 'should match filter')
   t.pass()
 })
 
@@ -70,60 +73,45 @@ test('getPools - empty ork results', async (t) => {
   t.pass()
 })
 
-test('flattenResults - flattens ork arrays', (t) => {
+test('flattenPoolStats - extracts pools from ext-data stats array', (t) => {
   const results = [
-    [{ id: 'pool1' }, { id: 'pool2' }],
-    [{ id: 'pool3' }]
+    [{
+      ts: '1770000000000',
+      stats: [
+        { poolType: 'f2pool', username: 'user1', hashrate: 100000, worker_count: 5, balance: 0.5 },
+        { poolType: 'ocean', username: 'user2', hashrate: 200000, worker_count: 10, balance: 1.2 }
+      ]
+    }]
   ]
-  const flat = flattenResults(results)
-  t.is(flat.length, 3, 'should flatten all items')
+  const pools = flattenPoolStats(results)
+  t.is(pools.length, 2, 'should extract 2 pools')
+  t.is(pools[0].pool, 'f2pool', 'should have correct pool type')
+  t.is(pools[0].account, 'user1', 'should have correct account')
+  t.is(pools[0].hashrate, 100000, 'should have correct hashrate')
+  t.is(pools[1].pool, 'ocean', 'should have correct pool type')
   t.pass()
 })
 
-test('flattenResults - handles error results', (t) => {
-  const results = [{ error: 'timeout' }, [{ id: 'pool1' }]]
-  const flat = flattenResults(results)
-  t.is(flat.length, 1, 'should skip error results')
-  t.pass()
-})
-
-test('flattenResults - handles non-array input', (t) => {
-  const flat = flattenResults(null)
-  t.is(flat.length, 0, 'should return empty array')
-  t.pass()
-})
-
-test('flattenStatsResults - builds stats map', (t) => {
+test('flattenPoolStats - deduplicates pools across orks', (t) => {
   const results = [
-    { data: [{ data: { pool1: { hashrate: 100 }, pool2: { hashrate: 200 } } }] }
+    [{ ts: '1770000000000', stats: [{ poolType: 'f2pool', username: 'user1', hashrate: 100 }] }],
+    [{ ts: '1770000000000', stats: [{ poolType: 'f2pool', username: 'user1', hashrate: 200 }] }]
   ]
-  const stats = flattenStatsResults(results)
-  t.ok(stats.pool1, 'should have pool1 stats')
-  t.ok(stats.pool2, 'should have pool2 stats')
-  t.is(stats.pool1.hashrate, 100, 'should have correct hashrate')
+  const pools = flattenPoolStats(results)
+  t.is(pools.length, 1, 'should deduplicate by poolType:username')
   t.pass()
 })
 
-test('flattenStatsResults - handles error results', (t) => {
+test('flattenPoolStats - handles error results', (t) => {
   const results = [{ error: 'timeout' }]
-  const stats = flattenStatsResults(results)
-  t.is(Object.keys(stats).length, 0, 'should be empty')
+  const pools = flattenPoolStats(results)
+  t.is(pools.length, 0, 'should be empty')
   t.pass()
 })
 
-test('mergePoolData - merges devices with stats', (t) => {
-  const devices = [
-    { id: 'pool1', name: 'Pool 1', status: 1 },
-    { id: 'pool2', name: 'Pool 2', status: 1 }
-  ]
-  const stats = {
-    pool1: { hashrate: 100, worker_count: 5, balance: 50000 }
-  }
-
-  const pools = mergePoolData(devices, stats)
-  t.is(pools.length, 2, 'should return all devices')
-  t.is(pools[0].hashrate, 100, 'should merge stats')
-  t.is(pools[1].hashrate, 0, 'should default missing stats')
+test('flattenPoolStats - handles non-array input', (t) => {
+  const pools = flattenPoolStats(null)
+  t.is(pools.length, 0, 'should return empty array')
   t.pass()
 })
 

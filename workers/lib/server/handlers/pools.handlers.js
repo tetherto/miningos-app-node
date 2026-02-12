@@ -7,8 +7,7 @@ const {
 } = require('../../constants')
 const {
   requestRpcMapLimit,
-  parseJsonQueryParam,
-  runParallel
+  parseJsonQueryParam
 } = require('../../utils')
 
 async function getPools (ctx, req) {
@@ -16,22 +15,12 @@ async function getPools (ctx, req) {
   const sort = req.query.sort ? parseJsonQueryParam(req.query.sort, 'ERR_SORT_INVALID_JSON') : null
   const fields = req.query.fields ? parseJsonQueryParam(req.query.fields, 'ERR_FIELDS_INVALID_JSON') : null
 
-  const [deviceResults, statsResults] = await runParallel([
-    (cb) => requestRpcMapLimit(ctx, RPC_METHODS.LIST_THINGS, {
-      query: { tags: { $in: ['t-minerpool'] } },
-      status: 1
-    }).then(r => cb(null, r)).catch(cb),
+  const statsResults = await requestRpcMapLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+    type: 'minerpool',
+    query: { key: MINERPOOL_EXT_DATA_KEYS.STATS }
+  })
 
-    (cb) => requestRpcMapLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
-      type: 'minerpool',
-      query: { key: MINERPOOL_EXT_DATA_KEYS.STATS }
-    }).then(r => cb(null, r)).catch(cb)
-  ])
-
-  const devices = flattenResults(deviceResults)
-  const stats = flattenStatsResults(statsResults)
-
-  const pools = mergePoolData(devices, stats)
+  const pools = flattenPoolStats(statsResults)
 
   let result = pools
   if (filter) {
@@ -68,59 +57,55 @@ async function getPools (ctx, req) {
   return { pools: result, summary }
 }
 
-function flattenResults (results) {
-  const flat = []
-  if (!Array.isArray(results)) return flat
-  for (const orkResult of results) {
-    if (!orkResult || orkResult.error) continue
-    const items = Array.isArray(orkResult) ? orkResult : (orkResult.data || orkResult.result || [])
-    if (Array.isArray(items)) {
-      flat.push(...items)
-    }
-  }
-  return flat
-}
+/**
+ * Extracts pool stats from ext-data RPC results.
+ * The ext-data response structure is:
+ *   [ orkResult1, orkResult2, ... ]
+ * where each orkResult is:
+ *   [ { ts, stats: [ {poolType, username, hashrate, balance, ...}, ... ], ... } ]
+ */
+function flattenPoolStats (results) {
+  const pools = []
+  const seen = new Set()
+  if (!Array.isArray(results)) return pools
 
-function flattenStatsResults (results) {
-  const statsMap = {}
-  if (!Array.isArray(results)) return statsMap
   for (const orkResult of results) {
     if (!orkResult || orkResult.error) continue
     const items = Array.isArray(orkResult) ? orkResult : (orkResult.data || orkResult.result || [])
-    if (Array.isArray(items)) {
-      for (const item of items) {
-        if (!item) continue
-        const entries = item.data || item.stats || item
-        if (typeof entries === 'object' && !Array.isArray(entries)) {
-          for (const [poolId, stat] of Object.entries(entries)) {
-            statsMap[poolId] = stat
-          }
-        }
+    if (!Array.isArray(items)) continue
+
+    for (const item of items) {
+      if (!item) continue
+      const stats = item.stats || item.data || []
+      if (!Array.isArray(stats)) continue
+
+      for (const stat of stats) {
+        if (!stat) continue
+        const poolKey = `${stat.poolType}:${stat.username}`
+        if (seen.has(poolKey)) continue
+        seen.add(poolKey)
+
+        pools.push({
+          name: stat.username || stat.poolType,
+          pool: stat.poolType,
+          account: stat.username,
+          status: 'active',
+          hashrate: stat.hashrate || 0,
+          hashrate1h: stat.hashrate_1h || 0,
+          hashrate24h: stat.hashrate_24h || 0,
+          workerCount: stat.worker_count || 0,
+          activeWorkerCount: stat.active_workers_count || 0,
+          balance: stat.balance || 0,
+          unsettled: stat.unsettled || 0,
+          revenue24h: stat.revenue_24h || stat.estimated_today_income || 0,
+          yearlyBalances: stat.yearlyBalances || [],
+          lastUpdated: stat.timestamp || null
+        })
       }
     }
   }
-  return statsMap
-}
 
-function mergePoolData (devices, stats) {
-  return devices.map(device => {
-    const poolId = device.id || device.tag || device.name
-    const stat = stats[poolId] || {}
-
-    return {
-      id: poolId,
-      name: device.name || poolId,
-      tag: device.tag,
-      status: device.status,
-      url: device.url || stat.url,
-      hashrate: stat.hashrate || 0,
-      workerCount: stat.worker_count || stat.workerCount || 0,
-      balance: stat.balance || 0,
-      lastUpdated: stat.lastUpdated || stat.last_updated || null,
-      ...device,
-      ...stat
-    }
-  })
+  return pools
 }
 
 function calculatePoolsSummary (pools) {
@@ -139,8 +124,6 @@ function calculatePoolsSummary (pools) {
 
 module.exports = {
   getPools,
-  flattenResults,
-  flattenStatsResults,
-  mergePoolData,
+  flattenPoolStats,
   calculatePoolsSummary
 }
