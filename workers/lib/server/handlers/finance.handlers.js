@@ -4,7 +4,8 @@ const {
   WORKER_TYPES,
   AGGR_FIELDS,
   PERIOD_TYPES,
-  RPC_METHODS
+  RPC_METHODS,
+  GLOBAL_DATA_TYPES
 } = require('../../constants')
 const {
   requestRpcEachLimit,
@@ -18,6 +19,7 @@ async function getCostSummary (ctx, req) {
   const start = Number(req.query.start)
   const end = Number(req.query.end)
   const period = req.query.period || PERIOD_TYPES.MONTHLY
+  const site = req.query.site
 
   if (!start || !end) {
     throw new Error('ERR_MISSING_START_END')
@@ -29,14 +31,10 @@ async function getCostSummary (ctx, req) {
 
   const startDate = new Date(start).toISOString()
   const endDate = new Date(end).toISOString()
-  const startYearMonth = `${new Date(start).getFullYear()}-${String(new Date(start).getMonth() + 1).padStart(2, '0')}`
-  const endYearMonth = `${new Date(end).getFullYear()}-${String(new Date(end).getMonth() + 1).padStart(2, '0')}`
 
   const [productionCosts, priceResults, consumptionResults] = await runParallel([
-    (cb) => ctx.globalDataLib.getGlobalData({
-      type: 'productionCosts',
-      range: { gte: startYearMonth, lte: endYearMonth }
-    }).then(r => cb(null, r)).catch(cb),
+    (cb) => getProductionCosts(ctx, site, start, end)
+      .then(r => cb(null, r)).catch(cb),
 
     (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
       type: WORKER_TYPES.MEMPOOL,
@@ -74,11 +72,8 @@ async function getCostSummary (ctx, req) {
 
     const monthKey = `${new Date(ts).getFullYear()}-${String(new Date(ts).getMonth() + 1).padStart(2, '0')}`
     const costs = costsByMonth[monthKey] || {}
-    const energyCostPerMWh = costs.energyCostPerMWh || 0
-    const operationalCostPerMWh = costs.operationalCostPerMWh || 0
-
-    const energyCostsUSD = consumptionMWh * energyCostPerMWh
-    const operationalCostsUSD = consumptionMWh * operationalCostPerMWh
+    const energyCostsUSD = costs.energyCostPerDay || 0
+    const operationalCostsUSD = costs.operationalCostPerDay || 0
     const totalCostsUSD = energyCostsUSD + operationalCostsUSD
 
     log.push({
@@ -156,16 +151,33 @@ function processPriceData (results) {
   return daily
 }
 
+async function getProductionCosts (ctx, site, start, end) {
+  if (!ctx.globalDataLib) return []
+  const costs = await ctx.globalDataLib.getGlobalData({
+    type: GLOBAL_DATA_TYPES.PRODUCTION_COSTS
+  })
+  if (!Array.isArray(costs)) return []
+
+  const startDate = new Date(start)
+  const endDate = new Date(end)
+  return costs.filter(entry => {
+    if (!entry || !entry.year || !entry.month) return false
+    if (site && entry.site !== site) return false
+    const entryDate = new Date(entry.year, entry.month - 1, 1)
+    return entryDate >= startDate && entryDate <= endDate
+  })
+}
+
 function processCostsData (costs) {
   const byMonth = {}
   if (!Array.isArray(costs)) return byMonth
   for (const entry of costs) {
-    if (!entry || !entry.key) continue
-    const key = entry.key
-    const data = entry.value || entry.data || entry
+    if (!entry || !entry.year || !entry.month) continue
+    const key = `${entry.year}-${String(entry.month).padStart(2, '0')}`
+    const daysInMonth = new Date(entry.year, entry.month, 0).getDate()
     byMonth[key] = {
-      energyCostPerMWh: data.energyCostPerMWh || data.energy_cost_per_mwh || 0,
-      operationalCostPerMWh: data.operationalCostPerMWh || data.operational_cost_per_mwh || 0
+      energyCostPerDay: (entry.energyCost || entry.energyCostsUSD || 0) / daysInMonth,
+      operationalCostPerDay: (entry.operationalCost || entry.operationalCostsUSD || 0) / daysInMonth
     }
   }
   return byMonth
@@ -209,6 +221,7 @@ module.exports = {
   getCostSummary,
   processConsumptionData,
   processPriceData,
+  getProductionCosts,
   processCostsData,
   calculateCostSummary
 }

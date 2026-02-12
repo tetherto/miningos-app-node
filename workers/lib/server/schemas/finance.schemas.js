@@ -8,6 +8,7 @@ const schemas = {
         start: { type: 'integer' },
         end: { type: 'integer' },
         period: { type: 'string', enum: ['daily', 'monthly', 'yearly'] },
+        site: { type: 'string' },
         overwriteCache: { type: 'boolean' }
       },
       required: ['start', 'end']

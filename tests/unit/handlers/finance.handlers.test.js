@@ -26,9 +26,7 @@ test('getCostSummary - happy path', async (t) => {
       }
     },
     globalDataLib: {
-      getGlobalData: async () => [
-        { key: '2023-11', value: { energyCostPerMWh: 50, operationalCostPerMWh: 10 } }
-      ]
+      getGlobalData: async () => []
     }
   }
 
@@ -109,12 +107,15 @@ test('processPriceData - processes valid data', (t) => {
   t.pass()
 })
 
-test('processCostsData - processes valid costs', (t) => {
-  const costs = [{ key: '2023-11', value: { energyCostPerMWh: 50, operationalCostPerMWh: 10 } }]
+test('processCostsData - processes app-node format (energyCost)', (t) => {
+  const costs = [
+    { site: 'site1', year: 2023, month: 11, energyCost: 30000, operationalCost: 6000 }
+  ]
+
   const result = processCostsData(costs)
   t.ok(result['2023-11'], 'should have month key')
-  t.is(result['2023-11'].energyCostPerMWh, 50, 'should have energy cost')
-  t.is(result['2023-11'].operationalCostPerMWh, 10, 'should have operational cost')
+  t.is(result['2023-11'].energyCostPerDay, 1000, 'should have daily energy cost (30000/30)')
+  t.is(result['2023-11'].operationalCostPerDay, 200, 'should have daily operational cost (6000/30)')
   t.pass()
 })
 
