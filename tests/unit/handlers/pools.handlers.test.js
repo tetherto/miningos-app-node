@@ -14,7 +14,7 @@ test('getPoolBalanceHistory - happy path', async (t) => {
     },
     net_r0: {
       jRequest: async () => {
-        return [{ data: [{ ts: 1700006400000, balance: 50000, revenue: 100, tag: 'pool1' }] }]
+        return [{ data: [{ ts: 1700006400000, balance: 50000, hashrate: 120000, revenue: 100, tag: 'pool1' }] }]
       }
     }
   }
@@ -27,6 +27,11 @@ test('getPoolBalanceHistory - happy path', async (t) => {
   const result = await getPoolBalanceHistory(mockCtx, mockReq, {})
   t.ok(result.log, 'should return log array')
   t.ok(Array.isArray(result.log), 'log should be array')
+  t.ok(result.log.length > 0, 'should have entries')
+  const entry = result.log[0]
+  t.ok(entry.hashrate !== undefined, 'should include hashrate')
+  t.is(entry.hashrate, 120000, 'hashrate should match source data')
+  t.ok(entry.snapshotCount === undefined, 'should not include snapshotCount')
   t.pass()
 })
 

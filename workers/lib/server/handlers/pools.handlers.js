@@ -47,8 +47,8 @@ async function getPoolBalanceHistory (ctx, req) {
       return {
         ts: Number(ts),
         balance: latest.balance || 0,
-        revenue,
-        snapshotCount: entries.length
+        hashrate: latest.hashrate || 0,
+        revenue
       }
     })
 
