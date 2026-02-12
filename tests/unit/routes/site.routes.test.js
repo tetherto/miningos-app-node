@@ -4,13 +4,13 @@ const test = require('brittle')
 const { testModuleStructure, testHandlerFunctions } = require('../helpers/routeTestHelpers')
 const { createRoutesForTest } = require('../helpers/mockHelpers')
 
-test('v2 site routes - module structure', (t) => {
-  testModuleStructure(t, '../../../workers/lib/server/routes/v2/site.routes.js', 'v2/site')
+test('site routes - module structure', (t) => {
+  testModuleStructure(t, '../../../workers/lib/server/routes/site.routes.js', '/site')
   t.pass()
 })
 
-test('v2 site routes - route definitions', (t) => {
-  const routes = createRoutesForTest('../../../workers/lib/server/routes/v2/site.routes.js')
+test('site routes - route definitions', (t) => {
+  const routes = createRoutesForTest('../../../workers/lib/server/routes/site.routes.js')
 
   const routeUrls = routes.map(route => route.url)
   t.ok(routeUrls.includes('/auth/site/status/live'), 'should have site status live route')
@@ -18,8 +18,8 @@ test('v2 site routes - route definitions', (t) => {
   t.pass()
 })
 
-test('v2 site routes - HTTP methods', (t) => {
-  const routes = createRoutesForTest('../../../workers/lib/server/routes/v2/site.routes.js')
+test('site routes - HTTP methods', (t) => {
+  const routes = createRoutesForTest('../../../workers/lib/server/routes/site.routes.js')
 
   const siteStatusRoute = routes.find(r => r.url === '/auth/site/status/live')
   t.is(siteStatusRoute.method, 'GET', 'site status live route should be GET')
@@ -27,8 +27,8 @@ test('v2 site routes - HTTP methods', (t) => {
   t.pass()
 })
 
-test('v2 site routes - schema validation', (t) => {
-  const routes = createRoutesForTest('../../../workers/lib/server/routes/v2/site.routes.js')
+test('site routes - schema validation', (t) => {
+  const routes = createRoutesForTest('../../../workers/lib/server/routes/site.routes.js')
 
   const siteStatusRoute = routes.find(r => r.url === '/auth/site/status/live')
   t.ok(siteStatusRoute.schema, 'site status live route should have schema')
@@ -38,17 +38,17 @@ test('v2 site routes - schema validation', (t) => {
   t.pass()
 })
 
-test('v2 site routes - handler functions', (t) => {
-  const routes = createRoutesForTest('../../../workers/lib/server/routes/v2/site.routes.js')
-  testHandlerFunctions(t, routes, 'v2/site')
+test('site routes - handler functions', (t) => {
+  const routes = createRoutesForTest('../../../workers/lib/server/routes/site.routes.js')
+  testHandlerFunctions(t, routes, '/site')
   t.pass()
 })
 
-test('v2 site routes - onRequest functions', (t) => {
-  const routes = createRoutesForTest('../../../workers/lib/server/routes/v2/site.routes.js')
+test('site routes - onRequest functions', (t) => {
+  const routes = createRoutesForTest('../../../workers/lib/server/routes/site.routes.js')
 
   routes.forEach(route => {
-    t.ok(typeof route.onRequest === 'function', `v2/site route ${route.url} should have onRequest function`)
+    t.ok(typeof route.onRequest === 'function', `/site route ${route.url} should have onRequest function`)
   })
 
   t.pass()

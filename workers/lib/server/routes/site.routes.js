@@ -1,8 +1,8 @@
-"use strict";
+'use strict'
 
-const { ENDPOINTS, HTTP_METHODS } = require("../../constants");
-const { getSiteLiveStatus } = require("../handlers/site.handlers");
-const { createCachedAuthRoute } = require("../lib/routeHelpers");
+const { ENDPOINTS, HTTP_METHODS } = require('../../constants')
+const { getSiteLiveStatus } = require('../handlers/site.handlers')
+const { createCachedAuthRoute } = require('../lib/routeHelpers')
 
 module.exports = (ctx) => [
   {
@@ -10,17 +10,17 @@ module.exports = (ctx) => [
     url: ENDPOINTS.SITE_STATUS_LIVE,
     schema: {
       querystring: {
-        type: "object",
+        type: 'object',
         properties: {
-          overwriteCache: { type: "boolean" },
-        },
-      },
+          overwriteCache: { type: 'boolean' }
+        }
+      }
     },
     ...createCachedAuthRoute(
       ctx,
-      ["site-status-live"],
+      ['site-status-live'],
       ENDPOINTS.SITE_STATUS_LIVE,
-      getSiteLiveStatus,
-    ),
-  },
-];
+      getSiteLiveStatus
+    )
+  }
+]

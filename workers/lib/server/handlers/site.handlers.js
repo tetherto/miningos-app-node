@@ -1,6 +1,6 @@
-"use strict";
+'use strict'
 
-const { requestRpcMapLimit } = require("../../utils");
+const { requestRpcMapLimit } = require('../../utils')
 
 /**
  * Extracts the latest entry from a tail-log key result.
@@ -12,11 +12,11 @@ const { requestRpcMapLimit } = require("../../utils");
  * @param {number} keyIndex - Index of the key in the keys array
  * @returns {Object|null} The latest entry for that key, or null
  */
-function extractKeyEntry(orkResult, keyIndex) {
-  if (!Array.isArray(orkResult)) return null;
-  const keyResult = orkResult[keyIndex];
-  if (!Array.isArray(keyResult) || keyResult.length === 0) return null;
-  return keyResult[0] || null;
+function extractKeyEntry (orkResult, keyIndex) {
+  if (!Array.isArray(orkResult)) return null
+  const keyResult = orkResult[keyIndex]
+  if (!Array.isArray(keyResult) || keyResult.length === 0) return null
+  return keyResult[0] || null
 }
 
 /**
@@ -26,7 +26,7 @@ function extractKeyEntry(orkResult, keyIndex) {
  * @param {Array} tailLogResults - Array of ork responses from tailLogMulti
  * @returns {Object} Aggregated miner stats
  */
-function aggregateMinerStats(tailLogResults) {
+function aggregateMinerStats (tailLogResults) {
   const stats = {
     hashrate: 0,
     nominalHashrate: 0,
@@ -34,29 +34,29 @@ function aggregateMinerStats(tailLogResults) {
     error: 0,
     offline: 0,
     total: 0,
-    alerts: { critical: 0, high: 0, medium: 0 },
-  };
+    alerts: { critical: 0, high: 0, medium: 0 }
+  }
 
   for (const orkResult of tailLogResults) {
-    const entry = extractKeyEntry(orkResult, 0);
-    if (!entry) continue;
+    const entry = extractKeyEntry(orkResult, 0)
+    if (!entry) continue
 
-    stats.hashrate += entry.hashrate_mhs_1m_sum_aggr || 0;
-    stats.nominalHashrate += entry.nominal_hashrate_mhs_sum_aggr || 0;
-    stats.online += entry.online_or_minor_error_miners_amount_aggr || 0;
-    stats.error += entry.not_mining_miners_amount_aggr || 0;
-    stats.offline += entry.offline_or_sleeping_miners_amount_aggr || 0;
-    stats.total += entry.hashrate_mhs_1m_cnt_aggr || 0;
+    stats.hashrate += entry.hashrate_mhs_1m_sum_aggr || 0
+    stats.nominalHashrate += entry.nominal_hashrate_mhs_sum_aggr || 0
+    stats.online += entry.online_or_minor_error_miners_amount_aggr || 0
+    stats.error += entry.not_mining_miners_amount_aggr || 0
+    stats.offline += entry.offline_or_sleeping_miners_amount_aggr || 0
+    stats.total += entry.hashrate_mhs_1m_cnt_aggr || 0
 
-    const alerts = entry.alerts_aggr;
-    if (alerts && typeof alerts === "object") {
-      stats.alerts.critical += alerts.critical || 0;
-      stats.alerts.high += alerts.high || 0;
-      stats.alerts.medium += alerts.medium || 0;
+    const alerts = entry.alerts_aggr
+    if (alerts && typeof alerts === 'object') {
+      stats.alerts.critical += alerts.critical || 0
+      stats.alerts.high += alerts.high || 0
+      stats.alerts.medium += alerts.medium || 0
     }
   }
 
-  return stats;
+  return stats
 }
 
 /**
@@ -66,16 +66,16 @@ function aggregateMinerStats(tailLogResults) {
  * @param {Array} tailLogResults - Array of ork responses from tailLogMulti
  * @returns {number} Total site power in Watts
  */
-function aggregatePowerStats(tailLogResults) {
-  let sitePower = 0;
+function aggregatePowerStats (tailLogResults) {
+  let sitePower = 0
 
   for (const orkResult of tailLogResults) {
-    const entry = extractKeyEntry(orkResult, 1);
-    if (!entry) continue;
-    sitePower += entry.site_power_w || 0;
+    const entry = extractKeyEntry(orkResult, 1)
+    if (!entry) continue
+    sitePower += entry.site_power_w || 0
   }
 
-  return sitePower;
+  return sitePower
 }
 
 /**
@@ -85,16 +85,16 @@ function aggregatePowerStats(tailLogResults) {
  * @param {Array} tailLogResults - Array of ork responses from tailLogMulti
  * @returns {number} Total container nominal miner capacity
  */
-function aggregateContainerCapacity(tailLogResults) {
-  let capacity = 0;
+function aggregateContainerCapacity (tailLogResults) {
+  let capacity = 0
 
   for (const orkResult of tailLogResults) {
-    const entry = extractKeyEntry(orkResult, 2);
-    if (!entry) continue;
-    capacity += entry.container_nominal_miner_capacity_sum_aggr || 0;
+    const entry = extractKeyEntry(orkResult, 2)
+    if (!entry) continue
+    capacity += entry.container_nominal_miner_capacity_sum_aggr || 0
   }
 
-  return capacity;
+  return capacity
 }
 
 /**
@@ -103,24 +103,24 @@ function aggregateContainerCapacity(tailLogResults) {
  * @param {Array} poolDataResults - Array of ork responses from getWrkExtData
  * @returns {Object} Aggregated pool stats
  */
-function aggregatePoolStats(poolDataResults) {
+function aggregatePoolStats (poolDataResults) {
   const stats = {
     totalHashrate: 0,
     activeWorkers: 0,
-    totalWorkers: 0,
-  };
+    totalWorkers: 0
+  }
 
   for (const orkResult of poolDataResults) {
-    if (!Array.isArray(orkResult)) continue;
+    if (!Array.isArray(orkResult)) continue
     for (const pool of orkResult) {
-      if (!pool || !pool.stats) continue;
-      stats.totalHashrate += pool.stats.hashrate || 0;
-      stats.activeWorkers += pool.stats.active_workers_count || 0;
-      stats.totalWorkers += pool.stats.worker_count || 0;
+      if (!pool || !pool.stats) continue
+      stats.totalHashrate += pool.stats.hashrate || 0
+      stats.activeWorkers += pool.stats.active_workers_count || 0
+      stats.totalWorkers += pool.stats.worker_count || 0
     }
   }
 
-  return stats;
+  return stats
 }
 
 /**
@@ -130,22 +130,22 @@ function aggregatePoolStats(poolDataResults) {
  * @param {Array} globalConfigResults - Array of ork responses from getGlobalConfig
  * @returns {Object} Nominal configuration values
  */
-function extractGlobalConfig(globalConfigResults) {
+function extractGlobalConfig (globalConfigResults) {
   const config = {
     nominalHashrate: 0,
-    nominalPowerAvailability_MW: 0,
-  };
-
-  for (const orkResult of globalConfigResults) {
-    if (!orkResult || typeof orkResult !== "object") continue;
-    if (orkResult.nominalHashrate)
-      config.nominalHashrate = orkResult.nominalHashrate;
-    if (orkResult.nominalPowerAvailability_MW)
-      config.nominalPowerAvailability_MW =
-        orkResult.nominalPowerAvailability_MW;
+    nominalPowerAvailability_MW: 0
   }
 
-  return config;
+  for (const orkResult of globalConfigResults) {
+    if (!orkResult || typeof orkResult !== 'object') continue
+    if (orkResult.nominalHashrate) { config.nominalHashrate = orkResult.nominalHashrate }
+    if (orkResult.nominalPowerAvailability_MW) {
+      config.nominalPowerAvailability_MW =
+        orkResult.nominalPowerAvailability_MW
+    }
+  }
+
+  return config
 }
 
 /**
@@ -155,9 +155,9 @@ function extractGlobalConfig(globalConfigResults) {
  * @param {number} nominal - Nominal/max value
  * @returns {number} Utilization percentage rounded to 1 decimal, or 0 if nominal is 0
  */
-function computeUtilization(value, nominal) {
-  if (!nominal || nominal === 0) return 0;
-  return Math.round((value / nominal) * 1000) / 10;
+function computeUtilization (value, nominal) {
+  if (!nominal || nominal === 0) return 0
+  return Math.round((value / nominal) * 1000) / 10
 }
 
 /**
@@ -168,51 +168,51 @@ function computeUtilization(value, nominal) {
  * @param {Array} globalConfigResults - getGlobalConfig RPC results
  * @returns {Object} Composed site status response
  */
-function composeSiteStatus(
+function composeSiteStatus (
   tailLogResults,
   poolDataResults,
-  globalConfigResults,
+  globalConfigResults
 ) {
-  const minerStats = aggregateMinerStats(tailLogResults);
-  const sitePower = aggregatePowerStats(tailLogResults);
-  const containerCapacity = aggregateContainerCapacity(tailLogResults);
-  const poolStats = aggregatePoolStats(poolDataResults);
-  const globalConfig = extractGlobalConfig(globalConfigResults);
+  const minerStats = aggregateMinerStats(tailLogResults)
+  const sitePower = aggregatePowerStats(tailLogResults)
+  const containerCapacity = aggregateContainerCapacity(tailLogResults)
+  const poolStats = aggregatePoolStats(poolDataResults)
+  const globalConfig = extractGlobalConfig(globalConfigResults)
 
-  const nominalPowerW = globalConfig.nominalPowerAvailability_MW * 1000000;
+  const nominalPowerW = globalConfig.nominalPowerAvailability_MW * 1000000
   const hashrateNominal =
-    minerStats.nominalHashrate || globalConfig.nominalHashrate || 0;
+    minerStats.nominalHashrate || globalConfig.nominalHashrate || 0
 
-  const hashrateValue = minerStats.hashrate;
-  const hashrateThs = hashrateValue / 1000000;
+  const hashrateValue = minerStats.hashrate
+  const hashrateThs = hashrateValue / 1000000
   const efficiencyWPerTh =
-    hashrateThs > 0 ? Math.round((sitePower / hashrateThs) * 10) / 10 : 0;
+    hashrateThs > 0 ? Math.round((sitePower / hashrateThs) * 10) / 10 : 0
 
   const sleep = Math.max(
     0,
     minerStats.total -
       minerStats.online -
       minerStats.error -
-      minerStats.offline,
-  );
+      minerStats.offline
+  )
   const alertTotal =
     minerStats.alerts.critical +
     minerStats.alerts.high +
-    minerStats.alerts.medium;
+    minerStats.alerts.medium
 
   return {
     hashrate: {
       value: hashrateValue,
       nominal: hashrateNominal,
-      utilization: computeUtilization(hashrateValue, hashrateNominal),
+      utilization: computeUtilization(hashrateValue, hashrateNominal)
     },
     power: {
       value: sitePower,
       nominal: nominalPowerW,
-      utilization: computeUtilization(sitePower, nominalPowerW),
+      utilization: computeUtilization(sitePower, nominalPowerW)
     },
     efficiency: {
-      value: efficiencyWPerTh,
+      value: efficiencyWPerTh
     },
     miners: {
       online: minerStats.online,
@@ -220,17 +220,17 @@ function composeSiteStatus(
       error: minerStats.error,
       sleep,
       total: minerStats.total,
-      containerCapacity,
+      containerCapacity
     },
     alerts: {
       critical: minerStats.alerts.critical,
       high: minerStats.alerts.high,
       medium: minerStats.alerts.medium,
-      total: alertTotal,
+      total: alertTotal
     },
     pools: poolStats,
-    ts: Date.now(),
-  };
+    ts: Date.now()
+  }
 }
 
 /**
@@ -243,12 +243,12 @@ function composeSiteStatus(
  *
  * Replaces 5 separate frontend API calls with a single server-side composition.
  */
-async function getSiteLiveStatus(ctx, req) {
+async function getSiteLiveStatus (ctx, req) {
   const tailLogPayload = {
     keys: [
-      { key: "stat-rtd", type: "miner", tag: "t-miner" },
-      { key: "stat-rtd", type: "powermeter", tag: "t-powermeter" },
-      { key: "stat-rtd", type: "container", tag: "t-container" },
+      { key: 'stat-rtd', type: 'miner', tag: 't-miner' },
+      { key: 'stat-rtd', type: 'powermeter', tag: 't-powermeter' },
+      { key: 'stat-rtd', type: 'container', tag: 't-container' }
     ],
     limit: 1,
     aggrFields: {
@@ -260,33 +260,33 @@ async function getSiteLiveStatus(ctx, req) {
       offline_or_sleeping_miners_amount_aggr: 1,
       hashrate_mhs_1m_cnt_aggr: 1,
       site_power_w: 1,
-      container_nominal_miner_capacity_sum_aggr: 1,
-    },
-  };
+      container_nominal_miner_capacity_sum_aggr: 1
+    }
+  }
 
   const poolPayload = {
-    type: "minerpool",
-    query: { key: "stats" },
-  };
+    type: 'minerpool',
+    query: { key: 'stats' }
+  }
 
   const globalConfigPayload = {
-    fields: { nominalHashrate: 1, nominalPowerAvailability_MW: 1 },
-  };
+    fields: { nominalHashrate: 1, nominalPowerAvailability_MW: 1 }
+  }
 
   const [tailLogResults, poolDataResults, globalConfigResults] =
     await Promise.all([
-      requestRpcMapLimit(ctx, "tailLogMulti", tailLogPayload),
-      requestRpcMapLimit(ctx, "getWrkExtData", poolPayload),
-      requestRpcMapLimit(ctx, "getGlobalConfig", globalConfigPayload),
-    ]);
+      requestRpcMapLimit(ctx, 'tailLogMulti', tailLogPayload),
+      requestRpcMapLimit(ctx, 'getWrkExtData', poolPayload),
+      requestRpcMapLimit(ctx, 'getGlobalConfig', globalConfigPayload)
+    ])
 
   return composeSiteStatus(
     tailLogResults,
     poolDataResults,
-    globalConfigResults,
-  );
+    globalConfigResults
+  )
 }
 
 module.exports = {
-  getSiteLiveStatus,
-};
+  getSiteLiveStatus
+}
