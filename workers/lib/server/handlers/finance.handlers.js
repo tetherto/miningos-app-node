@@ -6,7 +6,8 @@ const {
   PERIOD_TYPES,
   MINERPOOL_EXT_DATA_KEYS,
   RPC_METHODS,
-  BTC_SATS
+  BTC_SATS,
+  GLOBAL_DATA_TYPES
 } = require('../../constants')
 const {
   requestRpcEachLimit,
@@ -20,6 +21,7 @@ async function getEbitda (ctx, req) {
   const start = Number(req.query.start)
   const end = Number(req.query.end)
   const period = req.query.period || PERIOD_TYPES.MONTHLY
+  const site = req.query.site
 
   if (!start || !end) {
     throw new Error('ERR_MISSING_START_END')
@@ -31,10 +33,8 @@ async function getEbitda (ctx, req) {
 
   const startDate = new Date(start).toISOString()
   const endDate = new Date(end).toISOString()
-  const startYearMonth = `${new Date(start).getFullYear()}-${String(new Date(start).getMonth() + 1).padStart(2, '0')}`
-  const endYearMonth = `${new Date(end).getFullYear()}-${String(new Date(end).getMonth() + 1).padStart(2, '0')}`
 
-  const [transactionResults, tailLogResults, priceResults, currentPriceResults, productionCosts, blockResults] = await runParallel([
+  const [transactionResults, tailLogResults, priceResults, currentPriceResults, productionCosts] = await runParallel([
     (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
       type: WORKER_TYPES.MINERPOOL,
       query: { key: MINERPOOL_EXT_DATA_KEYS.TRANSACTIONS, start, end }
@@ -69,15 +69,8 @@ async function getEbitda (ctx, req) {
       query: { key: 'current_price' }
     }).then(r => cb(null, r)).catch(cb),
 
-    (cb) => ctx.globalDataLib.getGlobalData({
-      type: 'productionCosts',
-      range: { gte: startYearMonth, lte: endYearMonth }
-    }).then(r => cb(null, r)).catch(cb),
-
-    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
-      type: WORKER_TYPES.MEMPOOL,
-      query: { key: 'blocks', start, end }
-    }).then(r => cb(null, r)).catch(cb)
+    (cb) => getProductionCosts(ctx, site, start, end)
+      .then(r => cb(null, r)).catch(cb)
   ])
 
   const dailyTransactions = processTransactionData(transactionResults)
@@ -85,7 +78,6 @@ async function getEbitda (ctx, req) {
   const dailyPrices = processPriceData(priceResults)
   const currentBtcPrice = extractCurrentPrice(currentPriceResults)
   const costsByMonth = processCostsData(productionCosts)
-  const dailyBlocks = processBlockData(blockResults)
 
   const allDays = new Set([
     ...Object.keys(dailyTransactions),
@@ -98,7 +90,6 @@ async function getEbitda (ctx, req) {
     const transactions = dailyTransactions[dayTs] || {}
     const tailLog = dailyTailLog[dayTs] || {}
     const btcPrice = dailyPrices[dayTs] || currentBtcPrice || 0
-    const blocks = dailyBlocks[dayTs] || {}
 
     const revenueBTC = transactions.revenueBTC || 0
     const revenueUSD = revenueBTC * btcPrice
@@ -108,11 +99,8 @@ async function getEbitda (ctx, req) {
 
     const monthKey = `${new Date(ts).getFullYear()}-${String(new Date(ts).getMonth() + 1).padStart(2, '0')}`
     const costs = costsByMonth[monthKey] || {}
-    const energyCostPerMWh = costs.energyCostPerMWh || 0
-    const operationalCostPerMWh = costs.operationalCostPerMWh || 0
-
-    const energyCostsUSD = powerMWh * energyCostPerMWh
-    const operationalCostsUSD = powerMWh * operationalCostPerMWh
+    const energyCostsUSD = costs.energyCostPerDay || 0
+    const operationalCostsUSD = costs.operationalCostPerDay || 0
     const totalCostsUSD = energyCostsUSD + operationalCostsUSD
 
     const ebitdaSelling = revenueUSD - totalCostsUSD
@@ -132,11 +120,7 @@ async function getEbitda (ctx, req) {
       totalCostsUSD,
       ebitdaSelling,
       ebitdaHodl,
-      btcProductionCost,
-      blockCount: blocks.count || 0,
-      difficulty: blocks.difficulty || 0,
-      ebitdaMarginSelling: safeDiv(ebitdaSelling, revenueUSD),
-      ebitdaMarginHodl: safeDiv(ebitdaHodl, revenueBTC * currentBtcPrice)
+      btcProductionCost
     })
   }
 
@@ -241,42 +225,36 @@ function extractCurrentPrice (results) {
   return 0
 }
 
+async function getProductionCosts (ctx, site, start, end) {
+  if (!ctx.globalDataLib) return []
+  const costs = await ctx.globalDataLib.getGlobalData({
+    type: GLOBAL_DATA_TYPES.PRODUCTION_COSTS
+  })
+  if (!Array.isArray(costs)) return []
+
+  const startDate = new Date(start)
+  const endDate = new Date(end)
+  return costs.filter(entry => {
+    if (!entry || !entry.year || !entry.month) return false
+    if (site && entry.site !== site) return false
+    const entryDate = new Date(entry.year, entry.month - 1, 1)
+    return entryDate >= startDate && entryDate <= endDate
+  })
+}
+
 function processCostsData (costs) {
   const byMonth = {}
   if (!Array.isArray(costs)) return byMonth
   for (const entry of costs) {
-    if (!entry || !entry.key) continue
-    const key = entry.key
-    const data = entry.value || entry.data || entry
+    if (!entry || !entry.year || !entry.month) continue
+    const key = `${entry.year}-${String(entry.month).padStart(2, '0')}`
+    const daysInMonth = new Date(entry.year, entry.month, 0).getDate()
     byMonth[key] = {
-      energyCostPerMWh: data.energyCostPerMWh || data.energy_cost_per_mwh || 0,
-      operationalCostPerMWh: data.operationalCostPerMWh || data.operational_cost_per_mwh || 0
+      energyCostPerDay: (entry.energyCost || entry.energyCostsUSD || 0) / daysInMonth,
+      operationalCostPerDay: (entry.operationalCost || entry.operationalCostsUSD || 0) / daysInMonth
     }
   }
   return byMonth
-}
-
-function processBlockData (results) {
-  const daily = {}
-  for (const res of results) {
-    if (res.error || !res) continue
-    const data = Array.isArray(res) ? res : (res.data || res.result || [])
-    if (!Array.isArray(data)) continue
-    for (const entry of data) {
-      if (!entry) continue
-      const blocks = entry.data || entry.blocks || entry
-      if (Array.isArray(blocks)) {
-        for (const block of blocks) {
-          const ts = getStartOfDay(block.ts || block.timestamp || block.time)
-          if (!ts) continue
-          if (!daily[ts]) daily[ts] = { count: 0, difficulty: 0 }
-          daily[ts].count += 1
-          daily[ts].difficulty = block.difficulty || daily[ts].difficulty
-        }
-      }
-    }
-  }
-  return daily
 }
 
 function calculateEbitdaSummary (log, currentBtcPrice) {
@@ -318,7 +296,7 @@ module.exports = {
   processTransactionData,
   processPriceData,
   extractCurrentPrice,
+  getProductionCosts,
   processCostsData,
-  processBlockData,
   calculateEbitdaSummary
 }

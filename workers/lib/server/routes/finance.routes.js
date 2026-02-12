@@ -25,7 +25,8 @@ module.exports = (ctx) => {
           'finance/ebitda',
           req.query.start,
           req.query.end,
-          req.query.period
+          req.query.period,
+          req.query.site
         ],
         ENDPOINTS.FINANCE_EBITDA,
         getEbitda

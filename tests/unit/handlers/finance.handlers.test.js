@@ -8,7 +8,6 @@ const {
   processPriceData,
   extractCurrentPrice,
   processCostsData,
-  processBlockData,
   calculateEbitdaSummary
 } = require('../../../workers/lib/server/handlers/finance.handlers')
 
@@ -31,9 +30,6 @@ test('getEbitda - happy path', async (t) => {
           }
           if (payload.query && payload.query.key === 'current_price') {
             return { data: { USD: 40000 } }
-          }
-          if (payload.query && payload.query.key === 'blocks') {
-            return { data: [] }
           }
         }
         return {}
@@ -148,33 +144,21 @@ test('extractCurrentPrice - extracts object price', (t) => {
   t.pass()
 })
 
-test('processCostsData - processes valid costs', (t) => {
-  const costs = [{ key: '2023-11', value: { energyCostPerMWh: 50, operationalCostPerMWh: 10 } }]
+test('processCostsData - processes app-node format (energyCost)', (t) => {
+  const costs = [
+    { site: 'site1', year: 2023, month: 11, energyCost: 30000, operationalCost: 6000 }
+  ]
+
   const result = processCostsData(costs)
   t.ok(result['2023-11'], 'should have month key')
-  t.is(result['2023-11'].energyCostPerMWh, 50, 'should have energy cost')
+  t.is(result['2023-11'].energyCostPerDay, 1000, 'should have daily energy cost (30000/30)')
+  t.is(result['2023-11'].operationalCostPerDay, 200, 'should have daily operational cost (6000/30)')
   t.pass()
 })
 
 test('processCostsData - handles non-array input', (t) => {
   const result = processCostsData(null)
   t.is(Object.keys(result).length, 0, 'should be empty')
-  t.pass()
-})
-
-test('processBlockData - processes valid blocks', (t) => {
-  const results = [
-    [{ data: [{ ts: 1700006400000, difficulty: 12345 }] }]
-  ]
-  const daily = processBlockData(results)
-  t.ok(typeof daily === 'object', 'should return object')
-  t.pass()
-})
-
-test('processBlockData - handles error results', (t) => {
-  const results = [{ error: 'timeout' }]
-  const daily = processBlockData(results)
-  t.is(Object.keys(daily).length, 0, 'should be empty for errors')
   t.pass()
 })
 
