@@ -1,20 +1,13 @@
 'use strict'
 
-const { findClusters } = require('../../utils')
 const poolManagerService = require('../services/poolManager')
 
 const getStats = async (ctx, req) => {
-  const regions = _parseRegions(req.query.regions)
-  const clusters = findClusters(ctx, regions)
-
-  return poolManagerService.getPoolStats(ctx, clusters)
+  return poolManagerService.getPoolStats(ctx)
 }
 
 const getPools = async (ctx, req) => {
-  const regions = _parseRegions(req.query.regions)
-  const clusters = findClusters(ctx, regions)
-
-  const pools = await poolManagerService.getPoolConfigs(ctx, clusters)
+  const pools = await poolManagerService.getPoolConfigs(ctx)
 
   return {
     pools,
@@ -23,9 +16,6 @@ const getPools = async (ctx, req) => {
 }
 
 const getMiners = async (ctx, req) => {
-  const regions = _parseRegions(req.query.regions)
-  const clusters = findClusters(ctx, regions)
-
   const filters = {
     search: req.query.search,
     status: req.query.status,
@@ -35,14 +25,11 @@ const getMiners = async (ctx, req) => {
     limit: parseInt(req.query.limit) || 50
   }
 
-  return poolManagerService.getMinersWithPools(ctx, clusters, filters)
+  return poolManagerService.getMinersWithPools(ctx, filters)
 }
 
 const getUnits = async (ctx, req) => {
-  const regions = _parseRegions(req.query.regions)
-  const clusters = findClusters(ctx, regions)
-
-  const units = await poolManagerService.getUnitsWithPoolData(ctx, clusters)
+  const units = await poolManagerService.getUnitsWithPoolData(ctx)
 
   return {
     units,
@@ -51,14 +38,11 @@ const getUnits = async (ctx, req) => {
 }
 
 const getAlerts = async (ctx, req) => {
-  const regions = _parseRegions(req.query.regions)
-  const clusters = findClusters(ctx, regions)
-
   const filters = {
     limit: parseInt(req.query.limit) || 50
   }
 
-  const alerts = await poolManagerService.getPoolAlerts(ctx, clusters, filters)
+  const alerts = await poolManagerService.getPoolAlerts(ctx, filters)
 
   return {
     alerts,
@@ -81,9 +65,6 @@ const assignPool = async (ctx, req) => {
     throw new Error('ERR_POOL_MANAGER_PERM_REQUIRED')
   }
 
-  const regions = _parseRegions(req.body.regions || req.query.regions)
-  const clusters = findClusters(ctx, regions)
-
   const { minerIds, pools } = req.body
 
   if (!minerIds || !Array.isArray(minerIds) || minerIds.length === 0) {
@@ -103,7 +84,7 @@ const assignPool = async (ctx, req) => {
     timestamp: Date.now()
   }
 
-  return poolManagerService.assignPoolToMiners(ctx, clusters, minerIds, pools, auditInfo)
+  return poolManagerService.assignPoolToMiners(ctx, minerIds, pools, auditInfo)
 }
 
 const setPowerMode = async (ctx, req) => {
@@ -121,9 +102,6 @@ const setPowerMode = async (ctx, req) => {
     throw new Error('ERR_POOL_MANAGER_PERM_REQUIRED')
   }
 
-  const regions = _parseRegions(req.body.regions || req.query.regions)
-  const clusters = findClusters(ctx, regions)
-
   const { minerIds, mode } = req.body
 
   if (!minerIds || !Array.isArray(minerIds) || minerIds.length === 0) {
@@ -139,33 +117,7 @@ const setPowerMode = async (ctx, req) => {
     timestamp: Date.now()
   }
 
-  return poolManagerService.setPowerMode(ctx, clusters, minerIds, mode, auditInfo)
-}
-
-function _parseRegions (regions) {
-  if (!regions) return null
-
-  let parsedRegions = regions
-
-  if (Array.isArray(regions) && regions.length === 1 && typeof regions[0] === 'string') {
-    try {
-      parsedRegions = JSON.parse(regions[0])
-    } catch {}
-  }
-
-  if (typeof parsedRegions === 'string') {
-    try {
-      parsedRegions = JSON.parse(parsedRegions)
-    } catch {
-      return null
-    }
-  }
-
-  if (!Array.isArray(parsedRegions) || parsedRegions.length === 0) {
-    return null
-  }
-
-  return parsedRegions.flat().filter(r => typeof r === 'string' && r.length > 0)
+  return poolManagerService.setPowerMode(ctx, minerIds, mode, auditInfo)
 }
 
 module.exports = {

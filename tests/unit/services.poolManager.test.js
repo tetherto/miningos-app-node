@@ -13,10 +13,12 @@ const {
 } = require('../../workers/lib/server/services/poolManager')
 
 // Helper to create mock context
-// rpc.getData uses async.mapLimit(clusters, 2, (store) => ctx.net_r0.jRequest(store.rpcPublicKey, method, params, { timeout }))
-// So jRequest receives (publicKey, method, params, opts) and returns the per-cluster result
+// requestRpcMapLimit/requestRpcEachLimit use ctx.conf.orks and ctx.net_r0.jRequest
 function createMockCtx (responseData) {
   return {
+    conf: {
+      orks: [{ rpcPublicKey: 'key1' }]
+    },
     net_r0: {
       jRequest: () => Promise.resolve(responseData)
     }
@@ -70,9 +72,8 @@ test('poolManager:getPoolStats returns correct aggregates', async function (t) {
   ])
 
   const mockCtx = createMockCtx(poolData)
-  const clusters = [{ rpcPublicKey: 'key1' }]
 
-  const result = await getPoolStats(mockCtx, clusters)
+  const result = await getPoolStats(mockCtx)
 
   t.is(result.totalPools, 2)
   t.is(result.totalWorkers, 15)
@@ -82,11 +83,13 @@ test('poolManager:getPoolStats returns correct aggregates', async function (t) {
   t.is(result.errors, 3)
 })
 
-test('poolManager:getPoolStats handles empty clusters', async function (t) {
-  const mockCtx = createMockCtx([])
-  const clusters = []
+test('poolManager:getPoolStats handles empty orks', async function (t) {
+  const mockCtx = {
+    conf: { orks: [] },
+    net_r0: { jRequest: () => Promise.resolve([]) }
+  }
 
-  const result = await getPoolStats(mockCtx, clusters)
+  const result = await getPoolStats(mockCtx)
 
   t.is(result.totalPools, 0)
   t.is(result.totalWorkers, 0)
@@ -96,16 +99,17 @@ test('poolManager:getPoolStats handles empty clusters', async function (t) {
 })
 
 test('poolManager:getPoolStats deduplicates pools by key', async function (t) {
-  // Two clusters returning the same pool should be deduped
   const poolData = createMockPoolStatsResponse([
     { poolType: 'f2pool', username: 'worker1', worker_count: 5, active_workers_count: 4 }
   ])
 
-  const mockCtx = createMockCtx(poolData)
-  // Two clusters, each returns the same pool
-  const clusters = [{ rpcPublicKey: 'key1' }, { rpcPublicKey: 'key2' }]
+  // Two orks returning the same pool should be deduped
+  const mockCtx = {
+    conf: { orks: [{ rpcPublicKey: 'key1' }, { rpcPublicKey: 'key2' }] },
+    net_r0: { jRequest: () => Promise.resolve(poolData) }
+  }
 
-  const result = await getPoolStats(mockCtx, clusters)
+  const result = await getPoolStats(mockCtx)
 
   t.is(result.totalPools, 1)
   t.is(result.totalWorkers, 5)
@@ -120,9 +124,8 @@ test('poolManager:getPoolConfigs returns pool objects', async function (t) {
   ])
 
   const mockCtx = createMockCtx(poolData)
-  const clusters = [{ rpcPublicKey: 'key1' }]
 
-  const result = await getPoolConfigs(mockCtx, clusters)
+  const result = await getPoolConfigs(mockCtx)
 
   t.ok(Array.isArray(result))
   t.is(result.length, 2)
@@ -137,9 +140,8 @@ test('poolManager:getPoolConfigs returns pool objects', async function (t) {
 
 test('poolManager:getPoolConfigs returns empty for no data', async function (t) {
   const mockCtx = createMockCtx([])
-  const clusters = [{ rpcPublicKey: 'key1' }]
 
-  const result = await getPoolConfigs(mockCtx, clusters)
+  const result = await getPoolConfigs(mockCtx)
 
   t.ok(Array.isArray(result))
   t.is(result.length, 0)
@@ -154,9 +156,8 @@ test('poolManager:getMinersWithPools returns paginated results', async function 
   }
 
   const mockCtx = createMockCtx(miners)
-  const clusters = [{ rpcPublicKey: 'key1' }]
 
-  const result = await getMinersWithPools(mockCtx, clusters, { page: 1, limit: 10 })
+  const result = await getMinersWithPools(mockCtx, { page: 1, limit: 10 })
 
   t.is(result.miners.length, 10)
   t.is(result.total, 100)
@@ -173,9 +174,8 @@ test('poolManager:getMinersWithPools extracts model from type', async function (
   ]
 
   const mockCtx = createMockCtx(miners)
-  const clusters = [{ rpcPublicKey: 'key1' }]
 
-  const result = await getMinersWithPools(mockCtx, clusters, {})
+  const result = await getMinersWithPools(mockCtx, {})
 
   t.is(result.miners[0].model, 'Antminer S19XP')
   t.is(result.miners[1].model, 'Whatsminer M56S')
@@ -189,9 +189,8 @@ test('poolManager:getMinersWithPools filters by search', async function (t) {
   ]
 
   const mockCtx = createMockCtx(miners)
-  const clusters = [{ rpcPublicKey: 'key1' }]
 
-  const result = await getMinersWithPools(mockCtx, clusters, { search: 'S19XP' })
+  const result = await getMinersWithPools(mockCtx, { search: 'S19XP' })
 
   t.is(result.total, 1)
   t.is(result.miners[0].id, 'miner-1')
@@ -204,9 +203,8 @@ test('poolManager:getMinersWithPools filters by model', async function (t) {
   ]
 
   const mockCtx = createMockCtx(miners)
-  const clusters = [{ rpcPublicKey: 'key1' }]
 
-  const result = await getMinersWithPools(mockCtx, clusters, { model: 'whatsminer' })
+  const result = await getMinersWithPools(mockCtx, { model: 'whatsminer' })
 
   t.is(result.total, 1)
   t.is(result.miners[0].model, 'Whatsminer M56S')
@@ -224,9 +222,8 @@ test('poolManager:getMinersWithPools maps thing fields correctly', async functio
   })]
 
   const mockCtx = createMockCtx(miners)
-  const clusters = [{ rpcPublicKey: 'key1' }]
 
-  const result = await getMinersWithPools(mockCtx, clusters, {})
+  const result = await getMinersWithPools(mockCtx, {})
 
   const miner = result.miners[0]
   t.is(miner.id, 'miner-1')
@@ -250,9 +247,8 @@ test('poolManager:getUnitsWithPoolData groups miners by container', async functi
   ]
 
   const mockCtx = createMockCtx(miners)
-  const clusters = [{ rpcPublicKey: 'key1' }]
 
-  const result = await getUnitsWithPoolData(mockCtx, clusters)
+  const result = await getUnitsWithPoolData(mockCtx)
 
   t.ok(Array.isArray(result))
   t.is(result.length, 2)
@@ -269,9 +265,8 @@ test('poolManager:getUnitsWithPoolData sums nominal hashrate', async function (t
   ]
 
   const mockCtx = createMockCtx(miners)
-  const clusters = [{ rpcPublicKey: 'key1' }]
 
-  const result = await getUnitsWithPoolData(mockCtx, clusters)
+  const result = await getUnitsWithPoolData(mockCtx)
 
   const unitA = result.find(u => u.name === 'unit-A')
   t.is(unitA.nominalHashrate, 250000)
@@ -284,13 +279,11 @@ test('poolManager:getUnitsWithPoolData extracts container from tags', async func
       tags: ['t-miner', 'site-pintado', 'container-bitmain-imm-2']
     })
   ]
-  // Override info.container to be undefined
   miners[0].info.container = undefined
 
   const mockCtx = createMockCtx(miners)
-  const clusters = [{ rpcPublicKey: 'key1' }]
 
-  const result = await getUnitsWithPoolData(mockCtx, clusters)
+  const result = await getUnitsWithPoolData(mockCtx)
 
   t.is(result.length, 1)
   t.is(result[0].name, 'bitmain-imm-2')
@@ -303,9 +296,8 @@ test('poolManager:getUnitsWithPoolData assigns unassigned for no container', asy
   miners[0].info.container = undefined
 
   const mockCtx = createMockCtx(miners)
-  const clusters = [{ rpcPublicKey: 'key1' }]
 
-  const result = await getUnitsWithPoolData(mockCtx, clusters)
+  const result = await getUnitsWithPoolData(mockCtx)
 
   t.is(result[0].name, 'unassigned')
 })
@@ -326,9 +318,8 @@ test('poolManager:getPoolAlerts returns pool-related alerts', async function (t)
   ]
 
   const mockCtx = createMockCtx(miners)
-  const clusters = [{ rpcPublicKey: 'key1' }]
 
-  const result = await getPoolAlerts(mockCtx, clusters)
+  const result = await getPoolAlerts(mockCtx)
 
   t.ok(Array.isArray(result))
   t.is(result.length, 3)
@@ -345,9 +336,8 @@ test('poolManager:getPoolAlerts respects limit', async function (t) {
   }
 
   const mockCtx = createMockCtx(miners)
-  const clusters = [{ rpcPublicKey: 'key1' }]
 
-  const result = await getPoolAlerts(mockCtx, clusters, { limit: 5 })
+  const result = await getPoolAlerts(mockCtx, { limit: 5 })
 
   t.is(result.length, 5)
 })
@@ -360,9 +350,8 @@ test('poolManager:getPoolAlerts includes severity', async function (t) {
   ]
 
   const mockCtx = createMockCtx(miners)
-  const clusters = [{ rpcPublicKey: 'key1' }]
 
-  const result = await getPoolAlerts(mockCtx, clusters)
+  const result = await getPoolAlerts(mockCtx)
 
   t.is(result[0].severity, 'critical')
   t.is(result[0].type, 'all_pools_dead')
@@ -372,25 +361,24 @@ test('poolManager:getPoolAlerts includes severity', async function (t) {
 
 test('poolManager:assignPoolToMiners validates miner IDs', async function (t) {
   const mockCtx = createMockCtx({ success: true })
-  const clusters = [{ rpcPublicKey: 'key1' }]
 
   await t.exception(async () => {
-    await assignPoolToMiners(mockCtx, clusters, [], [{ url: 'stratum+tcp://pool.com:3333' }])
+    await assignPoolToMiners(mockCtx, [], [{ url: 'stratum+tcp://pool.com:3333' }])
   }, /ERR_MINER_IDS_REQUIRED/)
 })
 
 test('poolManager:assignPoolToMiners validates pools', async function (t) {
   const mockCtx = createMockCtx({ success: true })
-  const clusters = [{ rpcPublicKey: 'key1' }]
 
   await t.exception(async () => {
-    await assignPoolToMiners(mockCtx, clusters, ['miner-1'], [])
+    await assignPoolToMiners(mockCtx, ['miner-1'], [])
   }, /ERR_POOLS_REQUIRED/)
 })
 
 test('poolManager:assignPoolToMiners calls RPC with correct params', async function (t) {
   let capturedParams
   const mockCtx = {
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
     net_r0: {
       jRequest: (pk, method, params) => {
         capturedParams = params
@@ -398,9 +386,8 @@ test('poolManager:assignPoolToMiners calls RPC with correct params', async funct
       }
     }
   }
-  const clusters = [{ rpcPublicKey: 'key1' }]
 
-  const result = await assignPoolToMiners(mockCtx, clusters, ['miner-1', 'miner-2'], [
+  const result = await assignPoolToMiners(mockCtx, ['miner-1', 'miner-2'], [
     { url: 'stratum+tcp://pool.com:3333', worker_name: 'worker1', worker_password: 'x' }
   ])
 
@@ -416,6 +403,7 @@ test('poolManager:assignPoolToMiners calls RPC with correct params', async funct
 test('poolManager:assignPoolToMiners handles multiple pools', async function (t) {
   let capturedParams
   const mockCtx = {
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
     net_r0: {
       jRequest: (pk, method, params) => {
         capturedParams = params
@@ -423,9 +411,8 @@ test('poolManager:assignPoolToMiners handles multiple pools', async function (t)
       }
     }
   }
-  const clusters = [{ rpcPublicKey: 'key1' }]
 
-  await assignPoolToMiners(mockCtx, clusters, ['miner-1'], [
+  await assignPoolToMiners(mockCtx, ['miner-1'], [
     { url: 'stratum+tcp://primary.com:3333', worker_name: 'worker1' },
     { url: 'stratum+tcp://backup1.com:3333' },
     { url: 'stratum+tcp://backup2.com:3333' }
@@ -441,25 +428,24 @@ test('poolManager:assignPoolToMiners handles multiple pools', async function (t)
 
 test('poolManager:setPowerMode validates miner IDs', async function (t) {
   const mockCtx = createMockCtx({ success: true })
-  const clusters = [{ rpcPublicKey: 'key1' }]
 
   await t.exception(async () => {
-    await setPowerMode(mockCtx, clusters, [], 'sleep')
+    await setPowerMode(mockCtx, [], 'sleep')
   }, /ERR_MINER_IDS_REQUIRED/)
 })
 
 test('poolManager:setPowerMode validates power mode', async function (t) {
   const mockCtx = createMockCtx({ success: true })
-  const clusters = [{ rpcPublicKey: 'key1' }]
 
   await t.exception(async () => {
-    await setPowerMode(mockCtx, clusters, ['miner-1'], 'invalid-mode')
+    await setPowerMode(mockCtx, ['miner-1'], 'invalid-mode')
   }, /ERR_INVALID_POWER_MODE/)
 })
 
 test('poolManager:setPowerMode calls RPC with correct params', async function (t) {
   let capturedParams
   const mockCtx = {
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
     net_r0: {
       jRequest: (pk, method, params) => {
         capturedParams = params
@@ -467,9 +453,8 @@ test('poolManager:setPowerMode calls RPC with correct params', async function (t
       }
     }
   }
-  const clusters = [{ rpcPublicKey: 'key1' }]
 
-  const result = await setPowerMode(mockCtx, clusters, ['miner-1', 'miner-2'], 'sleep')
+  const result = await setPowerMode(mockCtx, ['miner-1', 'miner-2'], 'sleep')
 
   t.ok(capturedParams)
   t.is(capturedParams.action, 'setPowerMode')
@@ -481,16 +466,16 @@ test('poolManager:setPowerMode calls RPC with correct params', async function (t
 
 test('poolManager:setPowerMode accepts all valid modes', async function (t) {
   const validModes = ['low', 'normal', 'high', 'sleep']
-  const clusters = [{ rpcPublicKey: 'key1' }]
 
   for (const mode of validModes) {
     const mockCtx = {
+      conf: { orks: [{ rpcPublicKey: 'key1' }] },
       net_r0: {
         jRequest: () => Promise.resolve({ success: true, affected: 1 })
       }
     }
 
-    const result = await setPowerMode(mockCtx, clusters, ['miner-1'], mode)
+    const result = await setPowerMode(mockCtx, ['miner-1'], mode)
     t.ok(result.success)
     t.is(result.mode, mode)
   }

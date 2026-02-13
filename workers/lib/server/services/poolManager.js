@@ -9,13 +9,16 @@ const {
   RPC_METHODS,
   MINERPOOL_EXT_DATA_KEYS
 } = require('../../constants')
-const rpc = require('./rpc')
+const {
+  requestRpcMapLimit,
+  requestRpcEachLimit
+} = require('../../utils')
 
 /**
  * Get pool-level stats from minerpool workers via getWrkExtData
  */
-const getPoolStats = async (ctx, clusters) => {
-  const pools = await _fetchPoolStats(ctx, clusters)
+const getPoolStats = async (ctx) => {
+  const pools = await _fetchPoolStats(ctx)
 
   const totalWorkers = pools.reduce((sum, p) => sum + (p.workerCount || 0), 0)
   const activeWorkers = pools.reduce((sum, p) => sum + (p.activeWorkerCount || 0), 0)
@@ -35,17 +38,17 @@ const getPoolStats = async (ctx, clusters) => {
 /**
  * Get pool configs from minerpool workers via getWrkExtData
  */
-const getPoolConfigs = async (ctx, clusters) => {
-  return _fetchPoolStats(ctx, clusters)
+const getPoolConfigs = async (ctx) => {
+  return _fetchPoolStats(ctx)
 }
 
 /**
  * Get miners from listThings, mapped to actual thing data structure
  */
-const getMinersWithPools = async (ctx, clusters, filters = {}) => {
+const getMinersWithPools = async (ctx, filters = {}) => {
   const { search, model, page = 1, limit = 50 } = filters
 
-  const results = await rpc.getData(ctx, clusters, LIST_THINGS, {
+  const results = await requestRpcMapLimit(ctx, LIST_THINGS, {
     type: WORKER_TYPES.MINER,
     query: {}
   })
@@ -106,8 +109,8 @@ const getMinersWithPools = async (ctx, clusters, filters = {}) => {
 /**
  * Get units (containers) with miner counts from listThings
  */
-const getUnitsWithPoolData = async (ctx, clusters) => {
-  const results = await rpc.getData(ctx, clusters, LIST_THINGS, {
+const getUnitsWithPoolData = async (ctx) => {
+  const results = await requestRpcMapLimit(ctx, LIST_THINGS, {
     type: WORKER_TYPES.MINER,
     query: {}
   })
@@ -150,10 +153,10 @@ const getUnitsWithPoolData = async (ctx, clusters) => {
 /**
  * Get pool-related alerts from listThings
  */
-const getPoolAlerts = async (ctx, clusters, filters = {}) => {
+const getPoolAlerts = async (ctx, filters = {}) => {
   const { limit = 50 } = filters
 
-  const results = await rpc.getData(ctx, clusters, LIST_THINGS, {
+  const results = await requestRpcMapLimit(ctx, LIST_THINGS, {
     type: WORKER_TYPES.MINER,
     query: {}
   })
@@ -190,7 +193,7 @@ const getPoolAlerts = async (ctx, clusters, filters = {}) => {
 /**
  * Assign pool config to miners via applyThings
  */
-const assignPoolToMiners = async (ctx, clusters, minerIds, pools, auditInfo = {}) => {
+const assignPoolToMiners = async (ctx, minerIds, pools, auditInfo = {}) => {
   if (!Array.isArray(minerIds) || minerIds.length === 0) {
     throw new Error('ERR_MINER_IDS_REQUIRED')
   }
@@ -224,7 +227,7 @@ const assignPoolToMiners = async (ctx, clusters, minerIds, pools, auditInfo = {}
     params: { pools: formattedPools }
   }
 
-  const results = await rpc.getData(ctx, clusters, APPLY_THINGS, params, 60000)
+  const results = await requestRpcEachLimit(ctx, APPLY_THINGS, params)
 
   let assigned = 0
   let failed = 0
@@ -269,7 +272,7 @@ const assignPoolToMiners = async (ctx, clusters, minerIds, pools, auditInfo = {}
 /**
  * Set power mode for miners via applyThings
  */
-const setPowerMode = async (ctx, clusters, minerIds, mode, auditInfo = {}) => {
+const setPowerMode = async (ctx, minerIds, mode, auditInfo = {}) => {
   if (!Array.isArray(minerIds) || minerIds.length === 0) {
     throw new Error('ERR_MINER_IDS_REQUIRED')
   }
@@ -298,7 +301,7 @@ const setPowerMode = async (ctx, clusters, minerIds, mode, auditInfo = {}) => {
     params: { mode }
   }
 
-  const results = await rpc.getData(ctx, clusters, APPLY_THINGS, params, 60000)
+  const results = await requestRpcEachLimit(ctx, APPLY_THINGS, params)
 
   let affected = 0
   let failed = 0
@@ -348,8 +351,8 @@ const setPowerMode = async (ctx, clusters, minerIds, mode, auditInfo = {}) => {
  * Fetch and flatten pool stats from minerpool workers via getWrkExtData
  * Follows the pattern from PR #7/#8: getWrkExtData with minerpool type
  */
-async function _fetchPoolStats (ctx, clusters) {
-  const results = await rpc.getData(ctx, clusters, RPC_METHODS.GET_WRK_EXT_DATA, {
+async function _fetchPoolStats (ctx) {
+  const results = await requestRpcMapLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
     type: 'minerpool',
     query: { key: MINERPOOL_EXT_DATA_KEYS.STATS }
   })

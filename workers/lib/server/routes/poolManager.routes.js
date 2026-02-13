@@ -1,13 +1,6 @@
 'use strict'
 
 const {
-  authCheck
-} = require('../lib/authCheck')
-const { send200 } = require('../lib/send200')
-const {
-  cachedRoute
-} = require('../lib/cachedRoute')
-const {
   getStats,
   getPools,
   getMiners,
@@ -16,23 +9,13 @@ const {
   assignPool,
   setPowerMode
 } = require('../controllers/poolManager')
-const { ENDPOINTS, HTTP_METHODS, CACHE_KEYS } = require('../../constants')
-
-const POOL_MANAGER_SCHEMA = {
-  querystring: {
-    type: 'object',
-    properties: {
-      regions: { type: 'array' },
-      overwriteCache: { type: 'boolean' }
-    }
-  }
-}
+const { ENDPOINTS, HTTP_METHODS } = require('../../constants')
+const { createCachedAuthRoute, createAuthRoute } = require('../lib/routeHelpers')
 
 const POOL_MANAGER_MINERS_SCHEMA = {
   querystring: {
     type: 'object',
     properties: {
-      regions: { type: 'array' },
       search: { type: 'string' },
       status: { type: 'string' },
       poolUrl: { type: 'string' },
@@ -44,11 +27,29 @@ const POOL_MANAGER_MINERS_SCHEMA = {
   }
 }
 
+const POOL_MANAGER_ALERTS_SCHEMA = {
+  querystring: {
+    type: 'object',
+    properties: {
+      limit: { type: 'integer' },
+      overwriteCache: { type: 'boolean' }
+    }
+  }
+}
+
+const POOL_MANAGER_CACHE_SCHEMA = {
+  querystring: {
+    type: 'object',
+    properties: {
+      overwriteCache: { type: 'boolean' }
+    }
+  }
+}
+
 const POOL_MANAGER_ASSIGN_SCHEMA = {
   body: {
     type: 'object',
     properties: {
-      regions: { type: 'array' },
       minerIds: {
         type: 'array',
         items: { type: 'string' }
@@ -76,7 +77,6 @@ const POOL_MANAGER_POWER_MODE_SCHEMA = {
   body: {
     type: 'object',
     properties: {
-      regions: { type: 'array' },
       minerIds: {
         type: 'array',
         items: { type: 'string' }
@@ -96,52 +96,26 @@ module.exports = (ctx) => {
     {
       method: HTTP_METHODS.GET,
       url: ENDPOINTS.POOL_MANAGER_STATS,
-      schema: POOL_MANAGER_SCHEMA,
-      onRequest: async (req, rep) => {
-        await authCheck(ctx, req, rep)
-      },
-      handler: async (req, rep) => {
-        const key = [
-          CACHE_KEYS.POOL_MANAGER_STATS,
-          req.query.regions
-        ]
-        return send200(
-          rep,
-          await cachedRoute(
-            ctx,
-            key,
-            ENDPOINTS.POOL_MANAGER_STATS,
-            () => getStats(ctx, req),
-            req.query.overwriteCache
-          )
-        )
-      }
+      schema: POOL_MANAGER_CACHE_SCHEMA,
+      ...createCachedAuthRoute(
+        ctx,
+        ['pool-manager/stats'],
+        ENDPOINTS.POOL_MANAGER_STATS,
+        getStats
+      )
     },
 
     // GET /auth/pool-manager/pools
     {
       method: HTTP_METHODS.GET,
       url: ENDPOINTS.POOL_MANAGER_POOLS,
-      schema: POOL_MANAGER_SCHEMA,
-      onRequest: async (req, rep) => {
-        await authCheck(ctx, req, rep)
-      },
-      handler: async (req, rep) => {
-        const key = [
-          CACHE_KEYS.POOL_MANAGER_POOLS,
-          req.query.regions
-        ]
-        return send200(
-          rep,
-          await cachedRoute(
-            ctx,
-            key,
-            ENDPOINTS.POOL_MANAGER_POOLS,
-            () => getPools(ctx, req),
-            req.query.overwriteCache
-          )
-        )
-      }
+      schema: POOL_MANAGER_CACHE_SCHEMA,
+      ...createCachedAuthRoute(
+        ctx,
+        ['pool-manager/pools'],
+        ENDPOINTS.POOL_MANAGER_POOLS,
+        getPools
+      )
     },
 
     // GET /auth/pool-manager/miners
@@ -149,84 +123,49 @@ module.exports = (ctx) => {
       method: HTTP_METHODS.GET,
       url: ENDPOINTS.POOL_MANAGER_MINERS,
       schema: POOL_MANAGER_MINERS_SCHEMA,
-      onRequest: async (req, rep) => {
-        await authCheck(ctx, req, rep)
-      },
-      handler: async (req, rep) => {
-        const key = [
-          CACHE_KEYS.POOL_MANAGER_MINERS,
-          req.query.regions,
+      ...createCachedAuthRoute(
+        ctx,
+        (req) => [
+          'pool-manager/miners',
           req.query.search,
           req.query.status,
           req.query.poolUrl,
           req.query.model,
           req.query.page,
           req.query.limit
-        ]
-        return send200(
-          rep,
-          await cachedRoute(
-            ctx,
-            key,
-            ENDPOINTS.POOL_MANAGER_MINERS,
-            () => getMiners(ctx, req),
-            req.query.overwriteCache
-          )
-        )
-      }
+        ],
+        ENDPOINTS.POOL_MANAGER_MINERS,
+        getMiners
+      )
     },
 
     // GET /auth/pool-manager/units
     {
       method: HTTP_METHODS.GET,
       url: ENDPOINTS.POOL_MANAGER_UNITS,
-      schema: POOL_MANAGER_SCHEMA,
-      onRequest: async (req, rep) => {
-        await authCheck(ctx, req, rep)
-      },
-      handler: async (req, rep) => {
-        const key = [
-          CACHE_KEYS.POOL_MANAGER_UNITS,
-          req.query.regions
-        ]
-        return send200(
-          rep,
-          await cachedRoute(
-            ctx,
-            key,
-            ENDPOINTS.POOL_MANAGER_UNITS,
-            () => getUnits(ctx, req),
-            req.query.overwriteCache
-          )
-        )
-      }
+      schema: POOL_MANAGER_CACHE_SCHEMA,
+      ...createCachedAuthRoute(
+        ctx,
+        ['pool-manager/units'],
+        ENDPOINTS.POOL_MANAGER_UNITS,
+        getUnits
+      )
     },
 
     // GET /auth/pool-manager/alerts
     {
       method: HTTP_METHODS.GET,
       url: ENDPOINTS.POOL_MANAGER_ALERTS,
-      schema: POOL_MANAGER_SCHEMA,
-      onRequest: async (req, rep) => {
-        await authCheck(ctx, req, rep)
-      },
-      handler: async (req, rep) => {
-        const key = [
-          CACHE_KEYS.POOL_MANAGER_ALERTS,
-          req.query.regions,
+      schema: POOL_MANAGER_ALERTS_SCHEMA,
+      ...createCachedAuthRoute(
+        ctx,
+        (req) => [
+          'pool-manager/alerts',
           req.query.limit
-        ]
-        return send200(
-          rep,
-          await cachedRoute(
-            ctx,
-            key,
-            ENDPOINTS.POOL_MANAGER_ALERTS,
-            () => getAlerts(ctx, req),
-            req.query.overwriteCache
-          )
-        )
-      }
+        ],
+        ENDPOINTS.POOL_MANAGER_ALERTS,
+        getAlerts
+      )
     },
 
     // POST /auth/pool-manager/miners/assign
@@ -234,12 +173,7 @@ module.exports = (ctx) => {
       method: HTTP_METHODS.POST,
       url: ENDPOINTS.POOL_MANAGER_ASSIGN,
       schema: POOL_MANAGER_ASSIGN_SCHEMA,
-      onRequest: async (req, rep) => {
-        await authCheck(ctx, req, rep)
-      },
-      handler: async (req, rep) => {
-        return send200(rep, await assignPool(ctx, req))
-      }
+      ...createAuthRoute(ctx, assignPool)
     },
 
     // POST /auth/pool-manager/miners/power-mode
@@ -247,12 +181,7 @@ module.exports = (ctx) => {
       method: HTTP_METHODS.POST,
       url: ENDPOINTS.POOL_MANAGER_POWER_MODE,
       schema: POOL_MANAGER_POWER_MODE_SCHEMA,
-      onRequest: async (req, rep) => {
-        await authCheck(ctx, req, rep)
-      },
-      handler: async (req, rep) => {
-        return send200(rep, await setPowerMode(ctx, req))
-      }
+      ...createAuthRoute(ctx, setPowerMode)
     }
   ]
 }
