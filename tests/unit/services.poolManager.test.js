@@ -12,8 +12,6 @@ const {
   setPowerMode
 } = require('../../workers/lib/server/services/poolManager')
 
-// Helper to create mock context
-// requestRpcMapLimit/requestRpcEachLimit use ctx.conf.orks and ctx.net_r0.jRequest
 function createMockCtx (responseData) {
   return {
     conf: {
@@ -25,7 +23,6 @@ function createMockCtx (responseData) {
   }
 }
 
-// Helper to create mock minerpool stats (getWrkExtData response)
 function createMockPoolStatsResponse (pools) {
   return [{
     stats: pools.map(p => ({
@@ -45,7 +42,6 @@ function createMockPoolStatsResponse (pools) {
   }]
 }
 
-// Helper to create mock miner thing (listThings response)
 function createMockMiner (id, options = {}) {
   return {
     id,
@@ -62,8 +58,6 @@ function createMockMiner (id, options = {}) {
     alerts: options.alerts || {}
   }
 }
-
-// Tests for getPoolStats
 
 test('poolManager:getPoolStats returns correct aggregates', async function (t) {
   const poolData = createMockPoolStatsResponse([
@@ -103,7 +97,6 @@ test('poolManager:getPoolStats deduplicates pools by key', async function (t) {
     { poolType: 'f2pool', username: 'worker1', worker_count: 5, active_workers_count: 4 }
   ])
 
-  // Two orks returning the same pool should be deduped
   const mockCtx = {
     conf: { orks: [{ rpcPublicKey: 'key1' }, { rpcPublicKey: 'key2' }] },
     net_r0: { jRequest: () => Promise.resolve(poolData) }
@@ -114,8 +107,6 @@ test('poolManager:getPoolStats deduplicates pools by key', async function (t) {
   t.is(result.totalPools, 1)
   t.is(result.totalWorkers, 5)
 })
-
-// Tests for getPoolConfigs
 
 test('poolManager:getPoolConfigs returns pool objects', async function (t) {
   const poolData = createMockPoolStatsResponse([
@@ -146,8 +137,6 @@ test('poolManager:getPoolConfigs returns empty for no data', async function (t) 
   t.ok(Array.isArray(result))
   t.is(result.length, 0)
 })
-
-// Tests for getMinersWithPools
 
 test('poolManager:getMinersWithPools returns paginated results', async function (t) {
   const miners = []
@@ -237,8 +226,6 @@ test('poolManager:getMinersWithPools maps thing fields correctly', async functio
   t.is(miner.nominalHashrate, 204000000)
 })
 
-// Tests for getUnitsWithPoolData
-
 test('poolManager:getUnitsWithPoolData groups miners by container', async function (t) {
   const miners = [
     createMockMiner('m1', { container: 'bitmain-imm-1' }),
@@ -302,8 +289,6 @@ test('poolManager:getUnitsWithPoolData assigns unassigned for no container', asy
   t.is(result[0].name, 'unassigned')
 })
 
-// Tests for getPoolAlerts
-
 test('poolManager:getPoolAlerts returns pool-related alerts', async function (t) {
   const miners = [
     createMockMiner('miner-1', {
@@ -356,8 +341,6 @@ test('poolManager:getPoolAlerts includes severity', async function (t) {
   t.is(result[0].severity, 'critical')
   t.is(result[0].type, 'all_pools_dead')
 })
-
-// Tests for assignPoolToMiners
 
 test('poolManager:assignPoolToMiners validates miner IDs', async function (t) {
   const mockCtx = createMockCtx({ success: true })
@@ -423,8 +406,6 @@ test('poolManager:assignPoolToMiners handles multiple pools', async function (t)
   t.is(capturedParams.params.pools[1].url, 'stratum+tcp://backup1.com:3333')
   t.is(capturedParams.params.pools[2].url, 'stratum+tcp://backup2.com:3333')
 })
-
-// Tests for setPowerMode
 
 test('poolManager:setPowerMode validates miner IDs', async function (t) {
   const mockCtx = createMockCtx({ success: true })

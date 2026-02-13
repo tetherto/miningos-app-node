@@ -92,7 +92,6 @@ const POOL_MANAGER_POWER_MODE_SCHEMA = {
 
 module.exports = (ctx) => {
   return [
-    // GET /auth/pool-manager/stats
     {
       method: HTTP_METHODS.GET,
       url: ENDPOINTS.POOL_MANAGER_STATS,
@@ -105,7 +104,6 @@ module.exports = (ctx) => {
       )
     },
 
-    // GET /auth/pool-manager/pools
     {
       method: HTTP_METHODS.GET,
       url: ENDPOINTS.POOL_MANAGER_POOLS,
@@ -118,7 +116,6 @@ module.exports = (ctx) => {
       )
     },
 
-    // GET /auth/pool-manager/miners
     {
       method: HTTP_METHODS.GET,
       url: ENDPOINTS.POOL_MANAGER_MINERS,
@@ -139,7 +136,6 @@ module.exports = (ctx) => {
       )
     },
 
-    // GET /auth/pool-manager/units
     {
       method: HTTP_METHODS.GET,
       url: ENDPOINTS.POOL_MANAGER_UNITS,
@@ -152,7 +148,6 @@ module.exports = (ctx) => {
       )
     },
 
-    // GET /auth/pool-manager/alerts
     {
       method: HTTP_METHODS.GET,
       url: ENDPOINTS.POOL_MANAGER_ALERTS,
@@ -168,7 +163,6 @@ module.exports = (ctx) => {
       )
     },
 
-    // POST /auth/pool-manager/miners/assign
     {
       method: HTTP_METHODS.POST,
       url: ENDPOINTS.POOL_MANAGER_ASSIGN,
@@ -176,7 +170,6 @@ module.exports = (ctx) => {
       ...createAuthRoute(ctx, assignPool)
     },
 
-    // POST /auth/pool-manager/miners/power-mode
     {
       method: HTTP_METHODS.POST,
       url: ENDPOINTS.POOL_MANAGER_POWER_MODE,

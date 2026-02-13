@@ -14,9 +14,6 @@ const {
   requestRpcEachLimit
 } = require('../../utils')
 
-/**
- * Get pool-level stats from minerpool workers via getWrkExtData
- */
 const getPoolStats = async (ctx) => {
   const pools = await _fetchPoolStats(ctx)
 
@@ -35,16 +32,10 @@ const getPoolStats = async (ctx) => {
   }
 }
 
-/**
- * Get pool configs from minerpool workers via getWrkExtData
- */
 const getPoolConfigs = async (ctx) => {
   return _fetchPoolStats(ctx)
 }
 
-/**
- * Get miners from listThings, mapped to actual thing data structure
- */
 const getMinersWithPools = async (ctx, filters = {}) => {
   const { search, model, page = 1, limit = 50 } = filters
 
@@ -106,9 +97,6 @@ const getMinersWithPools = async (ctx, filters = {}) => {
   }
 }
 
-/**
- * Get units (containers) with miner counts from listThings
- */
 const getUnitsWithPoolData = async (ctx) => {
   const results = await requestRpcMapLimit(ctx, LIST_THINGS, {
     type: WORKER_TYPES.MINER,
@@ -150,9 +138,6 @@ const getUnitsWithPoolData = async (ctx) => {
   }))
 }
 
-/**
- * Get pool-related alerts from listThings
- */
 const getPoolAlerts = async (ctx, filters = {}) => {
   const { limit = 50 } = filters
 
@@ -190,9 +175,6 @@ const getPoolAlerts = async (ctx, filters = {}) => {
   return alerts.slice(0, limit)
 }
 
-/**
- * Assign pool config to miners via applyThings
- */
 const assignPoolToMiners = async (ctx, minerIds, pools, auditInfo = {}) => {
   if (!Array.isArray(minerIds) || minerIds.length === 0) {
     throw new Error('ERR_MINER_IDS_REQUIRED')
@@ -269,9 +251,6 @@ const assignPoolToMiners = async (ctx, minerIds, pools, auditInfo = {}) => {
   }
 }
 
-/**
- * Set power mode for miners via applyThings
- */
 const setPowerMode = async (ctx, minerIds, mode, auditInfo = {}) => {
   if (!Array.isArray(minerIds) || minerIds.length === 0) {
     throw new Error('ERR_MINER_IDS_REQUIRED')
@@ -345,12 +324,6 @@ const setPowerMode = async (ctx, minerIds, mode, auditInfo = {}) => {
   }
 }
 
-// --- Internal helpers ---
-
-/**
- * Fetch and flatten pool stats from minerpool workers via getWrkExtData
- * Follows the pattern from PR #7/#8: getWrkExtData with minerpool type
- */
 async function _fetchPoolStats (ctx) {
   const results = await requestRpcMapLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
     type: 'minerpool',
@@ -398,11 +371,6 @@ async function _fetchPoolStats (ctx) {
   return pools
 }
 
-/**
- * Extract a human-readable model name from thing type
- * e.g. 'miner-am-s19xp' → 'Antminer S19XP'
- *      'miner-wm-m56s'  → 'Whatsminer M56S'
- */
 function _extractModelFromType (type) {
   if (!type) return 'Unknown'
   const models = {
@@ -421,10 +389,6 @@ function _extractModelFromType (type) {
   return type
 }
 
-/**
- * Extract a value from a tags array by prefix
- * e.g. tags=['site-pintado','container-bitmain-imm-1'], prefix='container-' → 'bitmain-imm-1'
- */
 function _extractTagValue (tags, prefix) {
   if (!Array.isArray(tags)) return null
   const tag = tags.find(t => typeof t === 'string' && t.startsWith(prefix))

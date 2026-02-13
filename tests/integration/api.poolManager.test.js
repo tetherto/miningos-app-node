@@ -57,7 +57,6 @@ test('Pool Manager API', { timeout: 90000 }, async (main) => {
     fs.writeFileSync(`./${baseDir}/config/facs/auth.config.json`, JSON.stringify(authConf))
   }
 
-  // Mock miner data for Pool Manager tests
   const mockMiners = [
     {
       id: 'miner-001',
@@ -130,7 +129,6 @@ test('Pool Manager API', { timeout: 90000 }, async (main) => {
     })
 
     await worker.start()
-    // Mock RPC to return our test miners
     worker.worker.net_r0.jRequest = (publicKey, method, params) => {
       if (method === 'listThings') {
         return Promise.resolve(mockMiners)
@@ -162,7 +160,6 @@ test('Pool Manager API', { timeout: 90000 }, async (main) => {
 
   const baseParams = 'regions=["AB"]'
 
-  // Test Pool Manager Stats endpoint
   await main.test('Api: auth/pool-manager/stats', async (n) => {
     const api = `${appNodeBaseUrl}/auth/pool-manager/stats?${baseParams}`
 
@@ -192,7 +189,6 @@ test('Pool Manager API', { timeout: 90000 }, async (main) => {
     })
   })
 
-  // Test Pool Manager Pools endpoint
   await main.test('Api: auth/pool-manager/pools', async (n) => {
     const api = `${appNodeBaseUrl}/auth/pool-manager/pools?${baseParams}`
 
@@ -223,7 +219,6 @@ test('Pool Manager API', { timeout: 90000 }, async (main) => {
     })
   })
 
-  // Test Pool Manager Miners endpoint
   await main.test('Api: auth/pool-manager/miners', async (n) => {
     const api = `${appNodeBaseUrl}/auth/pool-manager/miners?${baseParams}`
 
@@ -269,7 +264,6 @@ test('Pool Manager API', { timeout: 90000 }, async (main) => {
     })
   })
 
-  // Test Pool Manager Sites endpoint
   await main.test('Api: auth/pool-manager/sites', async (n) => {
     const api = `${appNodeBaseUrl}/auth/pool-manager/sites?${baseParams}`
 
@@ -296,7 +290,6 @@ test('Pool Manager API', { timeout: 90000 }, async (main) => {
     })
   })
 
-  // Test Pool Manager Alerts endpoint
   await main.test('Api: auth/pool-manager/alerts', async (n) => {
     const api = `${appNodeBaseUrl}/auth/pool-manager/alerts?${baseParams}`
 
@@ -315,7 +308,6 @@ test('Pool Manager API', { timeout: 90000 }, async (main) => {
       try {
         const res = await httpClient.get(api, { headers, encoding })
         t.ok(Array.isArray(res.body))
-        // Should have at least one alert from miner-003
         if (res.body.length > 0) {
           t.ok(res.body[0].type)
           t.ok(res.body[0].minerId)
@@ -329,7 +321,6 @@ test('Pool Manager API', { timeout: 90000 }, async (main) => {
     })
   })
 
-  // Test Pool Manager Assign endpoint (POST)
   await main.test('Api: auth/pool-manager/miners/assign', async (n) => {
     const api = `${appNodeBaseUrl}/auth/pool-manager/miners/assign?${baseParams}`
     const body = {
