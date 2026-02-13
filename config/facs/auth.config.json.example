@@ -23,7 +23,8 @@
       "reporting:rw",
       "settings:rw",
       "ticket:rw",
-      "power_spot_forecast:rw"
+      "power_spot_forecast:rw",
+      "pool_manager:rw"
     ],
     "roles": {
       "admin": [
@@ -46,7 +47,8 @@
         "reporting:rw",
         "settings:rw",
         "ticket:rw",
-        "power_spot_forecast:rw"
+        "power_spot_forecast:rw",
+        "pool_manager:rw"
       ],
       "reporting_tool_manager": [
         "revenue:rw",
@@ -136,8 +138,9 @@
         "comments:r",
         "settings:r",
         "ticket:r",
-        "alerts:r"
-      ]      
+        "alerts:r",
+        "pool_manager:r"
+      ]
     },
     "roleManagement": {
       "admin": [

@@ -128,6 +128,12 @@ const requestRpcMapLimit = async (ctx, method, payload) => {
   })
 }
 
+const findClusters = (ctx, regions) => {
+  const clusters = Object.values(ctx.conf.orks)
+  if (!regions || regions.length === 0) return clusters
+  return clusters.filter((v) => regions.includes(v.region))
+}
+
 module.exports = {
   dateNowSec,
   extractIps,
@@ -137,5 +143,6 @@ module.exports = {
   getAuthTokenFromHeaders,
   parseJsonQueryParam,
   requestRpcEachLimit,
-  requestRpcMapLimit
+  requestRpcMapLimit,
+  findClusters
 }
