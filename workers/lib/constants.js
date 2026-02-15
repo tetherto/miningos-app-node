@@ -117,7 +117,10 @@ const ENDPOINTS = {
 
   // Pools endpoints
   POOLS: '/auth/pools',
-  POOLS_BALANCE_HISTORY: '/auth/pools/:pool/balance-history'
+  POOLS_BALANCE_HISTORY: '/auth/pools/:pool/balance-history',
+
+  // Pool stats endpoints
+  POOL_STATS_AGGREGATE: '/auth/pool-stats/aggregate'
 }
 
 const HTTP_METHODS = {

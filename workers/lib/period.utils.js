@@ -10,6 +10,12 @@ const convertMsToSeconds = (timestampMs) => {
 
 const PERIOD_CALCULATORS = {
   daily: (timestamp) => getStartOfDay(timestamp),
+  weekly: (timestamp) => {
+    const date = new Date(timestamp)
+    const day = date.getUTCDay()
+    const diff = date.getUTCDate() - day
+    return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), diff)).getTime()
+  },
   monthly: (timestamp) => {
     const date = new Date(timestamp)
     return new Date(date.getFullYear(), date.getMonth(), 1).getTime()
@@ -45,6 +51,11 @@ const aggregateByPeriod = (log, period, nonMetricKeys = []) => {
       groupKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
     } else if (period === PERIOD_TYPES.YEARLY) {
       groupKey = `${date.getFullYear()}`
+    } else if (period === PERIOD_TYPES.WEEKLY) {
+      const day = date.getUTCDay()
+      const diff = date.getUTCDate() - day
+      const weekStart = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), diff))
+      groupKey = `${weekStart.getTime()}`
     } else {
       groupKey = `${entry.ts}`
     }
@@ -94,6 +105,8 @@ const aggregateByPeriod = (log, period, nonMetricKeys = []) => {
 
         aggregated.ts = newDate.getTime()
         aggregated.year = year
+      } else if (period === PERIOD_TYPES.WEEKLY) {
+        aggregated.ts = Number(groupKey)
       }
     } catch (error) {
       aggregated.ts = entries[0].ts
@@ -129,6 +142,9 @@ const getPeriodEndDate = (periodTs, period) => {
   const periodEnd = new Date(periodTs)
 
   switch (period) {
+    case PERIOD_TYPES.WEEKLY:
+      periodEnd.setDate(periodEnd.getDate() + 7)
+      break
     case PERIOD_TYPES.MONTHLY:
       periodEnd.setMonth(periodEnd.getMonth() + 1)
       break

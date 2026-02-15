@@ -16,6 +16,7 @@ test('pools routes - route definitions', (t) => {
   const routeUrls = routes.map(route => route.url)
   t.ok(routeUrls.includes('/auth/pools'), 'should have pools route')
   t.ok(routeUrls.includes('/auth/pools/:pool/balance-history'), 'should have balance-history route')
+  t.ok(routeUrls.includes('/auth/pool-stats/aggregate'), 'should have pool-stats aggregate route')
   t.pass()
 })
 

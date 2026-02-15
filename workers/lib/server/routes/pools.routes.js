@@ -6,7 +6,8 @@ const {
 } = require('../../constants')
 const {
   getPools,
-  getPoolBalanceHistory
+  getPoolBalanceHistory,
+  getPoolStatsAggregate
 } = require('../handlers/pools.handlers')
 const { createCachedAuthRoute } = require('../lib/routeHelpers')
 
@@ -49,6 +50,25 @@ module.exports = (ctx) => {
         ],
         ENDPOINTS.POOLS_BALANCE_HISTORY,
         getPoolBalanceHistory
+      )
+    },
+    {
+      method: HTTP_METHODS.GET,
+      url: ENDPOINTS.POOL_STATS_AGGREGATE,
+      schema: {
+        querystring: schemas.query.poolStatsAggregate
+      },
+      ...createCachedAuthRoute(
+        ctx,
+        (req) => [
+          'pool-stats/aggregate',
+          req.query.start,
+          req.query.end,
+          req.query.range,
+          req.query.pool
+        ],
+        ENDPOINTS.POOL_STATS_AGGREGATE,
+        getPoolStatsAggregate
       )
     }
   ]
