@@ -19,7 +19,6 @@ async function getCostSummary (ctx, req) {
   const start = Number(req.query.start)
   const end = Number(req.query.end)
   const period = req.query.period || PERIOD_TYPES.MONTHLY
-  const site = req.query.site
 
   if (!start || !end) {
     throw new Error('ERR_MISSING_START_END')
@@ -33,7 +32,7 @@ async function getCostSummary (ctx, req) {
   const endDate = new Date(end).toISOString()
 
   const [productionCosts, priceResults, consumptionResults] = await runParallel([
-    (cb) => getProductionCosts(ctx, site, start, end)
+    (cb) => getProductionCosts(ctx, null, start, end)
       .then(r => cb(null, r)).catch(cb),
 
     (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
