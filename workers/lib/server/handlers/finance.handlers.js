@@ -21,7 +21,6 @@ async function getEbitda (ctx, req) {
   const start = Number(req.query.start)
   const end = Number(req.query.end)
   const period = req.query.period || PERIOD_TYPES.MONTHLY
-  const site = req.query.site
 
   if (!start || !end) {
     throw new Error('ERR_MISSING_START_END')
@@ -69,7 +68,7 @@ async function getEbitda (ctx, req) {
       query: { key: 'current_price' }
     }).then(r => cb(null, r)).catch(cb),
 
-    (cb) => getProductionCosts(ctx, site, start, end)
+    (cb) => getProductionCosts(ctx, null, start, end)
       .then(r => cb(null, r)).catch(cb)
   ])
 

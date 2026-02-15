@@ -409,6 +409,11 @@ test('Api security', { timeout: 90000 }, async (main) => {
     await testGetEndpointSecurity(n, httpClient, api, invalidToken, readonlyUser, encoding)
   })
 
+  await main.test('Api: get finance/ebitda', async (n) => {
+    const api = `${appNodeBaseUrl}${ENDPOINTS.FINANCE_EBITDA}?start=1700000000000&end=1700100000000`
+    await testGetEndpointSecurity(n, httpClient, api, invalidToken, readonlyUser, encoding)
+  })
+
   await main.test('Api: get ext-data', async (n) => {
     const api = `${appNodeBaseUrl}${ENDPOINTS.EXT_DATA}?type=miner`
     await testGetEndpointSecurity(n, httpClient, api, invalidToken, readonlyUser, encoding)
