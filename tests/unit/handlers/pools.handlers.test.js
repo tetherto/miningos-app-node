@@ -52,7 +52,7 @@ test('getPools - with filter', async (t) => {
     }
   }
 
-  const mockReq = { query: { filter: '{"pool":"f2pool"}' } }
+  const mockReq = { query: { query: '{"pool":"f2pool"}' } }
   const result = await getPools(mockCtx, mockReq, {})
   t.ok(result.pools, 'should return filtered pools')
   t.is(result.pools.length, 1, 'should have 1 pool after filter')

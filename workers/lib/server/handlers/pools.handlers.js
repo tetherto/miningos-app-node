@@ -11,7 +11,7 @@ const {
 } = require('../../utils')
 
 async function getPools (ctx, req) {
-  const filter = req.query.filter ? parseJsonQueryParam(req.query.filter, 'ERR_FILTER_INVALID_JSON') : null
+  const filter = req.query.query ? parseJsonQueryParam(req.query.query, 'ERR_QUERY_INVALID_JSON') : null
   const sort = req.query.sort ? parseJsonQueryParam(req.query.sort, 'ERR_SORT_INVALID_JSON') : null
   const fields = req.query.fields ? parseJsonQueryParam(req.query.fields, 'ERR_FIELDS_INVALID_JSON') : null
 
@@ -22,35 +22,10 @@ async function getPools (ctx, req) {
 
   const pools = flattenPoolStats(statsResults)
 
-  let result = pools
-  if (filter) {
-    const query = new mingo.Query(filter)
-    result = query.find(result).all()
-  }
-
-  if (sort) {
-    const sortKeys = Object.entries(sort)
-    result.sort((a, b) => {
-      for (const [key, dir] of sortKeys) {
-        const aVal = a[key] || 0
-        const bVal = b[key] || 0
-        if (aVal !== bVal) return dir > 0 ? aVal - bVal : bVal - aVal
-      }
-      return 0
-    })
-  }
-
-  if (fields) {
-    result = result.map(pool => {
-      const filtered = {}
-      for (const key of Object.keys(fields)) {
-        if (fields[key] && pool[key] !== undefined) {
-          filtered[key] = pool[key]
-        }
-      }
-      return filtered
-    })
-  }
+  const query = new mingo.Query(filter || {})
+  let cursor = query.find(pools, fields || {})
+  if (sort) cursor = cursor.sort(sort)
+  const result = cursor.all()
 
   const summary = calculatePoolsSummary(pools)
 

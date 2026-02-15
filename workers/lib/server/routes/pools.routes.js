@@ -23,7 +23,7 @@ module.exports = (ctx) => {
         ctx,
         (req) => [
           'pools',
-          req.query.filter,
+          req.query.query,
           req.query.sort,
           req.query.fields
         ],
