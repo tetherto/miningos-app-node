@@ -111,7 +111,8 @@ const ENDPOINTS = {
   WEBSOCKET: '/ws',
 
   // Finance endpoints
-  FINANCE_ENERGY_BALANCE: '/auth/finance/energy-balance'
+  FINANCE_ENERGY_BALANCE: '/auth/finance/energy-balance',
+  FINANCE_EBITDA: '/auth/finance/ebitda'
 }
 
 const HTTP_METHODS = {
