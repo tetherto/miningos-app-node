@@ -120,7 +120,16 @@ const ENDPOINTS = {
   POOLS_BALANCE_HISTORY: '/auth/pools/:pool/balance-history',
 
   // Pool stats endpoints
-  POOL_STATS_AGGREGATE: '/auth/pool-stats/aggregate'
+  POOL_STATS_AGGREGATE: '/auth/pool-stats/aggregate',
+
+  // Pool Manager endpoints
+  POOL_MANAGER_STATS: '/auth/pool-manager/stats',
+  POOL_MANAGER_POOLS: '/auth/pool-manager/pools',
+  POOL_MANAGER_MINERS: '/auth/pool-manager/miners',
+  POOL_MANAGER_UNITS: '/auth/pool-manager/units',
+  POOL_MANAGER_ALERTS: '/auth/pool-manager/alerts',
+  POOL_MANAGER_ASSIGN: '/auth/pool-manager/miners/assign',
+  POOL_MANAGER_POWER_MODE: '/auth/pool-manager/miners/power-mode'
 }
 
 const HTTP_METHODS = {
@@ -195,6 +204,10 @@ const STATUS_CODES = {
   INTERNAL_SERVER_ERROR: 500
 }
 
+const LIST_THINGS = 'listThings'
+const APPLY_THINGS = 'applyThings'
+const GET_HISTORICAL_LOGS = 'getHistoricalLogs'
+
 const RPC_METHODS = {
   TAIL_LOG_RANGE_AGGR: 'tailLogCustomRangeAggr',
   GET_WRK_EXT_DATA: 'getWrkExtData',
@@ -205,10 +218,40 @@ const RPC_METHODS = {
 
 const WORKER_TYPES = {
   MINER: 'miner',
+  CONTAINER: 'container',
   POWERMETER: 'powermeter',
   MINERPOOL: 'minerpool',
   MEMPOOL: 'mempool',
   ELECTRICITY: 'electricity'
+}
+
+const CACHE_KEYS = {
+  POOL_MANAGER_STATS: 'pool-manager/stats',
+  POOL_MANAGER_POOLS: 'pool-manager/pools',
+  POOL_MANAGER_MINERS: 'pool-manager/miners',
+  POOL_MANAGER_UNITS: 'pool-manager/units',
+  POOL_MANAGER_ALERTS: 'pool-manager/alerts'
+}
+
+const POOL_ALERT_TYPES = [
+  'all_pools_dead',
+  'wrong_miner_pool',
+  'wrong_miner_subaccount',
+  'wrong_worker_name',
+  'ip_worker_name'
+]
+
+const MINER_POOL_STATUS = {
+  ONLINE: 'online',
+  OFFLINE: 'offline',
+  INACTIVE: 'inactive'
+}
+
+const POWER_MODES = {
+  LOW: 'low',
+  NORMAL: 'normal',
+  HIGH: 'high',
+  SLEEP: 'sleep'
 }
 
 const AGGR_FIELDS = {
@@ -268,8 +311,15 @@ module.exports = {
   RPC_TIMEOUT,
   RPC_CONCURRENCY_LIMIT,
   USER_SETTINGS_TYPE,
+  LIST_THINGS,
+  APPLY_THINGS,
+  GET_HISTORICAL_LOGS,
   RPC_METHODS,
   WORKER_TYPES,
+  CACHE_KEYS,
+  POOL_ALERT_TYPES,
+  MINER_POOL_STATUS,
+  POWER_MODES,
   AGGR_FIELDS,
   PERIOD_TYPES,
   MINERPOOL_EXT_DATA_KEYS,
