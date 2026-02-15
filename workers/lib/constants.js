@@ -116,7 +116,8 @@ const ENDPOINTS = {
   FINANCE_COST_SUMMARY: '/auth/finance/cost-summary',
 
   // Pools endpoints
-  POOLS: '/auth/pools'
+  POOLS: '/auth/pools',
+  POOLS_BALANCE_HISTORY: '/auth/pools/:pool/balance-history'
 }
 
 const HTTP_METHODS = {
@@ -238,6 +239,12 @@ const NON_METRIC_KEYS = [
 
 const BTC_SATS = 100000000
 
+const RANGE_BUCKETS = {
+  '1D': 86400000,
+  '1W': 604800000,
+  '1M': 2592000000
+}
+
 const RPC_TIMEOUT = 15000
 const RPC_CONCURRENCY_LIMIT = 2
 
@@ -264,5 +271,6 @@ module.exports = {
   PERIOD_TYPES,
   MINERPOOL_EXT_DATA_KEYS,
   NON_METRIC_KEYS,
-  BTC_SATS
+  BTC_SATS,
+  RANGE_BUCKETS
 }

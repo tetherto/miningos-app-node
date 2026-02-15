@@ -5,7 +5,8 @@ const {
   HTTP_METHODS
 } = require('../../constants')
 const {
-  getPools
+  getPools,
+  getPoolBalanceHistory
 } = require('../handlers/pools.handlers')
 const { createCachedAuthRoute } = require('../lib/routeHelpers')
 
@@ -29,6 +30,25 @@ module.exports = (ctx) => {
         ],
         ENDPOINTS.POOLS,
         getPools
+      )
+    },
+    {
+      method: HTTP_METHODS.GET,
+      url: ENDPOINTS.POOLS_BALANCE_HISTORY,
+      schema: {
+        querystring: schemas.query.balanceHistory
+      },
+      ...createCachedAuthRoute(
+        ctx,
+        (req) => [
+          'pools/balance-history',
+          req.params.pool,
+          req.query.start,
+          req.query.end,
+          req.query.range
+        ],
+        ENDPOINTS.POOLS_BALANCE_HISTORY,
+        getPoolBalanceHistory
       )
     }
   ]

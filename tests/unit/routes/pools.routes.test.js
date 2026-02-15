@@ -15,6 +15,7 @@ test('pools routes - route definitions', (t) => {
   const routes = createRoutesForTest(ROUTES_PATH)
   const routeUrls = routes.map(route => route.url)
   t.ok(routeUrls.includes('/auth/pools'), 'should have pools route')
+  t.ok(routeUrls.includes('/auth/pools/:pool/balance-history'), 'should have balance-history route')
   t.pass()
 })
 
