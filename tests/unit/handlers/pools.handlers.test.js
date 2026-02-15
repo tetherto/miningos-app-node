@@ -40,10 +40,12 @@ test('getPoolStatsAggregate - happy path', async (t) => {
 })
 
 test('getPoolStatsAggregate - with pool filter', async (t) => {
+  let capturedPayload = null
   const mockCtx = {
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
     net_r0: {
-      jRequest: async () => {
+      jRequest: async (key, method, payload) => {
+        capturedPayload = payload
         return [{
           ts: '1700006400000',
           transactions: [
@@ -60,8 +62,8 @@ test('getPoolStatsAggregate - with pool filter', async (t) => {
   }
 
   const result = await getPoolStatsAggregate(mockCtx, mockReq, {})
-  t.ok(result.log, 'should return filtered log')
-  t.ok(result.log.length > 0, 'should have entries')
+  t.ok(result.log, 'should return log')
+  t.is(capturedPayload.query.pool, 'user1', 'should pass pool filter in RPC payload')
   t.pass()
 })
 
@@ -117,7 +119,7 @@ test('processTransactionData - processes valid transactions', (t) => {
       ]
     }]
   ]
-  const daily = processTransactionData(results, null)
+  const daily = processTransactionData(results)
   t.ok(typeof daily === 'object', 'should return object')
   const keys = Object.keys(daily)
   t.ok(keys.length > 0, 'should have entries')
@@ -129,25 +131,8 @@ test('processTransactionData - processes valid transactions', (t) => {
 
 test('processTransactionData - handles error results', (t) => {
   const results = [{ error: 'timeout' }]
-  const daily = processTransactionData(results, null)
+  const daily = processTransactionData(results)
   t.is(Object.keys(daily).length, 0, 'should be empty')
-  t.pass()
-})
-
-test('processTransactionData - filters by pool', (t) => {
-  const results = [
-    [{
-      ts: '1700006400000',
-      transactions: [
-        { username: 'user1', changed_balance: 0.001 },
-        { username: 'user2', changed_balance: 0.002 }
-      ]
-    }]
-  ]
-  const daily = processTransactionData(results, 'user1')
-  const keys = Object.keys(daily)
-  t.ok(keys.length > 0, 'should have entries')
-  t.is(daily[keys[0]].revenueBTC, 0.001, 'should only include user1 revenue')
   t.pass()
 })
 

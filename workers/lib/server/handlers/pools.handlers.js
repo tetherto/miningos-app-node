@@ -28,10 +28,10 @@ async function getPoolStatsAggregate (ctx, req) {
 
   const transactionResults = await requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
     type: WORKER_TYPES.MINERPOOL,
-    query: { key: MINERPOOL_EXT_DATA_KEYS.TRANSACTIONS, start, end }
+    query: { key: MINERPOOL_EXT_DATA_KEYS.TRANSACTIONS, start, end, pool: poolFilter }
   })
 
-  const dailyData = processTransactionData(transactionResults, poolFilter)
+  const dailyData = processTransactionData(transactionResults)
 
   const log = Object.entries(dailyData)
     .sort(([a], [b]) => Number(a) - Number(b))
@@ -49,7 +49,7 @@ async function getPoolStatsAggregate (ctx, req) {
   return { log: aggregated, summary }
 }
 
-function processTransactionData (results, poolFilter) {
+function processTransactionData (results) {
   const daily = {}
   for (const res of results) {
     if (res.error || !res) continue
@@ -66,7 +66,6 @@ function processTransactionData (results, poolFilter) {
 
       for (const tx of txs) {
         if (!tx) continue
-        if (poolFilter && tx.username !== poolFilter) continue
 
         if (!daily[ts]) daily[ts] = { revenueBTC: 0, hashrate: 0, hashCount: 0 }
         daily[ts].revenueBTC += Math.abs(tx.changed_balance || 0)
