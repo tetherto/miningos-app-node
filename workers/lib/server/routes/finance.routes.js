@@ -25,8 +25,7 @@ module.exports = (ctx) => {
           'finance/energy-balance',
           req.query.start,
           req.query.end,
-          req.query.period,
-          req.query.site
+          req.query.period
         ],
         ENDPOINTS.FINANCE_ENERGY_BALANCE,
         getEnergyBalance

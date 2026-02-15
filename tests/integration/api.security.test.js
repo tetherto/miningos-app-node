@@ -559,6 +559,11 @@ test('Api security', { timeout: 90000 }, async (main) => {
     })
   })
 
+  await main.test('Api: get finance/energy-balance', async (n) => {
+    const api = `${appNodeBaseUrl}${ENDPOINTS.FINANCE_ENERGY_BALANCE}?start=1700000000000&end=1700100000000`
+    await testGetEndpointSecurity(n, httpClient, api, invalidToken, readonlyUser, encoding)
+  })
+
   await main.test('Token expiration: api should fail due to token expiration', async (t) => {
     const api = `${appNodeBaseUrl}${ENDPOINTS.LIST_RACKS}?type=miner`
     worker.worker.auth_a0.conf.ttl = 5
