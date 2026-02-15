@@ -42,10 +42,12 @@ test('getPoolBalanceHistory - happy path', async (t) => {
 })
 
 test('getPoolBalanceHistory - with pool filter', async (t) => {
+  let capturedPayload = null
   const mockCtx = {
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
     net_r0: {
-      jRequest: async () => {
+      jRequest: async (key, method, payload) => {
+        capturedPayload = payload
         return [{
           ts: '1700006400000',
           transactions: [
@@ -64,8 +66,7 @@ test('getPoolBalanceHistory - with pool filter', async (t) => {
 
   const result = await getPoolBalanceHistory(mockCtx, mockReq, {})
   t.ok(result.log, 'should return log array')
-  t.ok(result.log.length > 0, 'should have entries')
-  t.ok(result.log[0].revenue > 0, 'should have filtered revenue')
+  t.is(capturedPayload.query.pool, 'user1', 'should pass pool filter in RPC payload')
   t.pass()
 })
 
@@ -147,32 +148,16 @@ test('flattenTransactionResults - extracts daily entries from ext-data', (t) => 
       ]
     }]
   ]
-  const entries = flattenTransactionResults(results, null)
+  const entries = flattenTransactionResults(results)
   t.is(entries.length, 1, 'should have 1 daily entry')
   t.ok(entries[0].revenue > 0, 'should have revenue')
   t.ok(entries[0].hashrate > 0, 'should have hashrate')
   t.pass()
 })
 
-test('flattenTransactionResults - filters by pool', (t) => {
-  const results = [
-    [{
-      ts: '1700006400000',
-      transactions: [
-        { username: 'user1', changed_balance: 0.001 },
-        { username: 'user2', changed_balance: 0.002 }
-      ]
-    }]
-  ]
-  const entries = flattenTransactionResults(results, 'user1')
-  t.is(entries.length, 1, 'should have 1 entry')
-  t.is(entries[0].revenue, 0.001, 'should only include user1 revenue')
-  t.pass()
-})
-
 test('flattenTransactionResults - handles error results', (t) => {
   const results = [{ error: 'timeout' }]
-  const entries = flattenTransactionResults(results, null)
+  const entries = flattenTransactionResults(results)
   t.is(entries.length, 0, 'should be empty for errors')
   t.pass()
 })

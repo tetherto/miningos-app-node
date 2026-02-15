@@ -27,10 +27,10 @@ async function getPoolBalanceHistory (ctx, req) {
 
   const results = await requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
     type: 'minerpool',
-    query: { key: MINERPOOL_EXT_DATA_KEYS.TRANSACTIONS, start, end }
+    query: { key: MINERPOOL_EXT_DATA_KEYS.TRANSACTIONS, start, end, pool: poolFilter }
   })
 
-  const dailyEntries = flattenTransactionResults(results, poolFilter)
+  const dailyEntries = flattenTransactionResults(results)
 
   const bucketSize = RANGE_BUCKETS[range] || RANGE_BUCKETS['1D']
   const buckets = groupByBucket(dailyEntries, bucketSize)
@@ -55,7 +55,7 @@ async function getPoolBalanceHistory (ctx, req) {
   return { log }
 }
 
-function flattenTransactionResults (results, poolFilter) {
+function flattenTransactionResults (results) {
   const daily = []
   for (const res of results) {
     if (res.error || !res) continue
@@ -76,7 +76,6 @@ function flattenTransactionResults (results, poolFilter) {
 
       for (const tx of txs) {
         if (!tx) continue
-        if (poolFilter && tx.username !== poolFilter) continue
         revenue += Math.abs(tx.changed_balance || 0)
         if (tx.mining_extra?.hash_rate) {
           hashrate += tx.mining_extra.hash_rate
