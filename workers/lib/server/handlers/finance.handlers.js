@@ -601,6 +601,120 @@ function calculateEbitdaSummary (log, currentBtcPrice) {
   }
 }
 
+// ==================== Cost Summary ====================
+
+async function getCostSummary (ctx, req) {
+  const start = Number(req.query.start)
+  const end = Number(req.query.end)
+  const period = req.query.period || PERIOD_TYPES.MONTHLY
+
+  if (!start || !end) {
+    throw new Error('ERR_MISSING_START_END')
+  }
+
+  if (start >= end) {
+    throw new Error('ERR_INVALID_DATE_RANGE')
+  }
+
+  const startDate = new Date(start).toISOString()
+  const endDate = new Date(end).toISOString()
+
+  const [productionCosts, priceResults, consumptionResults] = await runParallel([
+    (cb) => getProductionCosts(ctx, null, start, end)
+      .then(r => cb(null, r)).catch(cb),
+
+    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+      type: WORKER_TYPES.MEMPOOL,
+      query: { key: 'prices', start, end }
+    }).then(r => cb(null, r)).catch(cb),
+
+    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.TAIL_LOG_RANGE_AGGR, {
+      keys: [{
+        type: WORKER_TYPES.POWERMETER,
+        startDate,
+        endDate,
+        fields: { [AGGR_FIELDS.SITE_POWER]: 1 },
+        shouldReturnDailyData: 1
+      }]
+    }).then(r => cb(null, r)).catch(cb)
+  ])
+
+  const costsByMonth = processCostsData(productionCosts)
+  const dailyPrices = processEbitdaPrices(priceResults)
+  const dailyConsumption = processConsumptionData(consumptionResults)
+
+  const allDays = new Set([
+    ...Object.keys(dailyConsumption),
+    ...Object.keys(dailyPrices)
+  ])
+
+  const log = []
+  for (const dayTs of [...allDays].sort()) {
+    const ts = Number(dayTs)
+    const consumption = dailyConsumption[dayTs] || {}
+    const btcPrice = dailyPrices[dayTs] || 0
+
+    const powerW = consumption.powerW || 0
+    const consumptionMWh = (powerW * 24) / 1000000
+
+    const monthKey = `${new Date(ts).getFullYear()}-${String(new Date(ts).getMonth() + 1).padStart(2, '0')}`
+    const costs = costsByMonth[monthKey] || {}
+    const energyCostsUSD = costs.energyCostPerDay || 0
+    const operationalCostsUSD = costs.operationalCostPerDay || 0
+    const totalCostsUSD = energyCostsUSD + operationalCostsUSD
+
+    log.push({
+      ts,
+      consumptionMWh,
+      energyCostsUSD,
+      operationalCostsUSD,
+      totalCostsUSD,
+      allInCostPerMWh: safeDiv(totalCostsUSD, consumptionMWh),
+      energyCostPerMWh: safeDiv(energyCostsUSD, consumptionMWh),
+      btcPrice
+    })
+  }
+
+  const aggregated = aggregateByPeriod(log, period)
+  const summary = calculateCostSummary(aggregated)
+
+  return { log: aggregated, summary }
+}
+
+function calculateCostSummary (log) {
+  if (!log.length) {
+    return {
+      totalEnergyCostsUSD: 0,
+      totalOperationalCostsUSD: 0,
+      totalCostsUSD: 0,
+      totalConsumptionMWh: 0,
+      avgAllInCostPerMWh: null,
+      avgEnergyCostPerMWh: null,
+      avgBtcPrice: null
+    }
+  }
+
+  const totals = log.reduce((acc, entry) => {
+    acc.energyCosts += entry.energyCostsUSD || 0
+    acc.operationalCosts += entry.operationalCostsUSD || 0
+    acc.totalCosts += entry.totalCostsUSD || 0
+    acc.consumption += entry.consumptionMWh || 0
+    acc.btcPriceSum += entry.btcPrice || 0
+    acc.btcPriceCount += entry.btcPrice ? 1 : 0
+    return acc
+  }, { energyCosts: 0, operationalCosts: 0, totalCosts: 0, consumption: 0, btcPriceSum: 0, btcPriceCount: 0 })
+
+  return {
+    totalEnergyCostsUSD: totals.energyCosts,
+    totalOperationalCostsUSD: totals.operationalCosts,
+    totalCostsUSD: totals.totalCosts,
+    totalConsumptionMWh: totals.consumption,
+    avgAllInCostPerMWh: safeDiv(totals.totalCosts, totals.consumption),
+    avgEnergyCostPerMWh: safeDiv(totals.energyCosts, totals.consumption),
+    avgBtcPrice: safeDiv(totals.btcPriceSum, totals.btcPriceCount)
+  }
+}
+
 // ==================== Shared ====================
 
 async function getProductionCosts (ctx, site, start, end) {
@@ -638,6 +752,7 @@ function processCostsData (costs) {
 module.exports = {
   getEnergyBalance,
   getEbitda,
+  getCostSummary,
   getProductionCosts,
   processConsumptionData,
   processTransactionData,
@@ -651,5 +766,6 @@ module.exports = {
   processEbitdaTransactions,
   processEbitdaPrices,
   extractEbitdaCurrentPrice,
-  calculateEbitdaSummary
+  calculateEbitdaSummary,
+  calculateCostSummary
 }

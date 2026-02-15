@@ -21,6 +21,16 @@ const schemas = {
         overwriteCache: { type: 'boolean' }
       },
       required: ['start', 'end']
+    },
+    costSummary: {
+      type: 'object',
+      properties: {
+        start: { type: 'integer' },
+        end: { type: 'integer' },
+        period: { type: 'string', enum: ['daily', 'monthly', 'yearly'] },
+        overwriteCache: { type: 'boolean' }
+      },
+      required: ['start', 'end']
     }
   }
 }

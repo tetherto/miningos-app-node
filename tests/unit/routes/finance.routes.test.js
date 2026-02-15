@@ -17,6 +17,7 @@ test('finance routes - route definitions', (t) => {
   const routeUrls = routes.map(route => route.url)
   t.ok(routeUrls.includes('/auth/finance/energy-balance'), 'should have energy-balance route')
   t.ok(routeUrls.includes('/auth/finance/ebitda'), 'should have ebitda route')
+  t.ok(routeUrls.includes('/auth/finance/cost-summary'), 'should have cost-summary route')
 
   t.pass()
 })

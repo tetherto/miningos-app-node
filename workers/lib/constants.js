@@ -112,7 +112,8 @@ const ENDPOINTS = {
 
   // Finance endpoints
   FINANCE_ENERGY_BALANCE: '/auth/finance/energy-balance',
-  FINANCE_EBITDA: '/auth/finance/ebitda'
+  FINANCE_EBITDA: '/auth/finance/ebitda',
+  FINANCE_COST_SUMMARY: '/auth/finance/cost-summary'
 }
 
 const HTTP_METHODS = {
