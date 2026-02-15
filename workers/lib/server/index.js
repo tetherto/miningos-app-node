@@ -9,6 +9,7 @@ const thingsRoutes = require('./routes/things.routes')
 const settingsRoutes = require('./routes/settings.routes')
 const wsRoutes = require('./routes/ws.routes')
 const financeRoutes = require('./routes/finance.routes')
+const poolsRoutes = require('./routes/pools.routes')
 
 /**
  * Collect all routes into a flat array for server injection.
@@ -24,7 +25,8 @@ function routes (ctx) {
     ...usersRoutes(ctx),
     ...settingsRoutes(ctx),
     ...wsRoutes(ctx),
-    ...financeRoutes(ctx)
+    ...financeRoutes(ctx),
+    ...poolsRoutes(ctx)
   ]
 }
 

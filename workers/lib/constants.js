@@ -113,7 +113,10 @@ const ENDPOINTS = {
   // Finance endpoints
   FINANCE_ENERGY_BALANCE: '/auth/finance/energy-balance',
   FINANCE_EBITDA: '/auth/finance/ebitda',
-  FINANCE_COST_SUMMARY: '/auth/finance/cost-summary'
+  FINANCE_COST_SUMMARY: '/auth/finance/cost-summary',
+
+  // Pools endpoints
+  POOLS: '/auth/pools'
 }
 
 const HTTP_METHODS = {
