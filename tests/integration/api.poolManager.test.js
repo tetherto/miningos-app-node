@@ -136,6 +136,26 @@ test('Pool Manager API', { timeout: 90000 }, async (main) => {
       if (method === 'applyThings') {
         return Promise.resolve({ success: true, affected: params.query?.id?.$in?.length || 0 })
       }
+      if (method === 'getWrkExtData') {
+        return Promise.resolve([{
+          stats: [
+            {
+              poolType: 'f2pool',
+              username: 'tether.worker1',
+              hashrate: 285000,
+              hashrate_1h: 280000,
+              hashrate_24h: 275000,
+              worker_count: 3,
+              active_workers_count: 2,
+              balance: 0.005,
+              unsettled: 0.001,
+              revenue_24h: 0.0002,
+              yearlyBalances: [],
+              timestamp: Date.now()
+            }
+          ]
+        }])
+      }
       return Promise.resolve([])
     }
   }
@@ -178,8 +198,8 @@ test('Pool Manager API', { timeout: 90000 }, async (main) => {
       try {
         const res = await httpClient.get(api, { headers, encoding })
         t.ok(res.body)
-        t.ok(typeof res.body.totalMiners === 'number')
-        t.ok(res.body.configured)
+        t.ok(typeof res.body.totalPools === 'number')
+        t.ok(typeof res.body.totalWorkers === 'number')
         t.ok(typeof res.body.errors === 'number')
         t.pass()
       } catch (e) {
@@ -206,10 +226,12 @@ test('Pool Manager API', { timeout: 90000 }, async (main) => {
       const headers = { 'bfx-token': token }
       try {
         const res = await httpClient.get(api, { headers, encoding })
-        t.ok(Array.isArray(res.body))
-        if (res.body.length > 0) {
-          t.ok(res.body[0].url)
-          t.ok(res.body[0].name)
+        t.ok(res.body)
+        t.ok(Array.isArray(res.body.pools))
+        t.ok(typeof res.body.total === 'number')
+        if (res.body.pools.length > 0) {
+          t.ok(res.body.pools[0].pool)
+          t.ok(res.body.pools[0].name)
         }
         t.pass()
       } catch (e) {
@@ -281,7 +303,9 @@ test('Pool Manager API', { timeout: 90000 }, async (main) => {
       const headers = { 'bfx-token': token }
       try {
         const res = await httpClient.get(api, { headers, encoding })
-        t.ok(Array.isArray(res.body))
+        t.ok(res.body)
+        t.ok(Array.isArray(res.body.units))
+        t.ok(typeof res.body.total === 'number')
         t.pass()
       } catch (e) {
         console.error('Sites error:', e)
@@ -307,11 +331,13 @@ test('Pool Manager API', { timeout: 90000 }, async (main) => {
       const headers = { 'bfx-token': token }
       try {
         const res = await httpClient.get(api, { headers, encoding })
-        t.ok(Array.isArray(res.body))
-        if (res.body.length > 0) {
-          t.ok(res.body[0].type)
-          t.ok(res.body[0].minerId)
-          t.ok(res.body[0].severity)
+        t.ok(res.body)
+        t.ok(Array.isArray(res.body.alerts))
+        t.ok(typeof res.body.total === 'number')
+        if (res.body.alerts.length > 0) {
+          t.ok(res.body.alerts[0].type)
+          t.ok(res.body.alerts[0].minerId)
+          t.ok(res.body.alerts[0].severity)
         }
         t.pass()
       } catch (e) {
@@ -324,13 +350,7 @@ test('Pool Manager API', { timeout: 90000 }, async (main) => {
   await main.test('Api: auth/pool-manager/miners/assign', async (n) => {
     const api = `${appNodeBaseUrl}/auth/pool-manager/miners/assign?${baseParams}`
     const body = {
-      regions: ['AB'],
-      minerIds: ['miner-001', 'miner-002'],
-      poolConfig: {
-        url: 'stratum+tcp://newpool.com:3333',
-        workerName: 'tether.newworker',
-        workerPassword: 'x'
-      }
+      minerIds: ['miner-001', 'miner-002']
     }
 
     await n.test('api should fail for missing auth token', async (t) => {

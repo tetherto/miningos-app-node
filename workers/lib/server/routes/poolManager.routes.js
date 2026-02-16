@@ -53,23 +53,9 @@ const POOL_MANAGER_ASSIGN_SCHEMA = {
       minerIds: {
         type: 'array',
         items: { type: 'string' }
-      },
-      pools: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            url: { type: 'string' },
-            worker_name: { type: 'string' },
-            worker_password: { type: 'string' }
-          },
-          required: ['url']
-        },
-        minItems: 1,
-        maxItems: 3
       }
     },
-    required: ['minerIds', 'pools']
+    required: ['minerIds']
   }
 }
 

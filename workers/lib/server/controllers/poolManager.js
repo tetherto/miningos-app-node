@@ -65,18 +65,10 @@ const assignPool = async (ctx, req) => {
     throw new Error('ERR_POOL_MANAGER_PERM_REQUIRED')
   }
 
-  const { minerIds, pools } = req.body
+  const { minerIds } = req.body
 
   if (!minerIds || !Array.isArray(minerIds) || minerIds.length === 0) {
     throw new Error('ERR_MINER_IDS_REQUIRED')
-  }
-
-  if (!pools || !Array.isArray(pools) || pools.length === 0) {
-    throw new Error('ERR_POOLS_REQUIRED')
-  }
-
-  if (!pools[0]?.url) {
-    throw new Error('ERR_POOL_URL_REQUIRED')
   }
 
   const auditInfo = {
@@ -84,7 +76,7 @@ const assignPool = async (ctx, req) => {
     timestamp: Date.now()
   }
 
-  return poolManagerService.assignPoolToMiners(ctx, minerIds, pools, auditInfo)
+  return poolManagerService.assignPoolToMiners(ctx, minerIds, auditInfo)
 }
 
 const setPowerMode = async (ctx, req) => {

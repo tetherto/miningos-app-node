@@ -41,7 +41,8 @@ const getMinersWithPools = async (ctx, filters = {}) => {
 
   const results = await requestRpcMapLimit(ctx, LIST_THINGS, {
     type: WORKER_TYPES.MINER,
-    query: {}
+    query: {},
+    fields: { id: 1, code: 1, type: 1, info: 1, address: 1, tags: 1 }
   })
 
   let allMiners = []
@@ -100,7 +101,8 @@ const getMinersWithPools = async (ctx, filters = {}) => {
 const getUnitsWithPoolData = async (ctx) => {
   const results = await requestRpcMapLimit(ctx, LIST_THINGS, {
     type: WORKER_TYPES.MINER,
-    query: {}
+    query: {},
+    fields: { id: 1, type: 1, info: 1, tags: 1 }
   })
 
   const unitsMap = new Map()
@@ -143,7 +145,8 @@ const getPoolAlerts = async (ctx, filters = {}) => {
 
   const results = await requestRpcMapLimit(ctx, LIST_THINGS, {
     type: WORKER_TYPES.MINER,
-    query: {}
+    query: {},
+    fields: { id: 1, code: 1, type: 1, info: 1, tags: 1, alerts: 1 }
   })
 
   const alerts = []
@@ -175,29 +178,18 @@ const getPoolAlerts = async (ctx, filters = {}) => {
   return alerts.slice(0, limit)
 }
 
-const assignPoolToMiners = async (ctx, minerIds, pools, auditInfo = {}) => {
+const assignPoolToMiners = async (ctx, minerIds, auditInfo = {}) => {
   if (!Array.isArray(minerIds) || minerIds.length === 0) {
     throw new Error('ERR_MINER_IDS_REQUIRED')
   }
-
-  if (!Array.isArray(pools) || pools.length === 0 || !pools[0]?.url) {
-    throw new Error('ERR_POOLS_REQUIRED')
-  }
-
-  const formattedPools = pools.map(pool => ({
-    url: pool.url,
-    worker_name: pool.worker_name || '',
-    worker_password: pool.worker_password || ''
-  }))
 
   if (ctx.logger && auditInfo.user) {
     ctx.logger.info({
       action: 'pool_assignment',
       user: auditInfo.user,
       timestamp: auditInfo.timestamp,
-      minerCount: minerIds.length,
-      poolUrl: pools[0].url
-    }, 'Pool assignment initiated')
+      minerCount: minerIds.length
+    }, 'Pool setup initiated')
   }
 
   const params = {
@@ -205,8 +197,7 @@ const assignPoolToMiners = async (ctx, minerIds, pools, auditInfo = {}) => {
     query: {
       id: { $in: minerIds }
     },
-    action: 'setupPools',
-    params: { pools: formattedPools }
+    action: 'setupPools'
   }
 
   const results = await requestRpcEachLimit(ctx, APPLY_THINGS, params)

@@ -346,16 +346,8 @@ test('poolManager:assignPoolToMiners validates miner IDs', async function (t) {
   const mockCtx = createMockCtx({ success: true })
 
   await t.exception(async () => {
-    await assignPoolToMiners(mockCtx, [], [{ url: 'stratum+tcp://pool.com:3333' }])
+    await assignPoolToMiners(mockCtx, [])
   }, /ERR_MINER_IDS_REQUIRED/)
-})
-
-test('poolManager:assignPoolToMiners validates pools', async function (t) {
-  const mockCtx = createMockCtx({ success: true })
-
-  await t.exception(async () => {
-    await assignPoolToMiners(mockCtx, ['miner-1'], [])
-  }, /ERR_POOLS_REQUIRED/)
 })
 
 test('poolManager:assignPoolToMiners calls RPC with correct params', async function (t) {
@@ -370,41 +362,14 @@ test('poolManager:assignPoolToMiners calls RPC with correct params', async funct
     }
   }
 
-  const result = await assignPoolToMiners(mockCtx, ['miner-1', 'miner-2'], [
-    { url: 'stratum+tcp://pool.com:3333', worker_name: 'worker1', worker_password: 'x' }
-  ])
+  const result = await assignPoolToMiners(mockCtx, ['miner-1', 'miner-2'])
 
   t.ok(capturedParams)
   t.is(capturedParams.action, 'setupPools')
-  t.ok(capturedParams.params.pools)
-  t.is(capturedParams.params.pools[0].url, 'stratum+tcp://pool.com:3333')
-  t.is(capturedParams.params.pools[0].worker_name, 'worker1')
+  t.alike(capturedParams.query, { id: { $in: ['miner-1', 'miner-2'] } })
+  t.is(capturedParams.params, undefined)
   t.is(result.success, true)
   t.is(result.assigned, 2)
-})
-
-test('poolManager:assignPoolToMiners handles multiple pools', async function (t) {
-  let capturedParams
-  const mockCtx = {
-    conf: { orks: [{ rpcPublicKey: 'key1' }] },
-    net_r0: {
-      jRequest: (pk, method, params) => {
-        capturedParams = params
-        return Promise.resolve({ success: true, affected: 1 })
-      }
-    }
-  }
-
-  await assignPoolToMiners(mockCtx, ['miner-1'], [
-    { url: 'stratum+tcp://primary.com:3333', worker_name: 'worker1' },
-    { url: 'stratum+tcp://backup1.com:3333' },
-    { url: 'stratum+tcp://backup2.com:3333' }
-  ])
-
-  t.is(capturedParams.params.pools.length, 3)
-  t.is(capturedParams.params.pools[0].url, 'stratum+tcp://primary.com:3333')
-  t.is(capturedParams.params.pools[1].url, 'stratum+tcp://backup1.com:3333')
-  t.is(capturedParams.params.pools[2].url, 'stratum+tcp://backup2.com:3333')
 })
 
 test('poolManager:setPowerMode validates miner IDs', async function (t) {
