@@ -399,6 +399,72 @@ test('Api security', { timeout: 90000 }, async (main) => {
     await testGetEndpointSecurity(n, httpClient, api, invalidToken, readonlyUser, encoding)
   })
 
+  await main.test('Api: get site/status/live', async (n) => {
+    const api = `${appNodeBaseUrl}${ENDPOINTS.SITE_STATUS_LIVE}`
+    await testGetEndpointSecurity(n, httpClient, api, invalidToken, readonlyUser, encoding)
+  })
+
+  await main.test('Api: get site/status/live with overwriteCache', async (n) => {
+    const api = `${appNodeBaseUrl}${ENDPOINTS.SITE_STATUS_LIVE}?overwriteCache=true`
+    await testGetEndpointSecurity(n, httpClient, api, invalidToken, readonlyUser, encoding)
+  })
+
+  await main.test('Api: get site/status/live - response structure', async (n) => {
+    const api = `${appNodeBaseUrl}${ENDPOINTS.SITE_STATUS_LIVE}`
+
+    await n.test('response should have expected structure', async (t) => {
+      const headers = await createAuthHeaders(readonlyUser)
+      try {
+        const { body: data } = await httpClient.get(api, { headers, encoding })
+
+        // Verify top-level keys exist
+        t.ok(data.hashrate !== undefined, 'should have hashrate')
+        t.ok(data.power !== undefined, 'should have power')
+        t.ok(data.efficiency !== undefined, 'should have efficiency')
+        t.ok(data.miners !== undefined, 'should have miners')
+        t.ok(data.alerts !== undefined, 'should have alerts')
+        t.ok(data.pools !== undefined, 'should have pools')
+        t.ok(data.ts !== undefined, 'should have timestamp')
+
+        // Verify hashrate structure
+        t.ok(data.hashrate.value !== undefined, 'hashrate should have value')
+        t.ok(data.hashrate.nominal !== undefined, 'hashrate should have nominal')
+        t.ok(data.hashrate.utilization !== undefined, 'hashrate should have utilization')
+
+        // Verify power structure
+        t.ok(data.power.value !== undefined, 'power should have value')
+        t.ok(data.power.nominal !== undefined, 'power should have nominal')
+        t.ok(data.power.utilization !== undefined, 'power should have utilization')
+
+        // Verify efficiency structure
+        t.ok(data.efficiency.value !== undefined, 'efficiency should have value')
+
+        // Verify miners structure
+        t.ok(data.miners.online !== undefined, 'miners should have online')
+        t.ok(data.miners.offline !== undefined, 'miners should have offline')
+        t.ok(data.miners.error !== undefined, 'miners should have error')
+        t.ok(data.miners.sleep !== undefined, 'miners should have sleep')
+        t.ok(data.miners.total !== undefined, 'miners should have total')
+        t.ok(data.miners.containerCapacity !== undefined, 'miners should have containerCapacity')
+
+        // Verify alerts structure
+        t.ok(data.alerts.critical !== undefined, 'alerts should have critical')
+        t.ok(data.alerts.high !== undefined, 'alerts should have high')
+        t.ok(data.alerts.medium !== undefined, 'alerts should have medium')
+        t.ok(data.alerts.total !== undefined, 'alerts should have total')
+
+        // Verify pools structure
+        t.ok(data.pools.totalHashrate !== undefined, 'pools should have totalHashrate')
+        t.ok(data.pools.activeWorkers !== undefined, 'pools should have activeWorkers')
+        t.ok(data.pools.totalWorkers !== undefined, 'pools should have totalWorkers')
+
+        t.pass('response structure is valid')
+      } catch (e) {
+        t.fail(`Request failed: ${e.message || e}`)
+      }
+    })
+  })
+
   await main.test('Api: get permissions', async (n) => {
     const api = `${appNodeBaseUrl}${ENDPOINTS.PERMISSIONS}`
     await testGetEndpointSecurity(n, httpClient, api, invalidToken, readonlyUser, encoding)
