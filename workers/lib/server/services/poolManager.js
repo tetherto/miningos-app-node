@@ -11,6 +11,7 @@ const {
 } = require('../../constants')
 const {
   requestRpcMapLimit,
+  requestRpcMapAllPages,
   requestRpcEachLimit
 } = require('../../utils')
 
@@ -39,7 +40,7 @@ const getPoolConfigs = async (ctx) => {
 const getMinersWithPools = async (ctx, filters = {}) => {
   const { search, model, page = 1, limit = 50 } = filters
 
-  const results = await requestRpcMapLimit(ctx, LIST_THINGS, {
+  const results = await requestRpcMapAllPages(ctx, LIST_THINGS, {
     type: WORKER_TYPES.MINER,
     query: {},
     fields: { id: 1, code: 1, type: 1, info: 1, address: 1 }
@@ -98,7 +99,7 @@ const getMinersWithPools = async (ctx, filters = {}) => {
 }
 
 const getUnitsWithPoolData = async (ctx) => {
-  const results = await requestRpcMapLimit(ctx, LIST_THINGS, {
+  const results = await requestRpcMapAllPages(ctx, LIST_THINGS, {
     type: WORKER_TYPES.MINER,
     query: {},
     fields: { id: 1, type: 1, info: 1 }
@@ -138,7 +139,7 @@ const getUnitsWithPoolData = async (ctx) => {
 const getPoolAlerts = async (ctx, filters = {}) => {
   const { limit = 50 } = filters
 
-  const results = await requestRpcMapLimit(ctx, LIST_THINGS, {
+  const results = await requestRpcMapAllPages(ctx, LIST_THINGS, {
     type: WORKER_TYPES.MINER,
     query: {},
     fields: { id: 1, code: 1, type: 1, info: 1, alerts: 1 }

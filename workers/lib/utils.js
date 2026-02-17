@@ -1,7 +1,7 @@
 'use strict'
 
 const async = require('async')
-const { RPC_TIMEOUT, RPC_CONCURRENCY_LIMIT } = require('./constants')
+const { RPC_TIMEOUT, RPC_CONCURRENCY_LIMIT, RPC_PAGE_LIMIT } = require('./constants')
 const { getStartOfDay } = require('./period.utils')
 
 const dateNowSec = () => Math.floor(Date.now() / 1000)
@@ -129,6 +129,39 @@ const requestRpcMapLimit = async (ctx, method, payload) => {
   })
 }
 
+/**
+ * Paginates RPC requests across multiple orks, fetching all pages per ork
+ * @param {Object} ctx - Context object
+ * @param {string} method - RPC method name
+ * @param {Object} payload - RPC payload (limit/offset will be managed internally)
+ * @param {number} pageLimit - Items per page (default: RPC_PAGE_LIMIT)
+ * @returns {Promise<Array>} Array of results per ork (all pages concatenated)
+ */
+const requestRpcMapAllPages = async (ctx, method, payload, pageLimit = RPC_PAGE_LIMIT) => {
+  const concurrency = ctx.conf?.rpcConcurrencyLimit || RPC_CONCURRENCY_LIMIT
+
+  return await async.mapLimit(ctx.conf.orks, concurrency, async (store) => {
+    const allItems = []
+    let offset = 0
+
+    while (true) {
+      const batch = await ctx.net_r0.jRequest(
+        store.rpcPublicKey,
+        method,
+        { ...payload, limit: pageLimit, offset },
+        { timeout: getRpcTimeout(ctx.conf) }
+      )
+
+      if (!Array.isArray(batch) || batch.length === 0) break
+      allItems.push(...batch)
+      if (batch.length < pageLimit) break
+      offset += pageLimit
+    }
+
+    return allItems
+  })
+}
+
 const runParallel = (tasks) =>
   new Promise((resolve, reject) => {
     async.parallel(tasks, (err, results) => {
@@ -154,6 +187,7 @@ module.exports = {
   parseJsonQueryParam,
   requestRpcEachLimit,
   requestRpcMapLimit,
+  requestRpcMapAllPages,
   getStartOfDay,
   safeDiv,
   runParallel

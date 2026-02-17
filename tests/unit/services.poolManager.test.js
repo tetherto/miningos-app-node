@@ -18,7 +18,14 @@ function createMockCtx (responseData) {
       orks: [{ rpcPublicKey: 'key1' }]
     },
     net_r0: {
-      jRequest: () => Promise.resolve(responseData)
+      jRequest: (pk, method, payload) => {
+        if (Array.isArray(responseData) && typeof payload?.limit === 'number') {
+          const offset = payload.offset || 0
+          const limit = payload.limit
+          return Promise.resolve(responseData.slice(offset, offset + limit))
+        }
+        return Promise.resolve(responseData)
+      }
     }
   }
 }
@@ -151,6 +158,36 @@ test('poolManager:getMinersWithPools returns paginated results', async function 
   t.is(result.page, 1)
   t.is(result.limit, 10)
   t.is(result.totalPages, 10)
+})
+
+test('poolManager:getMinersWithPools fetches all pages from ork workers', async function (t) {
+  const miners = []
+  for (let i = 0; i < 250; i++) {
+    miners.push(createMockMiner(`miner-${i}`, { code: `AM-S19XP-${i}` }))
+  }
+
+  const requestLog = []
+  const mockCtx = {
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: {
+      jRequest: (pk, method, payload) => {
+        requestLog.push({ offset: payload.offset, limit: payload.limit })
+        const offset = payload.offset || 0
+        const limit = payload.limit
+        return Promise.resolve(miners.slice(offset, offset + limit))
+      }
+    }
+  }
+
+  const result = await getMinersWithPools(mockCtx, { page: 1, limit: 50 })
+
+  t.is(result.total, 250, 'should fetch all 250 miners across multiple pages')
+  t.is(result.miners.length, 50, 'should return requested page size')
+  t.is(result.totalPages, 5)
+  t.is(requestLog.length, 3, 'should make 3 RPC calls (100+100+50)')
+  t.is(requestLog[0].offset, 0)
+  t.is(requestLog[1].offset, 100)
+  t.is(requestLog[2].offset, 200)
 })
 
 test('poolManager:getMinersWithPools extracts model from type', async function (t) {
