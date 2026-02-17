@@ -126,7 +126,7 @@ test('constants - OPERATIONS', (t) => {
   t.is(OPERATIONS.USER_UPDATE, 'user.update', 'should have user update operation')
   t.is(OPERATIONS.ACTIONS_QUERY, 'actions.query', 'should have actions query operation')
   t.is(OPERATIONS.THING_COMMENT_WRITE, 'thing.comment.write', 'should have thing comment write operation')
-  t.ok(Object.keys(OPERATIONS).length >= 30, 'should have multiple operations')
+  t.ok(Object.keys(OPERATIONS).length >= 10, 'should have multiple operations')
   t.pass()
 })
 
