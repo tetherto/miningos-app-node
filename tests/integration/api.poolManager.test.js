@@ -46,7 +46,7 @@ test('Pool Manager API', { timeout: 90000 }, async (main) => {
       h0: {
         method: 'google',
         credentials: { client: { id: 'i', secret: 's' } },
-        users: [{ email: testUser }]
+        users: [{ email: testUser, write: true }]
       }
     }
     const authConf = require('../../config/facs/auth.config.json')
@@ -194,7 +194,7 @@ test('Pool Manager API', { timeout: 90000 }, async (main) => {
 
     await n.test('api should succeed and return stats', async (t) => {
       const token = await getTestToken(testUser)
-      const headers = { 'bfx-token': token }
+      const headers = { Authorization: `Bearer ${token}` }
       try {
         const res = await httpClient.get(api, { headers, encoding })
         t.ok(res.body)
@@ -223,7 +223,7 @@ test('Pool Manager API', { timeout: 90000 }, async (main) => {
 
     await n.test('api should succeed and return pools list', async (t) => {
       const token = await getTestToken(testUser)
-      const headers = { 'bfx-token': token }
+      const headers = { Authorization: `Bearer ${token}` }
       try {
         const res = await httpClient.get(api, { headers, encoding })
         t.ok(res.body)
@@ -255,7 +255,7 @@ test('Pool Manager API', { timeout: 90000 }, async (main) => {
 
     await n.test('api should succeed and return paginated miners', async (t) => {
       const token = await getTestToken(testUser)
-      const headers = { 'bfx-token': token }
+      const headers = { Authorization: `Bearer ${token}` }
       try {
         const res = await httpClient.get(api, { headers, encoding })
         t.ok(res.body)
@@ -272,7 +272,7 @@ test('Pool Manager API', { timeout: 90000 }, async (main) => {
 
     await n.test('api should support pagination params', async (t) => {
       const token = await getTestToken(testUser)
-      const headers = { 'bfx-token': token }
+      const headers = { Authorization: `Bearer ${token}` }
       const paginatedApi = `${api}&page=1&limit=10`
       try {
         const res = await httpClient.get(paginatedApi, { headers, encoding })
@@ -286,8 +286,8 @@ test('Pool Manager API', { timeout: 90000 }, async (main) => {
     })
   })
 
-  await main.test('Api: auth/pool-manager/sites', async (n) => {
-    const api = `${appNodeBaseUrl}/auth/pool-manager/sites?${baseParams}`
+  await main.test('Api: auth/pool-manager/units', async (n) => {
+    const api = `${appNodeBaseUrl}/auth/pool-manager/units?${baseParams}`
 
     await n.test('api should fail for missing auth token', async (t) => {
       try {
@@ -298,9 +298,9 @@ test('Pool Manager API', { timeout: 90000 }, async (main) => {
       }
     })
 
-    await n.test('api should succeed and return sites list', async (t) => {
+    await n.test('api should succeed and return units list', async (t) => {
       const token = await getTestToken(testUser)
-      const headers = { 'bfx-token': token }
+      const headers = { Authorization: `Bearer ${token}` }
       try {
         const res = await httpClient.get(api, { headers, encoding })
         t.ok(res.body)
@@ -308,7 +308,7 @@ test('Pool Manager API', { timeout: 90000 }, async (main) => {
         t.ok(typeof res.body.total === 'number')
         t.pass()
       } catch (e) {
-        console.error('Sites error:', e)
+        console.error('Units error:', e)
         t.fail()
       }
     })
@@ -328,7 +328,7 @@ test('Pool Manager API', { timeout: 90000 }, async (main) => {
 
     await n.test('api should succeed and return alerts list', async (t) => {
       const token = await getTestToken(testUser)
-      const headers = { 'bfx-token': token }
+      const headers = { Authorization: `Bearer ${token}` }
       try {
         const res = await httpClient.get(api, { headers, encoding })
         t.ok(res.body)
@@ -362,18 +362,15 @@ test('Pool Manager API', { timeout: 90000 }, async (main) => {
       }
     })
 
-    await n.test('api should succeed and return assignment result', async (t) => {
+    await n.test('api should fail without pool_manager permission', async (t) => {
       const token = await getTestToken(testUser)
-      const headers = { 'bfx-token': token }
+      const headers = { Authorization: `Bearer ${token}` }
       try {
-        const res = await httpClient.post(api, { body, headers, encoding })
-        t.ok(res.body)
-        t.ok(typeof res.body.success === 'boolean')
-        t.ok(typeof res.body.assigned === 'number')
-        t.pass()
-      } catch (e) {
-        console.error('Assign error:', e)
+        await httpClient.post(api, { body, headers, encoding })
         t.fail()
+      } catch (e) {
+        t.is(e.response.message.includes('ERR_POOL_MANAGER_PERM_REQUIRED'), true)
+        t.pass()
       }
     })
   })

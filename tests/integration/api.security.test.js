@@ -467,7 +467,7 @@ test('Api security', { timeout: 90000 }, async (main) => {
 
     await n.test('api should fail due to invalid permissions', async (t) => {
       await testEndpointWithAuthAndError(t, httpClient, 'post', api, readonlyUser, 'ERR_AUTH_FAIL_NO_PERMS', {
-        body: { data: { email: 'dev@test.test', role: 'dev' } },
+        body: { data: { email: 'dev@test.test', role: 'read_only_user' } },
         encoding
       })
     })
@@ -481,7 +481,7 @@ test('Api security', { timeout: 90000 }, async (main) => {
 
     await n.test('api should succeed for valid permissions (admin)', async (t) => {
       await testEndpointWithAuth(t, httpClient, 'post', api, newCreatedUser, {
-        body: { data: { email: 'dev@test.test', role: 'dev' } },
+        body: { data: { email: 'dev@test.test', role: 'read_only_user' } },
         encoding
       })
     })
