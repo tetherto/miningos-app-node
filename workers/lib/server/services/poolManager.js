@@ -42,7 +42,7 @@ const getMinersWithPools = async (ctx, filters = {}) => {
   const results = await requestRpcMapLimit(ctx, LIST_THINGS, {
     type: WORKER_TYPES.MINER,
     query: {},
-    fields: { id: 1, code: 1, type: 1, info: 1, address: 1, tags: 1 }
+    fields: { id: 1, code: 1, type: 1, info: 1, address: 1 }
   })
 
   let allMiners = []
@@ -58,8 +58,7 @@ const getMinersWithPools = async (ctx, filters = {}) => {
         code: thing.code,
         type: thing.type,
         model: _extractModelFromType(thing.type),
-        site: thing.info?.site || _extractTagValue(thing.tags, 'site-'),
-        container: thing.info?.container || _extractTagValue(thing.tags, 'container-'),
+        container: thing.info?.container || null,
         ipAddress: thing.address || null,
         serialNum: thing.info?.serialNum || null,
         nominalHashrate: thing.info?.nominalHashrateMhs || 0
@@ -102,7 +101,7 @@ const getUnitsWithPoolData = async (ctx) => {
   const results = await requestRpcMapLimit(ctx, LIST_THINGS, {
     type: WORKER_TYPES.MINER,
     query: {},
-    fields: { id: 1, type: 1, info: 1, tags: 1 }
+    fields: { id: 1, type: 1, info: 1 }
   })
 
   const unitsMap = new Map()
@@ -113,14 +112,11 @@ const getUnitsWithPoolData = async (ctx) => {
     clusterData.forEach((thing) => {
       if (!thing?.type?.startsWith('miner-')) return
 
-      const container = thing.info?.container ||
-        _extractTagValue(thing.tags, 'container-') || 'unassigned'
-      const site = thing.info?.site || _extractTagValue(thing.tags, 'site-') || ''
+      const container = thing.info?.container || 'unassigned'
 
       if (!unitsMap.has(container)) {
         unitsMap.set(container, {
           name: container,
-          site,
           miners: [],
           totalNominalHashrate: 0
         })
@@ -134,7 +130,6 @@ const getUnitsWithPoolData = async (ctx) => {
 
   return Array.from(unitsMap.values()).map((unit) => ({
     name: unit.name,
-    site: unit.site,
     minersCount: unit.miners.length,
     nominalHashrate: unit.totalNominalHashrate
   }))
@@ -146,7 +141,7 @@ const getPoolAlerts = async (ctx, filters = {}) => {
   const results = await requestRpcMapLimit(ctx, LIST_THINGS, {
     type: WORKER_TYPES.MINER,
     query: {},
-    fields: { id: 1, code: 1, type: 1, info: 1, tags: 1, alerts: 1 }
+    fields: { id: 1, code: 1, type: 1, info: 1, alerts: 1 }
   })
 
   const alerts = []
@@ -164,7 +159,7 @@ const getPoolAlerts = async (ctx, filters = {}) => {
             type: alertType,
             minerId: thing.id,
             code: thing.code,
-            container: thing.info?.container || _extractTagValue(thing.tags, 'container-'),
+            container: thing.info?.container || null,
             severity: _getAlertSeverity(alertType),
             message: _getAlertMessage(alertType, thing.code || thing.id),
             timestamp: minerAlerts[alertType]?.ts || Date.now()
@@ -378,12 +373,6 @@ function _extractModelFromType (type) {
   }
 
   return type
-}
-
-function _extractTagValue (tags, prefix) {
-  if (!Array.isArray(tags)) return null
-  const tag = tags.find(t => typeof t === 'string' && t.startsWith(prefix))
-  return tag ? tag.slice(prefix.length) : null
 }
 
 function _getAlertSeverity (alertType) {

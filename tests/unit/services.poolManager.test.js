@@ -47,9 +47,7 @@ function createMockMiner (id, options = {}) {
     id,
     code: options.code || 'AM-S19XP-0001',
     type: options.type || 'miner-am-s19xp',
-    tags: options.tags || ['t-miner', 'site-pintado', 'container-bitmain-imm-1'],
     info: {
-      site: options.site || 'Pintado',
       container: options.container || 'bitmain-imm-1',
       serialNum: options.serialNum || 'HTM3X01',
       nominalHashrateMhs: options.nominalHashrateMhs || 204000000
@@ -203,7 +201,6 @@ test('poolManager:getMinersWithPools maps thing fields correctly', async functio
   const miners = [createMockMiner('miner-1', {
     code: 'AM-S19XP-0165',
     type: 'miner-am-s19xp',
-    site: 'Pintado',
     container: 'bitmain-imm-1',
     address: '10.0.0.1',
     serialNum: 'HTM3X10',
@@ -219,7 +216,6 @@ test('poolManager:getMinersWithPools maps thing fields correctly', async functio
   t.is(miner.code, 'AM-S19XP-0165')
   t.is(miner.type, 'miner-am-s19xp')
   t.is(miner.model, 'Antminer S19XP')
-  t.is(miner.site, 'Pintado')
   t.is(miner.container, 'bitmain-imm-1')
   t.is(miner.ipAddress, '10.0.0.1')
   t.is(miner.serialNum, 'HTM3X10')
@@ -259,14 +255,10 @@ test('poolManager:getUnitsWithPoolData sums nominal hashrate', async function (t
   t.is(unitA.nominalHashrate, 250000)
 })
 
-test('poolManager:getUnitsWithPoolData extracts container from tags', async function (t) {
+test('poolManager:getUnitsWithPoolData reads container from info only', async function (t) {
   const miners = [
-    createMockMiner('m1', {
-      container: undefined,
-      tags: ['t-miner', 'site-pintado', 'container-bitmain-imm-2']
-    })
+    createMockMiner('m1', { container: 'bitmain-imm-2' })
   ]
-  miners[0].info.container = undefined
 
   const mockCtx = createMockCtx(miners)
 
@@ -278,7 +270,7 @@ test('poolManager:getUnitsWithPoolData extracts container from tags', async func
 
 test('poolManager:getUnitsWithPoolData assigns unassigned for no container', async function (t) {
   const miners = [
-    createMockMiner('m1', { container: undefined, tags: ['t-miner'] })
+    createMockMiner('m1', { container: undefined })
   ]
   miners[0].info.container = undefined
 
