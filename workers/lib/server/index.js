@@ -13,7 +13,6 @@ const poolsRoutes = require('./routes/pools.routes')
 const poolManagerRoutes = require('./routes/poolManager.routes')
 const siteRoutes = require('./routes/site.routes')
 
-
 /**
  * Collect all routes into a flat array for server injection.
  * Each route is a Fastify-style object: { method, url, handler, ... }
