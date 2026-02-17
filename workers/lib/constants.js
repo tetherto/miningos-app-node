@@ -124,54 +124,21 @@ const HTTP_METHODS = {
 const OPERATIONS = {
   // Auth operations
   AUTH_USERINFO_READ: 'auth.userinfo.read',
-  AUTH_TOKEN_GENERATE: 'auth.token.generate',
-  AUTH_PERMISSIONS_READ: 'auth.permissions.read',
-  AUTH_EXT_DATA_READ: 'auth.extData.read',
 
   // User operations
-  USER_READ: 'user.read',
   USER_CREATE: 'user.create',
   USER_UPDATE: 'user.update',
   USER_DELETE: 'user.delete',
 
-  // Global operations
-  GLOBAL_CONFIG_READ: 'global.config.read',
-  GLOBAL_CONFIG_WRITE: 'global.config.write',
-  GLOBAL_DATA_READ: 'global.data.read',
-  GLOBAL_DATA_WRITE: 'global.data.write',
-  GLOBAL_FEATURE_CONFIG_READ: 'global.featureConfig.read',
-  GLOBAL_FEATURES_READ: 'global.features.read',
-  GLOBAL_FEATURES_WRITE: 'global.features.write',
-  GLOBAL_SITE_CONFIG_READ: 'global.siteConfig.read',
-
   // Actions operations
   ACTIONS_QUERY: 'actions.query',
-  ACTIONS_BATCH_QUERY: 'actions.batch.query',
-  ACTIONS_SINGLE_READ: 'actions.single.read',
   ACTIONS_VOTING: 'actions.voting',
   ACTIONS_VOTING_BATCH: 'actions.voting.batch',
   ACTIONS_VOTE: 'actions.vote',
   ACTIONS_CANCEL: 'actions.cancel',
 
-  // Logs operations
-  LOGS_TAIL_READ: 'logs.tail.read',
-  LOGS_TAIL_MULTI_READ: 'logs.tail.multi.read',
-  LOGS_TAIL_RANGE_AGGR_READ: 'logs.tail.range.aggr.read',
-  LOGS_HISTORY_READ: 'logs.history.read',
-
   // Things operations
-  THINGS_LIST_READ: 'things.list.read',
-  RACKS_LIST_READ: 'racks.list.read',
-  THING_COMMENT_READ: 'thing.comment.read',
-  THING_COMMENT_WRITE: 'thing.comment.write',
-  THING_COMMENT_DELETE: 'thing.comment.delete',
-  THING_SETTINGS_READ: 'thing.settings.read',
-  THING_SETTINGS_WRITE: 'thing.settings.write',
-  WORKER_CONFIG_READ: 'worker.config.read',
-  THING_CONFIG_READ: 'thing.config.read',
-
-  // Site operations
-  SITE_STATUS_LIVE_READ: 'site.status.live.read'
+  THING_COMMENT_WRITE: 'thing.comment.write'
 }
 
 const DEFAULTS = {
