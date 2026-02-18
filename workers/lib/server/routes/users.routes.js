@@ -118,6 +118,6 @@ module.exports = (ctx) => [
   {
     method: HTTP_METHODS.GET,
     url: ENDPOINTS.ROLES_PERMISSIONS,
-    ...createAuthRoute(ctx, getRolesPermissions)
+    ...createAuthRoute(ctx, getRolesPermissions, ['users:r'])
   }
 ]
