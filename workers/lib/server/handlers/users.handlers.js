@@ -149,11 +149,17 @@ async function getUserSettings (ctx, req, res) {
   return await ctx.globalDataLib.getUserSettings(userId)
 }
 
+function getRolesPermissions (ctx) {
+  const { roles, roleManagement } = ctx.auth_a0.conf
+  return { roles, roleManagement }
+}
+
 module.exports = {
   createUser,
   deleteUser,
   listUsers,
   updateUser,
   saveUserSettings,
-  getUserSettings
+  getUserSettings,
+  getRolesPermissions
 }

@@ -7,7 +7,8 @@ const {
   updateUser,
   deleteUser,
   saveUserSettings,
-  getUserSettings
+  getUserSettings,
+  getRolesPermissions
 } = require('../../../workers/lib/server/handlers/users.handlers')
 const { SUPER_ADMIN_ROLE, SUPER_ADMIN_ID } = require('../../../workers/lib/constants')
 const { createMockAuthCtxWithRoles, createMockReqWithUser, createMockUserCtx } = require('../helpers/mockHelpers')
@@ -18,8 +19,9 @@ test('createUser - basic functionality', async (t) => {
     createUser: async (data) => {
       createUserCalled = true
       t.is(data.email, 'test@example.com', 'should pass email')
+      t.is(data.name, 'Test User', 'should pass name')
       t.is(data.role, 'admin', 'should pass role')
-      return { id: 123, email: 'test@example.com' }
+      return { id: 123, email: 'test@example.com', name: 'Test User', role: 'admin' }
     }
   }, createMockAuthCtxWithRoles({ admin: {} }, { admin: ['admin', 'user'] }))
   const originalLog = console.log
@@ -43,7 +45,10 @@ test('createUser - basic functionality', async (t) => {
   console.log = originalLog
 
   t.ok(createUserCalled, 'should call userService.createUser')
-  t.ok(result.id, 'should return created user')
+  t.is(result.id, 123, 'should return created user id')
+  t.is(result.email, 'test@example.com', 'should return created user email')
+  t.is(result.name, 'Test User', 'should return created user name')
+  t.is(result.role, 'admin', 'should return created user role')
 
   t.pass()
 })
@@ -192,7 +197,7 @@ test('updateUser - basic functionality', async (t) => {
       },
       updateUser: async (data) => {
         updateUserCalled = true
-        return { id: 123, ...data }
+        return { id: 123, email: data.email, name: data.name, role: data.role }
       }
     },
     auth_a0: {
@@ -229,7 +234,10 @@ test('updateUser - basic functionality', async (t) => {
   const result = await updateUser(mockCtx, mockReq, {})
 
   t.ok(updateUserCalled, 'should call userService.updateUser')
-  t.ok(result.id, 'should return updated user')
+  t.is(result.id, 123, 'should return updated user id')
+  t.is(result.email, 'updated@example.com', 'should return updated user email')
+  t.is(result.name, 'Updated User', 'should return updated user name')
+  t.is(result.role, 'admin', 'should return updated user role')
 
   t.pass()
 })
@@ -583,6 +591,31 @@ test('getUserSettings - basic functionality', async (t) => {
 
   t.ok(getUserSettingsCalled, 'should call globalDataLib.getUserSettings')
   t.ok(result.theme, 'should return settings')
+
+  t.pass()
+})
+
+test('getRolesPermissions - returns roles and roleManagement', (t) => {
+  const mockCtx = {
+    auth_a0: {
+      conf: {
+        roles: {
+          admin: ['miner:rw', 'users:rw'],
+          site_operator: ['miner:rw']
+        },
+        roleManagement: {
+          admin: ['site_operator']
+        }
+      }
+    }
+  }
+
+  const result = getRolesPermissions(mockCtx)
+
+  t.ok(result.roles, 'should return roles')
+  t.ok(result.roleManagement, 'should return roleManagement')
+  t.alike(result.roles.admin, ['miner:rw', 'users:rw'], 'should return correct admin permissions')
+  t.alike(result.roleManagement.admin, ['site_operator'], 'should return correct roleManagement')
 
   t.pass()
 })

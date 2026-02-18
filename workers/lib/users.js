@@ -18,11 +18,14 @@ class UserService {
   }
 
   async createUser ({ email, name, role }) {
-    return await this._auth.createUser({
+    await this._auth.createUser({
       email,
       name,
       roles: [role]
     })
+
+    const user = await this._auth.getUserByEmail(email)
+    return this.parseUserRow(user)
   }
 
   async listUsers () {
@@ -38,12 +41,15 @@ class UserService {
       roles: []
     })
 
-    return await this._auth.updateUser({
+    await this._auth.updateUser({
       token,
       email,
       name,
       roles: [role]
     })
+
+    const user = await this._auth.getUserById(id)
+    return this.parseUserRow(user)
   }
 
   deleteUser (id) {

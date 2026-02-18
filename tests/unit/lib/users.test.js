@@ -40,7 +40,9 @@ test('UserService - createUser', async (t) => {
     createUser: async (data) => {
       createUserCalled = true
       createUserArgs = data
-      return { id: 123, ...data }
+    },
+    getUserByEmail: async (email) => {
+      return { id: 123, email, name: 'Test User', roles: '["admin"]' }
     }
   }
   const userService = new UserService({ sqlite: {}, auth: mockAuth })
@@ -56,7 +58,10 @@ test('UserService - createUser', async (t) => {
   t.is(createUserArgs.name, 'Test User', 'should pass name')
   t.ok(Array.isArray(createUserArgs.roles), 'should pass roles as array')
   t.is(createUserArgs.roles[0], 'admin', 'should pass correct role')
-  t.ok(result.id, 'should return created user')
+  t.is(result.id, 123, 'should return created user id')
+  t.is(result.email, 'test@example.com', 'should return created user email')
+  t.is(result.name, 'Test User', 'should return created user name')
+  t.is(result.role, 'admin', 'should return parsed role')
 
   t.pass()
 })
@@ -104,14 +109,16 @@ test('UserService - updateUser', async (t) => {
   let updateUserCalled = false
   let updateUserArgs = null
   const mockAuth = {
-    genToken: async (data) => {
+    genToken: async () => {
       genTokenCalled = true
       return 'mock-token'
     },
     updateUser: async (data) => {
       updateUserCalled = true
       updateUserArgs = data
-      return { id: 123, ...data }
+    },
+    getUserById: async (id) => {
+      return { id, email: 'updated@example.com', name: 'Updated User', roles: '["admin"]' }
     }
   }
   const userService = new UserService({ sqlite: {}, auth: mockAuth })
@@ -129,7 +136,10 @@ test('UserService - updateUser', async (t) => {
   t.is(updateUserArgs.name, 'Updated User', 'should pass name')
   t.ok(Array.isArray(updateUserArgs.roles), 'should pass roles as array')
   t.is(updateUserArgs.roles[0], 'admin', 'should pass correct role')
-  t.ok(result.id, 'should return updated user')
+  t.is(result.id, 123, 'should return updated user id')
+  t.is(result.email, 'updated@example.com', 'should return updated user email')
+  t.is(result.name, 'Updated User', 'should return updated user name')
+  t.is(result.role, 'admin', 'should return parsed role')
 
   t.pass()
 })
@@ -140,12 +150,14 @@ test('UserService - updateUser with null name', async (t) => {
     genToken: async () => 'mock-token',
     updateUser: async (data) => {
       updateUserArgs = data
-      return { id: 123 }
+    },
+    getUserById: async (id) => {
+      return { id, email: 'test@example.com', name: null, roles: '["admin"]' }
     }
   }
   const userService = new UserService({ sqlite: {}, auth: mockAuth })
 
-  await userService.updateUser({
+  const result = await userService.updateUser({
     id: 123,
     email: 'test@example.com',
     name: null,
@@ -153,6 +165,7 @@ test('UserService - updateUser with null name', async (t) => {
   })
 
   t.is(updateUserArgs.name, null, 'should pass null name')
+  t.is(result.name, null, 'should return null name')
 
   t.pass()
 })

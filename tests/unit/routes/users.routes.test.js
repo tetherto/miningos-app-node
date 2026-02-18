@@ -15,6 +15,7 @@ test('users routes - route definitions', (t) => {
   const routeUrls = routes.map(route => route.url)
   t.ok(routeUrls.includes('/auth/users'), 'should have users route')
   t.ok(routeUrls.includes('/auth/users/delete'), 'should have users delete route')
+  t.ok(routeUrls.includes('/auth/roles/permissions'), 'should have roles permissions route')
 
   t.pass()
 })
@@ -33,6 +34,9 @@ test('users routes - HTTP methods', (t) => {
 
   const deleteRoute = routes.find(r => r.url === '/auth/users/delete' && r.method === 'POST')
   t.ok(deleteRoute, 'should have POST route for deleting users')
+
+  const rolesPermsRoute = routes.find(r => r.url === '/auth/roles/permissions' && r.method === 'GET')
+  t.ok(rolesPermsRoute, 'should have GET route for roles permissions')
 
   t.pass()
 })

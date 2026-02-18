@@ -76,6 +76,7 @@ const ENDPOINTS = {
   USERS: '/auth/users',
   USERS_DELETE: '/auth/users/delete',
   USER_SETTINGS: '/auth/user/settings',
+  ROLES_PERMISSIONS: '/auth/roles/permissions',
 
   // Global endpoints
   GLOBAL_CONFIG: '/auth/global-config',

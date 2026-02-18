@@ -11,8 +11,10 @@ const {
   createUser,
   listUsers,
   updateUser,
-  deleteUser
+  deleteUser,
+  getRolesPermissions
 } = require('../handlers/users.handlers')
+const { createAuthRoute } = require('../lib/routeHelpers')
 
 module.exports = (ctx) => [
   {
@@ -40,8 +42,8 @@ module.exports = (ctx) => [
       await capCheck(ctx, req, rep, ['users:w'])
     },
     handler: async (req, rep) => {
-      const success = await createUser(ctx, req, rep)
-      return send200(rep, { success })
+      const user = await createUser(ctx, req, rep)
+      return send200(rep, { user })
     }
   },
   {
@@ -82,8 +84,8 @@ module.exports = (ctx) => [
       await capCheck(ctx, req, rep, ['users:w'])
     },
     handler: async (req, rep) => {
-      const success = await updateUser(ctx, req, rep)
-      return send200(rep, { success })
+      const user = await updateUser(ctx, req, rep)
+      return send200(rep, { user })
     }
   },
   {
@@ -112,5 +114,10 @@ module.exports = (ctx) => [
       const success = await deleteUser(ctx, req, rep)
       return send200(rep, { success })
     }
+  },
+  {
+    method: HTTP_METHODS.GET,
+    url: ENDPOINTS.ROLES_PERMISSIONS,
+    ...createAuthRoute(ctx, getRolesPermissions)
   }
 ]
