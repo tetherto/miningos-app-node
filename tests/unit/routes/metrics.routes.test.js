@@ -18,6 +18,7 @@ test('metrics routes - route definitions', (t) => {
   t.ok(routeUrls.includes('/auth/metrics/hashrate'), 'should have hashrate route')
   t.ok(routeUrls.includes('/auth/metrics/consumption'), 'should have consumption route')
   t.ok(routeUrls.includes('/auth/metrics/efficiency'), 'should have efficiency route')
+  t.ok(routeUrls.includes('/auth/metrics/miner-status'), 'should have miner-status route')
 
   t.pass()
 })

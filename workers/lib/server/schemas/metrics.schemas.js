@@ -28,6 +28,15 @@ const schemas = {
         overwriteCache: { type: 'boolean' }
       },
       required: ['start', 'end']
+    },
+    minerStatus: {
+      type: 'object',
+      properties: {
+        start: { type: 'integer' },
+        end: { type: 'integer' },
+        overwriteCache: { type: 'boolean' }
+      },
+      required: ['start', 'end']
     }
   }
 }
