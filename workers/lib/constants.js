@@ -136,7 +136,8 @@ const ENDPOINTS = {
 
   // Metrics endpoints
   METRICS_HASHRATE: '/auth/metrics/hashrate',
-  METRICS_CONSUMPTION: '/auth/metrics/consumption'
+  METRICS_CONSUMPTION: '/auth/metrics/consumption',
+  METRICS_EFFICIENCY: '/auth/metrics/efficiency'
 }
 
 const HTTP_METHODS = {
@@ -236,7 +237,8 @@ const AGGR_FIELDS = {
   SITE_POWER: 'site_power_w',
   ENERGY_AGGR: 'energy_aggr',
   ACTIVE_ENERGY_IN: 'active_energy_in_aggr',
-  UTE_ENERGY: 'ute_energy_aggr'
+  UTE_ENERGY: 'ute_energy_aggr',
+  EFFICIENCY: 'efficiency_w_ths_avg_aggr'
 }
 
 const PERIOD_TYPES = {

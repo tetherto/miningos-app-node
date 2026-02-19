@@ -182,11 +182,102 @@ function calculateConsumptionSummary (log) {
   }
 }
 
+// ==================== Efficiency ====================
+
+async function getEfficiency (ctx, req) {
+  const start = Number(req.query.start)
+  const end = Number(req.query.end)
+
+  if (!start || !end) {
+    throw new Error('ERR_MISSING_START_END')
+  }
+
+  if (start >= end) {
+    throw new Error('ERR_INVALID_DATE_RANGE')
+  }
+
+  const startDate = new Date(start).toISOString()
+  const endDate = new Date(end).toISOString()
+
+  const results = await requestRpcEachLimit(ctx, RPC_METHODS.TAIL_LOG_RANGE_AGGR, {
+    keys: [{
+      type: WORKER_TYPES.MINER,
+      startDate,
+      endDate,
+      fields: { [AGGR_FIELDS.EFFICIENCY]: 1 },
+      shouldReturnDailyData: 1
+    }]
+  })
+
+  const daily = processEfficiencyData(results)
+  const log = Object.keys(daily).sort().map(dayTs => ({
+    ts: Number(dayTs),
+    efficiencyWThs: daily[dayTs].total / daily[dayTs].count
+  }))
+
+  const summary = calculateEfficiencySummary(log)
+
+  return { log, summary }
+}
+
+function processEfficiencyData (results) {
+  const daily = {}
+  for (const res of results) {
+    if (res.error || !res) continue
+    const data = Array.isArray(res) ? res : (res.data || res.result || [])
+    if (!Array.isArray(data)) continue
+    for (const entry of data) {
+      if (!entry || entry.error) continue
+      const items = entry.data || entry.items || entry
+      if (Array.isArray(items)) {
+        for (const item of items) {
+          const ts = getStartOfDay(item.ts || item.timestamp)
+          if (!ts) continue
+          const val = item.val || item
+          const eff = val[AGGR_FIELDS.EFFICIENCY] || 0
+          if (!eff) continue
+          if (!daily[ts]) daily[ts] = { total: 0, count: 0 }
+          daily[ts].total += eff
+          daily[ts].count += 1
+        }
+      } else if (typeof items === 'object') {
+        for (const [key, val] of Object.entries(items)) {
+          const ts = getStartOfDay(Number(key))
+          if (!ts) continue
+          const eff = typeof val === 'object' ? (val[AGGR_FIELDS.EFFICIENCY] || 0) : (Number(val) || 0)
+          if (!eff) continue
+          if (!daily[ts]) daily[ts] = { total: 0, count: 0 }
+          daily[ts].total += eff
+          daily[ts].count += 1
+        }
+      }
+    }
+  }
+  return daily
+}
+
+function calculateEfficiencySummary (log) {
+  if (!log.length) {
+    return {
+      avgEfficiencyWThs: null
+    }
+  }
+
+  const total = log.reduce((sum, entry) => sum + (entry.efficiencyWThs || 0), 0)
+
+  return {
+    avgEfficiencyWThs: safeDiv(total, log.length)
+  }
+}
+
 module.exports = {
   getHashrate,
   processHashrateData,
   calculateHashrateSummary,
   getConsumption,
   processConsumptionData,
-  calculateConsumptionSummary
+  calculateConsumptionSummary,
+  getEfficiency,
+  processEfficiencyData,
+  calculateEfficiencySummary
 }

@@ -6,7 +6,8 @@ const {
 } = require('../../constants')
 const {
   getHashrate,
-  getConsumption
+  getConsumption,
+  getEfficiency
 } = require('../handlers/metrics.handlers')
 const { createCachedAuthRoute } = require('../lib/routeHelpers')
 
@@ -46,6 +47,23 @@ module.exports = (ctx) => {
         ],
         ENDPOINTS.METRICS_CONSUMPTION,
         getConsumption
+      )
+    },
+    {
+      method: HTTP_METHODS.GET,
+      url: ENDPOINTS.METRICS_EFFICIENCY,
+      schema: {
+        querystring: schemas.query.efficiency
+      },
+      ...createCachedAuthRoute(
+        ctx,
+        (req) => [
+          'metrics/efficiency',
+          req.query.start,
+          req.query.end
+        ],
+        ENDPOINTS.METRICS_EFFICIENCY,
+        getEfficiency
       )
     }
   ]
