@@ -130,6 +130,43 @@ const requestRpcMapLimit = async (ctx, method, payload) => {
 }
 
 /**
+ * Fetches up to maxPerOrk items from each ork, batching in pages if needed.
+ * Use when the total items to fetch may exceed RPC_PAGE_LIMIT per ork.
+ *
+ * @param {Object} ctx - Context object
+ * @param {string} method - RPC method name
+ * @param {Object} payload - RPC payload (limit/offset will be managed internally)
+ * @param {number} maxPerOrk - Maximum items to fetch per ork
+ * @param {number} pageLimit - Items per page (default: RPC_PAGE_LIMIT)
+ * @returns {Promise<Array>} Array of results per ork (up to maxPerOrk each)
+ */
+const requestRpcMapBatchLimit = async (ctx, method, payload, maxPerOrk, pageLimit = RPC_PAGE_LIMIT) => {
+  const concurrency = ctx.conf?.rpcConcurrencyLimit || RPC_CONCURRENCY_LIMIT
+
+  return await async.mapLimit(ctx.conf.orks, concurrency, async (store) => {
+    const allItems = []
+    let offset = 0
+
+    while (allItems.length < maxPerOrk) {
+      const batchSize = Math.min(pageLimit, maxPerOrk - allItems.length)
+      const batch = await ctx.net_r0.jRequest(
+        store.rpcPublicKey,
+        method,
+        { ...payload, limit: batchSize, offset },
+        { timeout: getRpcTimeout(ctx.conf) }
+      )
+
+      if (!Array.isArray(batch) || batch.length === 0) break
+      allItems.push(...batch)
+      if (batch.length < batchSize) break
+      offset += batch.length
+    }
+
+    return allItems
+  })
+}
+
+/**
  * Paginates RPC requests across multiple orks, fetching all pages per ork
  * @param {Object} ctx - Context object
  * @param {string} method - RPC method name
@@ -187,6 +224,7 @@ module.exports = {
   parseJsonQueryParam,
   requestRpcEachLimit,
   requestRpcMapLimit,
+  requestRpcMapBatchLimit,
   requestRpcMapAllPages,
   getStartOfDay,
   safeDiv,
