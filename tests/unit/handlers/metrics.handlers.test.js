@@ -7,7 +7,10 @@ const {
   calculateHashrateSummary,
   getConsumption,
   processConsumptionData,
-  calculateConsumptionSummary
+  calculateConsumptionSummary,
+  getEfficiency,
+  processEfficiencyData,
+  calculateEfficiencySummary
 } = require('../../../workers/lib/server/handlers/metrics.handlers')
 
 // ==================== Hashrate Tests ====================
@@ -298,5 +301,140 @@ test('calculateConsumptionSummary - handles empty log', (t) => {
   const summary = calculateConsumptionSummary([])
   t.is(summary.totalConsumptionMWh, 0, 'should be zero')
   t.is(summary.avgPowerW, null, 'should be null')
+  t.pass()
+})
+
+// ==================== Efficiency Tests ====================
+
+test('getEfficiency - happy path', async (t) => {
+  const dayTs = 1700006400000
+  const mockCtx = {
+    conf: {
+      orks: [{ rpcPublicKey: 'key1' }]
+    },
+    net_r0: {
+      jRequest: async () => {
+        return [{ type: 'miner', data: [{ ts: dayTs, val: { efficiency_w_ths_avg_aggr: 25.5 } }], error: null }]
+      }
+    }
+  }
+
+  const mockReq = {
+    query: { start: 1700000000000, end: 1700100000000 }
+  }
+
+  const result = await getEfficiency(mockCtx, mockReq)
+  t.ok(result.log, 'should return log array')
+  t.ok(result.summary, 'should return summary')
+  t.ok(Array.isArray(result.log), 'log should be array')
+  t.ok(result.log.length > 0, 'log should have entries')
+  t.is(result.log[0].efficiencyWThs, 25.5, 'should have efficiency value')
+  t.ok(result.summary.avgEfficiencyWThs !== null, 'should have avg efficiency')
+  t.pass()
+})
+
+test('getEfficiency - missing start throws', async (t) => {
+  const mockCtx = {
+    conf: { orks: [] },
+    net_r0: { jRequest: async () => ({}) }
+  }
+
+  try {
+    await getEfficiency(mockCtx, { query: { end: 1700100000000 } })
+    t.fail('should have thrown')
+  } catch (err) {
+    t.is(err.message, 'ERR_MISSING_START_END', 'should throw missing start/end error')
+  }
+  t.pass()
+})
+
+test('getEfficiency - invalid range throws', async (t) => {
+  const mockCtx = {
+    conf: { orks: [] },
+    net_r0: { jRequest: async () => ({}) }
+  }
+
+  try {
+    await getEfficiency(mockCtx, { query: { start: 1700100000000, end: 1700000000000 } })
+    t.fail('should have thrown')
+  } catch (err) {
+    t.is(err.message, 'ERR_INVALID_DATE_RANGE', 'should throw invalid range error')
+  }
+  t.pass()
+})
+
+test('getEfficiency - empty ork results', async (t) => {
+  const mockCtx = {
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: { jRequest: async () => ({}) }
+  }
+
+  const result = await getEfficiency(mockCtx, { query: { start: 1700000000000, end: 1700100000000 } })
+  t.ok(result.log, 'should return log array')
+  t.is(result.log.length, 0, 'log should be empty with no data')
+  t.is(result.summary.avgEfficiencyWThs, null, 'avg should be null')
+  t.pass()
+})
+
+test('processEfficiencyData - processes array data from ORK', (t) => {
+  const results = [
+    [{ type: 'miner', data: [{ ts: 1700006400000, val: { efficiency_w_ths_avg_aggr: 25.5 } }], error: null }]
+  ]
+
+  const daily = processEfficiencyData(results)
+  t.ok(typeof daily === 'object', 'should return object')
+  t.ok(Object.keys(daily).length > 0, 'should have entries')
+  const key = Object.keys(daily)[0]
+  t.is(daily[key].total, 25.5, 'should extract efficiency total')
+  t.is(daily[key].count, 1, 'should track count')
+  t.pass()
+})
+
+test('processEfficiencyData - processes object-keyed data', (t) => {
+  const results = [
+    [{ data: { 1700006400000: { efficiency_w_ths_avg_aggr: 25.5 } } }]
+  ]
+
+  const daily = processEfficiencyData(results)
+  t.ok(typeof daily === 'object', 'should return object')
+  t.ok(Object.keys(daily).length > 0, 'should have entries')
+  t.pass()
+})
+
+test('processEfficiencyData - handles error results', (t) => {
+  const results = [{ error: 'timeout' }]
+  const daily = processEfficiencyData(results)
+  t.ok(typeof daily === 'object', 'should return object')
+  t.is(Object.keys(daily).length, 0, 'should be empty for error results')
+  t.pass()
+})
+
+test('processEfficiencyData - averages across multiple orks', (t) => {
+  const results = [
+    [{ data: { 1700006400000: { efficiency_w_ths_avg_aggr: 20 } } }],
+    [{ data: { 1700006400000: { efficiency_w_ths_avg_aggr: 30 } } }]
+  ]
+
+  const daily = processEfficiencyData(results)
+  const key = Object.keys(daily)[0]
+  t.is(daily[key].total, 50, 'should sum efficiency totals')
+  t.is(daily[key].count, 2, 'should track count from multiple orks')
+  t.pass()
+})
+
+test('calculateEfficiencySummary - calculates from log entries', (t) => {
+  const log = [
+    { ts: 1700006400000, efficiencyWThs: 25 },
+    { ts: 1700092800000, efficiencyWThs: 27 }
+  ]
+
+  const summary = calculateEfficiencySummary(log)
+  t.is(summary.avgEfficiencyWThs, 26, 'should average efficiency')
+  t.pass()
+})
+
+test('calculateEfficiencySummary - handles empty log', (t) => {
+  const summary = calculateEfficiencySummary([])
+  t.is(summary.avgEfficiencyWThs, null, 'should be null')
   t.pass()
 })

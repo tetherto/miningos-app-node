@@ -17,6 +17,7 @@ test('metrics routes - route definitions', (t) => {
   const routeUrls = routes.map(route => route.url)
   t.ok(routeUrls.includes('/auth/metrics/hashrate'), 'should have hashrate route')
   t.ok(routeUrls.includes('/auth/metrics/consumption'), 'should have consumption route')
+  t.ok(routeUrls.includes('/auth/metrics/efficiency'), 'should have efficiency route')
 
   t.pass()
 })
