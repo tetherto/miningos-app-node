@@ -317,6 +317,7 @@ async function getMinerStatus (ctx, req) {
     type: WORKER_TYPES.MINER,
     tag: 't-miner',
     aggrFields: {
+      type_cnt: 1,
       offline_cnt: 1,
       power_mode_sleep_cnt: 1,
       maintenance_type_cnt: 1
@@ -360,7 +361,7 @@ function processMinerStatusData (results) {
       daily[ts].sleep += sleepCnt
       daily[ts].maintenance += maintenanceCnt
 
-      const totalCount = entry.total_cnt || entry.count || 0
+      const totalCount = sumObjectValues(entry.type_cnt) || entry.total_cnt || entry.count || 0
       if (totalCount > 0) {
         daily[ts].online += Math.max(0, totalCount - offlineCnt - sleepCnt - maintenanceCnt)
       }

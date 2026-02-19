@@ -476,7 +476,7 @@ test('getMinerStatus - happy path', async (t) => {
       jRequest: async () => {
         return [{
           ts: dayTs,
-          total_cnt: 100,
+          type_cnt: { 'miner-am-s19xp': 60, 'miner-wm-m30sp': 40 },
           offline_cnt: { offl_hashboard: 5, offl_fan: 3 },
           power_mode_sleep_cnt: { sleep: 10 },
           maintenance_type_cnt: { repair: 2 }
@@ -549,7 +549,7 @@ test('processMinerStatusData - processes daily entries', (t) => {
   const results = [[
     {
       ts: 1700006400000,
-      total_cnt: 100,
+      type_cnt: { 'miner-am-s19xp': 60, 'miner-wm-m30sp': 40 },
       offline_cnt: { offl_hashboard: 5 },
       power_mode_sleep_cnt: { sleep: 10 },
       maintenance_type_cnt: { repair: 2 }
@@ -578,14 +578,14 @@ test('processMinerStatusData - aggregates multiple orks same day', (t) => {
   const results = [
     [{
       ts: 1700006400000,
-      total_cnt: 50,
+      type_cnt: { 'miner-am-s19xp': 30, 'miner-wm-m30sp': 20 },
       offline_cnt: { offl_fan: 3 },
       power_mode_sleep_cnt: { sleep: 5 },
       maintenance_type_cnt: {}
     }],
     [{
       ts: 1700006400000,
-      total_cnt: 50,
+      type_cnt: { 'miner-am-s19xp': 30, 'miner-wm-m30sp': 20 },
       offline_cnt: { offl_hashboard: 2 },
       power_mode_sleep_cnt: {},
       maintenance_type_cnt: { repair: 1 }
@@ -605,7 +605,7 @@ test('processMinerStatusData - handles entries with aggrFields wrapper', (t) => 
   const results = [[
     {
       ts: 1700006400000,
-      total_cnt: 100,
+      type_cnt: { 'miner-am-s19xp': 60, 'miner-wm-m30sp': 40 },
       aggrFields: {
         offline_cnt: { offl_hashboard: 10 },
         power_mode_sleep_cnt: { sleep: 5 },
