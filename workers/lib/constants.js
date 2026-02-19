@@ -135,7 +135,8 @@ const ENDPOINTS = {
   SITE_STATUS_LIVE: '/auth/site/status/live',
 
   // Metrics endpoints
-  METRICS_HASHRATE: '/auth/metrics/hashrate'
+  METRICS_HASHRATE: '/auth/metrics/hashrate',
+  METRICS_CONSUMPTION: '/auth/metrics/consumption'
 }
 
 const HTTP_METHODS = {
