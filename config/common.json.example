@@ -14,7 +14,8 @@
     "/auth/actions/:type": "30s",
     "/auth/actions/:type/:id": "30s",
     "/auth/global/data": "30s",
-    "/auth/site/status/live": "15s"
+    "/auth/site/status/live": "15s",
+    "/auth/miners": "15s"
   },
   "featureConfig": {
     "comments": true,
