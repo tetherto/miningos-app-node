@@ -154,7 +154,7 @@ function getRolesPermissions (ctx, req) {
   const userRole = JSON.parse(req._info.user.metadata.roles)[0]
 
   if (userRole === SUPER_ADMIN_ROLE) {
-    return { roles, roleManagement }
+    return { roles }
   }
 
   const allowedRoles = roleManagement[userRole] || []
@@ -165,10 +165,7 @@ function getRolesPermissions (ctx, req) {
     }
   }
 
-  return {
-    roles: filteredRoles,
-    roleManagement: { [userRole]: allowedRoles }
-  }
+  return { roles: filteredRoles }
 }
 
 module.exports = {
