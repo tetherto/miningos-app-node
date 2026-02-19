@@ -715,6 +715,104 @@ function calculateCostSummary (log) {
   }
 }
 
+// ==================== Revenue ====================
+
+async function getRevenue (ctx, req) {
+  const start = Number(req.query.start)
+  const end = Number(req.query.end)
+  const period = req.query.period || PERIOD_TYPES.DAILY
+  const pool = req.query.pool || null
+
+  if (!start || !end) {
+    throw new Error('ERR_MISSING_START_END')
+  }
+
+  if (start >= end) {
+    throw new Error('ERR_INVALID_DATE_RANGE')
+  }
+
+  const query = { key: MINERPOOL_EXT_DATA_KEYS.TRANSACTIONS, start, end }
+  if (pool) query.pool = pool
+
+  const transactionResults = await requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+    type: WORKER_TYPES.MINERPOOL,
+    query
+  })
+
+  const dailyRevenue = processRevenueTransactions(transactionResults)
+
+  const log = []
+  for (const dayTs of Object.keys(dailyRevenue).sort()) {
+    const ts = Number(dayTs)
+    const day = dailyRevenue[dayTs]
+    const revenueBTC = day.revenueBTC || 0
+    const feesBTC = day.feesBTC || 0
+    log.push({
+      ts,
+      revenueBTC,
+      feesBTC,
+      netRevenueBTC: revenueBTC - feesBTC
+    })
+  }
+
+  const aggregated = aggregateByPeriod(log, period)
+  const summary = calculateRevenueSummary(aggregated)
+
+  return { log: aggregated, summary }
+}
+
+function processRevenueTransactions (results) {
+  const daily = {}
+  for (const res of results) {
+    if (!res || res.error) continue
+    const data = Array.isArray(res) ? res : (res.data || res.result || [])
+    if (!Array.isArray(data)) continue
+    for (const tx of data) {
+      if (!tx) continue
+      const txList = tx.data || tx.transactions || tx
+      if (!Array.isArray(txList)) continue
+      for (const t of txList) {
+        if (!t) continue
+        const rawTs = t.ts || t.created_at || t.timestamp || t.time
+        const ts = getStartOfDay(normalizeTimestampMs(rawTs))
+        if (!ts) continue
+        const day = daily[ts] ??= { revenueBTC: 0, feesBTC: 0 }
+        if (t.satoshis_net_earned) {
+          day.revenueBTC += Math.abs(t.satoshis_net_earned) / BTC_SATS
+          day.feesBTC += (t.fees_colected_satoshis || 0) / BTC_SATS
+        } else {
+          day.revenueBTC += Math.abs(t.changed_balance || t.amount || t.value || 0)
+          day.feesBTC += (t.mining_extra?.tx_fee || 0)
+        }
+      }
+    }
+  }
+  return daily
+}
+
+function calculateRevenueSummary (log) {
+  if (!log.length) {
+    return {
+      totalRevenueBTC: 0,
+      totalFeesBTC: 0,
+      totalNetRevenueBTC: 0
+    }
+  }
+
+  const totals = log.reduce((acc, entry) => {
+    acc.revenueBTC += entry.revenueBTC || 0
+    acc.feesBTC += entry.feesBTC || 0
+    acc.netRevenueBTC += entry.netRevenueBTC || 0
+    return acc
+  }, { revenueBTC: 0, feesBTC: 0, netRevenueBTC: 0 })
+
+  return {
+    totalRevenueBTC: totals.revenueBTC,
+    totalFeesBTC: totals.feesBTC,
+    totalNetRevenueBTC: totals.netRevenueBTC
+  }
+}
+
 // ==================== Shared ====================
 
 async function getProductionCosts (ctx, site, start, end) {
@@ -753,6 +851,7 @@ module.exports = {
   getEnergyBalance,
   getEbitda,
   getCostSummary,
+  getRevenue,
   getProductionCosts,
   processConsumptionData,
   processTransactionData,
@@ -767,5 +866,7 @@ module.exports = {
   processEbitdaPrices,
   extractEbitdaCurrentPrice,
   calculateEbitdaSummary,
-  calculateCostSummary
+  calculateCostSummary,
+  processRevenueTransactions,
+  calculateRevenueSummary
 }

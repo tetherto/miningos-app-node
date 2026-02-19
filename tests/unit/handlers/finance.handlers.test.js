@@ -16,7 +16,10 @@ const {
   extractEbitdaCurrentPrice,
   calculateEbitdaSummary,
   getCostSummary,
-  calculateCostSummary
+  calculateCostSummary,
+  getRevenue,
+  processRevenueTransactions,
+  calculateRevenueSummary
 } = require('../../../workers/lib/server/handlers/finance.handlers')
 
 // ==================== Energy Balance Tests ====================
@@ -567,5 +570,170 @@ test('calculateCostSummary - handles empty log', (t) => {
   const summary = calculateCostSummary([])
   t.is(summary.totalCostsUSD, 0, 'should be zero')
   t.is(summary.avgAllInCostPerMWh, null, 'should be null')
+  t.pass()
+})
+
+// ==================== Revenue Tests ====================
+
+test('getRevenue - happy path', async (t) => {
+  const mockCtx = {
+    conf: {
+      orks: [{ rpcPublicKey: 'key1' }]
+    },
+    net_r0: {
+      jRequest: async (key, method, payload) => {
+        if (method === 'getWrkExtData') {
+          return [{ transactions: [{ ts: 1700006400000, changed_balance: 0.5, mining_extra: { tx_fee: 0.001 } }] }]
+        }
+        return {}
+      }
+    }
+  }
+
+  const mockReq = {
+    query: { start: 1700000000000, end: 1700100000000, period: 'daily' }
+  }
+
+  const result = await getRevenue(mockCtx, mockReq, {})
+  t.ok(result.log, 'should return log array')
+  t.ok(result.summary, 'should return summary')
+  t.ok(Array.isArray(result.log), 'log should be array')
+  t.pass()
+})
+
+test('getRevenue - missing start throws', async (t) => {
+  const mockCtx = {
+    conf: { orks: [] },
+    net_r0: { jRequest: async () => ({}) }
+  }
+
+  try {
+    await getRevenue(mockCtx, { query: { end: 1700100000000 } }, {})
+    t.fail('should have thrown')
+  } catch (err) {
+    t.is(err.message, 'ERR_MISSING_START_END', 'should throw missing start/end error')
+  }
+  t.pass()
+})
+
+test('getRevenue - invalid range throws', async (t) => {
+  const mockCtx = {
+    conf: { orks: [] },
+    net_r0: { jRequest: async () => ({}) }
+  }
+
+  try {
+    await getRevenue(mockCtx, { query: { start: 1700100000000, end: 1700000000000 } }, {})
+    t.fail('should have thrown')
+  } catch (err) {
+    t.is(err.message, 'ERR_INVALID_DATE_RANGE', 'should throw invalid range error')
+  }
+  t.pass()
+})
+
+test('getRevenue - empty ork results', async (t) => {
+  const mockCtx = {
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: { jRequest: async () => ({}) }
+  }
+
+  const result = await getRevenue(mockCtx, { query: { start: 1700000000000, end: 1700100000000 } }, {})
+  t.ok(result.log, 'should return log array')
+  t.is(result.log.length, 0, 'log should be empty')
+  t.pass()
+})
+
+test('getRevenue - pool filter', async (t) => {
+  let capturedPayload = null
+  const mockCtx = {
+    conf: {
+      orks: [{ rpcPublicKey: 'key1' }]
+    },
+    net_r0: {
+      jRequest: async (key, method, payload) => {
+        capturedPayload = payload
+        return [{ transactions: [{ ts: 1700006400000, changed_balance: 0.5 }] }]
+      }
+    }
+  }
+
+  const mockReq = {
+    query: { start: 1700000000000, end: 1700100000000, pool: 'f2pool' }
+  }
+
+  await getRevenue(mockCtx, mockReq, {})
+  t.is(capturedPayload.query.pool, 'f2pool', 'should pass pool filter to RPC')
+  t.pass()
+})
+
+test('processRevenueTransactions - processes F2Pool data (changed_balance + tx_fee)', (t) => {
+  const results = [
+    [{ transactions: [{ created_at: 1700006400, changed_balance: 0.5, mining_extra: { tx_fee: 0.001 } }] }]
+  ]
+
+  const daily = processRevenueTransactions(results)
+  t.ok(typeof daily === 'object', 'should return object')
+  t.ok(Object.keys(daily).length > 0, 'should have entries')
+  const key = Object.keys(daily)[0]
+  t.is(daily[key].revenueBTC, 0.5, 'should use changed_balance as revenue')
+  t.is(daily[key].feesBTC, 0.001, 'should extract tx_fee from mining_extra')
+  t.pass()
+})
+
+test('processRevenueTransactions - processes Ocean data (satoshis)', (t) => {
+  const results = [
+    [{ transactions: [{ ts: 1700006400, satoshis_net_earned: 50000000, fees_colected_satoshis: 1000000 }] }]
+  ]
+
+  const daily = processRevenueTransactions(results)
+  t.ok(typeof daily === 'object', 'should return object')
+  t.ok(Object.keys(daily).length > 0, 'should have entries')
+  const key = Object.keys(daily)[0]
+  t.is(daily[key].revenueBTC, 0.5, 'should convert sats to BTC')
+  t.is(daily[key].feesBTC, 0.01, 'should convert fee sats to BTC')
+  t.pass()
+})
+
+test('processRevenueTransactions - handles error results', (t) => {
+  const results = [{ error: 'timeout' }]
+  const daily = processRevenueTransactions(results)
+  t.ok(typeof daily === 'object', 'should return object')
+  t.is(Object.keys(daily).length, 0, 'should be empty for error results')
+  t.pass()
+})
+
+test('processRevenueTransactions - handles mixed formats', (t) => {
+  const results = [
+    [
+      { transactions: [{ ts: 1700006400000, changed_balance: 0.3, mining_extra: { tx_fee: 0.001 } }] },
+      { transactions: [{ ts: 1700006400000, satoshis_net_earned: 20000000, fees_colected_satoshis: 500000 }] }
+    ]
+  ]
+
+  const daily = processRevenueTransactions(results)
+  const key = Object.keys(daily)[0]
+  t.ok(daily[key].revenueBTC > 0.3, 'should combine both formats')
+  t.ok(daily[key].feesBTC > 0.001, 'should combine fees from both formats')
+  t.pass()
+})
+
+test('calculateRevenueSummary - calculates from log entries', (t) => {
+  const log = [
+    { revenueBTC: 0.5, feesBTC: 0.01, netRevenueBTC: 0.49 },
+    { revenueBTC: 0.3, feesBTC: 0.005, netRevenueBTC: 0.295 }
+  ]
+
+  const summary = calculateRevenueSummary(log)
+  t.is(summary.totalRevenueBTC, 0.8, 'should sum revenue')
+  t.is(summary.totalFeesBTC, 0.015, 'should sum fees')
+  t.ok(Math.abs(summary.totalNetRevenueBTC - 0.785) < 1e-10, 'should sum net revenue')
+  t.pass()
+})
+
+test('calculateRevenueSummary - handles empty log', (t) => {
+  const summary = calculateRevenueSummary([])
+  t.is(summary.totalRevenueBTC, 0, 'should be zero')
+  t.is(summary.totalFeesBTC, 0, 'should be zero')
+  t.is(summary.totalNetRevenueBTC, 0, 'should be zero')
   t.pass()
 })
