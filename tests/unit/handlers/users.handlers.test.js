@@ -595,7 +595,7 @@ test('getUserSettings - basic functionality', async (t) => {
   t.pass()
 })
 
-test('getRolesPermissions - returns roles and roleManagement', (t) => {
+test('getRolesPermissions - super admin returns all roles and roleManagement', (t) => {
   const mockCtx = {
     auth_a0: {
       conf: {
@@ -609,13 +609,58 @@ test('getRolesPermissions - returns roles and roleManagement', (t) => {
       }
     }
   }
+  const mockReq = {
+    _info: {
+      user: {
+        metadata: {
+          roles: `["${SUPER_ADMIN_ROLE}"]`
+        }
+      }
+    }
+  }
 
-  const result = getRolesPermissions(mockCtx)
+  const result = getRolesPermissions(mockCtx, mockReq)
 
   t.ok(result.roles, 'should return roles')
   t.ok(result.roleManagement, 'should return roleManagement')
   t.alike(result.roles.admin, ['miner:rw', 'users:rw'], 'should return correct admin permissions')
   t.alike(result.roleManagement.admin, ['site_operator'], 'should return correct roleManagement')
+
+  t.pass()
+})
+
+test('getRolesPermissions - non-super admin returns filtered roles', (t) => {
+  const mockCtx = {
+    auth_a0: {
+      conf: {
+        roles: {
+          admin: ['miner:rw', 'users:rw'],
+          site_operator: ['miner:rw'],
+          viewer: ['miner:r']
+        },
+        roleManagement: {
+          admin: ['site_operator', 'viewer'],
+          site_operator: ['viewer']
+        }
+      }
+    }
+  }
+  const mockReq = {
+    _info: {
+      user: {
+        metadata: {
+          roles: '["admin"]'
+        }
+      }
+    }
+  }
+
+  const result = getRolesPermissions(mockCtx, mockReq)
+
+  t.ok(result.roles.site_operator, 'should include allowed role site_operator')
+  t.ok(result.roles.viewer, 'should include allowed role viewer')
+  t.ok(!result.roles.admin, 'should not include own role admin')
+  t.alike(result.roleManagement, { admin: ['site_operator', 'viewer'] }, 'should only include own roleManagement entry')
 
   t.pass()
 })
