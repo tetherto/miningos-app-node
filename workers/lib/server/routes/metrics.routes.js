@@ -8,7 +8,10 @@ const {
   getHashrate,
   getConsumption,
   getEfficiency,
-  getMinerStatus
+  getMinerStatus,
+  getPowerMode,
+  getPowerModeTimeline,
+  getTemperature
 } = require('../handlers/metrics.handlers')
 const { createCachedAuthRoute } = require('../lib/routeHelpers')
 
@@ -82,6 +85,62 @@ module.exports = (ctx) => {
         ],
         ENDPOINTS.METRICS_MINER_STATUS,
         getMinerStatus
+      )
+    },
+    {
+      method: HTTP_METHODS.GET,
+      url: ENDPOINTS.METRICS_POWER_MODE,
+      schema: {
+        querystring: schemas.query.powerMode
+      },
+      ...createCachedAuthRoute(
+        ctx,
+        (req) => [
+          'metrics/power-mode',
+          req.query.start,
+          req.query.end,
+          req.query.interval
+        ],
+        ENDPOINTS.METRICS_POWER_MODE,
+        getPowerMode
+      )
+    },
+    {
+      method: HTTP_METHODS.GET,
+      url: ENDPOINTS.METRICS_POWER_MODE_TIMELINE,
+      schema: {
+        querystring: schemas.query.powerModeTimeline
+      },
+      ...createCachedAuthRoute(
+        ctx,
+        (req) => [
+          'metrics/power-mode/timeline',
+          req.query.start,
+          req.query.end,
+          req.query.container,
+          req.query.limit
+        ],
+        ENDPOINTS.METRICS_POWER_MODE_TIMELINE,
+        getPowerModeTimeline
+      )
+    },
+    {
+      method: HTTP_METHODS.GET,
+      url: ENDPOINTS.METRICS_TEMPERATURE,
+      schema: {
+        querystring: schemas.query.temperature
+      },
+      ...createCachedAuthRoute(
+        ctx,
+        (req) => [
+          'metrics/temperature',
+          req.query.start,
+          req.query.end,
+          req.query.interval,
+          req.query.container
+        ],
+        ENDPOINTS.METRICS_TEMPERATURE,
+        getTemperature
       )
     }
   ]

@@ -14,7 +14,18 @@ const {
   getMinerStatus,
   processMinerStatusData,
   calculateMinerStatusSummary,
-  sumObjectValues
+  sumObjectValues,
+  resolveInterval,
+  getIntervalConfig,
+  getPowerMode,
+  processPowerModeData,
+  calculatePowerModeSummary,
+  categorizeMiner,
+  getPowerModeTimeline,
+  processPowerModeTimelineData,
+  getTemperature,
+  processTemperatureData,
+  calculateTemperatureSummary
 } = require('../../../workers/lib/server/handlers/metrics.handlers')
 
 // ==================== Hashrate Tests ====================
@@ -630,5 +641,581 @@ test('calculateMinerStatusSummary - handles empty log', (t) => {
   t.is(summary.avgOffline, null, 'should be null')
   t.is(summary.avgSleep, null, 'should be null')
   t.is(summary.avgMaintenance, null, 'should be null')
+  t.pass()
+})
+
+// ==================== Interval Utils Tests ====================
+
+test('resolveInterval - auto-selects 1h for <= 2 days', (t) => {
+  const twoDays = 2 * 24 * 60 * 60 * 1000
+  t.is(resolveInterval(0, twoDays, null), '1h', 'should select 1h for 2 day range')
+  t.is(resolveInterval(0, twoDays - 1, null), '1h', 'should select 1h for < 2 day range')
+  t.pass()
+})
+
+test('resolveInterval - auto-selects 1d for <= 90 days', (t) => {
+  const threeDays = 3 * 24 * 60 * 60 * 1000
+  const ninetyDays = 90 * 24 * 60 * 60 * 1000
+  t.is(resolveInterval(0, threeDays, null), '1d', 'should select 1d for 3 day range')
+  t.is(resolveInterval(0, ninetyDays, null), '1d', 'should select 1d for 90 day range')
+  t.pass()
+})
+
+test('resolveInterval - auto-selects 1w for > 90 days', (t) => {
+  const ninetyOneDays = 91 * 24 * 60 * 60 * 1000
+  t.is(resolveInterval(0, ninetyOneDays, null), '1w', 'should select 1w for > 90 day range')
+  t.pass()
+})
+
+test('resolveInterval - uses requested interval when provided', (t) => {
+  t.is(resolveInterval(0, 1000, '1w'), '1w', 'should use requested interval')
+  t.is(resolveInterval(0, 999999999999, '1h'), '1h', 'should override auto with requested')
+  t.pass()
+})
+
+test('getIntervalConfig - returns correct configs', (t) => {
+  const h = getIntervalConfig('1h')
+  t.is(h.key, 'stat-3h', '1h key should be stat-3h')
+  t.is(h.groupRange, null, '1h should have no groupRange')
+
+  const d = getIntervalConfig('1d')
+  t.is(d.key, 'stat-3h', '1d key should be stat-3h')
+  t.is(d.groupRange, '1D', '1d groupRange should be 1D')
+
+  const w = getIntervalConfig('1w')
+  t.is(w.key, 'stat-3h', '1w key should be stat-3h')
+  t.is(w.groupRange, '1W', '1w groupRange should be 1W')
+
+  t.pass()
+})
+
+// ==================== Power Mode Tests ====================
+
+test('getPowerMode - happy path', async (t) => {
+  const ts = 1700006400000
+  const mockCtx = {
+    conf: {
+      orks: [{ rpcPublicKey: 'key1' }]
+    },
+    net_r0: {
+      jRequest: async () => {
+        return [{
+          ts,
+          power_mode_group_aggr: { 'cont1-miner1': 'normal', 'cont1-miner2': 'low' },
+          status_group_aggr: { 'cont1-miner1': 'mining', 'cont1-miner2': 'mining' }
+        }]
+      }
+    }
+  }
+
+  const result = await getPowerMode(mockCtx, {
+    query: { start: 1700000000000, end: 1700100000000 }
+  })
+
+  t.ok(result.log, 'should return log array')
+  t.ok(result.summary, 'should return summary')
+  t.ok(Array.isArray(result.log), 'log should be array')
+  t.ok(result.log.length > 0, 'log should have entries')
+  t.is(result.log[0].normal, 1, 'should count normal miners')
+  t.is(result.log[0].low, 1, 'should count low miners')
+  t.pass()
+})
+
+test('getPowerMode - missing start/end throws', async (t) => {
+  const mockCtx = {
+    conf: { orks: [] },
+    net_r0: { jRequest: async () => ({}) }
+  }
+
+  try {
+    await getPowerMode(mockCtx, { query: { end: 1700100000000 } })
+    t.fail('should have thrown')
+  } catch (err) {
+    t.is(err.message, 'ERR_MISSING_START_END', 'should throw missing start/end error')
+  }
+  t.pass()
+})
+
+test('getPowerMode - invalid range throws', async (t) => {
+  const mockCtx = {
+    conf: { orks: [] },
+    net_r0: { jRequest: async () => ({}) }
+  }
+
+  try {
+    await getPowerMode(mockCtx, { query: { start: 1700100000000, end: 1700000000000 } })
+    t.fail('should have thrown')
+  } catch (err) {
+    t.is(err.message, 'ERR_INVALID_DATE_RANGE', 'should throw invalid range error')
+  }
+  t.pass()
+})
+
+test('getPowerMode - empty ork results', async (t) => {
+  const mockCtx = {
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: { jRequest: async () => ({}) }
+  }
+
+  const result = await getPowerMode(mockCtx, {
+    query: { start: 1700000000000, end: 1700100000000 }
+  })
+
+  t.ok(result.log, 'should return log array')
+  t.is(result.log.length, 0, 'log should be empty')
+  t.is(result.summary.avgNormal, null, 'avg should be null')
+  t.pass()
+})
+
+test('categorizeMiner - status overrides power mode', (t) => {
+  t.is(categorizeMiner('normal', 'offline'), 'offline', 'offline status should override')
+  t.is(categorizeMiner('high', 'error'), 'error', 'error status should override')
+  t.is(categorizeMiner('normal', 'maintenance'), 'maintenance', 'maintenance should override')
+  t.is(categorizeMiner('high', 'idle'), 'notMining', 'idle should map to notMining')
+  t.is(categorizeMiner('high', 'stopped'), 'notMining', 'stopped should map to notMining')
+  t.pass()
+})
+
+test('categorizeMiner - power mode categories', (t) => {
+  t.is(categorizeMiner('low', 'mining'), 'low', 'low mode with mining status')
+  t.is(categorizeMiner('high', 'mining'), 'high', 'high mode with mining status')
+  t.is(categorizeMiner('sleep', 'mining'), 'sleep', 'sleep mode with mining status')
+  t.is(categorizeMiner('normal', 'mining'), 'normal', 'normal mode with mining status')
+  t.is(categorizeMiner('normal', ''), 'normal', 'normal mode with empty status')
+  t.pass()
+})
+
+test('processPowerModeData - counts modes correctly', (t) => {
+  const results = [[{
+    ts: 1700006400000,
+    power_mode_group_aggr: {
+      'cont1-miner1': 'normal',
+      'cont1-miner2': 'low',
+      'cont1-miner3': 'high'
+    },
+    status_group_aggr: {
+      'cont1-miner1': 'mining',
+      'cont1-miner2': 'mining',
+      'cont1-miner3': 'offline'
+    }
+  }]]
+
+  const points = processPowerModeData(results, '1D')
+  const key = Object.keys(points)[0]
+  t.is(points[key].normal, 1, 'should count 1 normal')
+  t.is(points[key].low, 1, 'should count 1 low')
+  t.is(points[key].offline, 1, 'miner3 offline overrides high')
+  t.is(points[key].high, 0, 'miner3 classified as offline, not high')
+  t.pass()
+})
+
+test('processPowerModeData - handles error results', (t) => {
+  const results = [{ error: 'timeout' }]
+  const points = processPowerModeData(results, '1D')
+  t.is(Object.keys(points).length, 0, 'should be empty')
+  t.pass()
+})
+
+test('processPowerModeData - merges across multiple orks', (t) => {
+  const results = [
+    [{
+      ts: 1700006400000,
+      power_mode_group_aggr: { 'cont1-miner1': 'normal' },
+      status_group_aggr: { 'cont1-miner1': 'mining' }
+    }],
+    [{
+      ts: 1700006400000,
+      power_mode_group_aggr: { 'cont2-miner1': 'low' },
+      status_group_aggr: { 'cont2-miner1': 'mining' }
+    }]
+  ]
+
+  const points = processPowerModeData(results, '1D')
+  const key = Object.keys(points)[0]
+  t.is(points[key].normal, 1, 'should count ork1 normal')
+  t.is(points[key].low, 1, 'should count ork2 low')
+  t.pass()
+})
+
+test('calculatePowerModeSummary - calculates averages', (t) => {
+  const log = [
+    { ts: 1, low: 2, normal: 8, high: 0, sleep: 0, offline: 0, notMining: 0, maintenance: 0, error: 0 },
+    { ts: 2, low: 4, normal: 6, high: 0, sleep: 0, offline: 0, notMining: 0, maintenance: 0, error: 0 }
+  ]
+
+  const summary = calculatePowerModeSummary(log)
+  t.is(summary.avgLow, 3, 'should average low')
+  t.is(summary.avgNormal, 7, 'should average normal')
+  t.pass()
+})
+
+test('calculatePowerModeSummary - handles empty log', (t) => {
+  const summary = calculatePowerModeSummary([])
+  t.is(summary.avgNormal, null, 'should be null')
+  t.is(summary.avgLow, null, 'should be null')
+  t.is(summary.avgOffline, null, 'should be null')
+  t.pass()
+})
+
+// ==================== Power Mode Timeline Tests ====================
+
+test('getPowerModeTimeline - happy path', async (t) => {
+  const mockCtx = {
+    conf: {
+      orks: [{ rpcPublicKey: 'key1' }]
+    },
+    net_r0: {
+      jRequest: async () => {
+        return [
+          {
+            ts: 1700000000000,
+            power_mode_group_aggr: { 'cont1-miner1': 'normal' },
+            status_group_aggr: { 'cont1-miner1': 'mining' }
+          },
+          {
+            ts: 1700010800000,
+            power_mode_group_aggr: { 'cont1-miner1': 'low' },
+            status_group_aggr: { 'cont1-miner1': 'mining' }
+          }
+        ]
+      }
+    }
+  }
+
+  const result = await getPowerModeTimeline(mockCtx, {
+    query: { start: 1700000000000, end: 1700100000000 }
+  })
+
+  t.ok(result.log, 'should return log array')
+  t.ok(Array.isArray(result.log), 'log should be array')
+  t.ok(result.log.length > 0, 'log should have entries')
+  t.is(result.log[0].minerId, 'cont1-miner1', 'should have miner ID')
+  t.ok(result.log[0].segments.length > 0, 'should have segments')
+  t.pass()
+})
+
+test('getPowerModeTimeline - default start/end', async (t) => {
+  const mockCtx = {
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: { jRequest: async () => ([]) }
+  }
+
+  const result = await getPowerModeTimeline(mockCtx, { query: {} })
+  t.ok(result.log, 'should return log with defaults')
+  t.ok(Array.isArray(result.log), 'should be array')
+  t.pass()
+})
+
+test('getPowerModeTimeline - invalid range throws', async (t) => {
+  const mockCtx = {
+    conf: { orks: [] },
+    net_r0: { jRequest: async () => ({}) }
+  }
+
+  try {
+    await getPowerModeTimeline(mockCtx, { query: { start: 1700100000000, end: 1700000000000 } })
+    t.fail('should have thrown')
+  } catch (err) {
+    t.is(err.message, 'ERR_INVALID_DATE_RANGE', 'should throw invalid range error')
+  }
+  t.pass()
+})
+
+test('getPowerModeTimeline - empty results', async (t) => {
+  const mockCtx = {
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: { jRequest: async () => ({}) }
+  }
+
+  const result = await getPowerModeTimeline(mockCtx, {
+    query: { start: 1700000000000, end: 1700100000000 }
+  })
+
+  t.is(result.log.length, 0, 'should be empty')
+  t.pass()
+})
+
+test('processPowerModeTimelineData - groups by miner and sorts by ts', (t) => {
+  const results = [[
+    {
+      ts: 1700010800000,
+      power_mode_group_aggr: { 'cont1-miner1': 'low' },
+      status_group_aggr: { 'cont1-miner1': 'mining' }
+    },
+    {
+      ts: 1700000000000,
+      power_mode_group_aggr: { 'cont1-miner1': 'normal' },
+      status_group_aggr: { 'cont1-miner1': 'mining' }
+    }
+  ]]
+
+  const log = processPowerModeTimelineData(results)
+  t.is(log.length, 1, 'should group into 1 miner')
+  t.is(log[0].minerId, 'cont1-miner1', 'should have correct miner id')
+  t.is(log[0].segments[0].powerMode, 'normal', 'first segment should be earlier entry (normal)')
+  t.is(log[0].segments[1].powerMode, 'low', 'second segment should be later entry (low)')
+  t.pass()
+})
+
+test('processPowerModeTimelineData - merges consecutive same-mode segments', (t) => {
+  const results = [[
+    {
+      ts: 1700000000000,
+      power_mode_group_aggr: { 'cont1-miner1': 'normal' },
+      status_group_aggr: { 'cont1-miner1': 'mining' }
+    },
+    {
+      ts: 1700010800000,
+      power_mode_group_aggr: { 'cont1-miner1': 'normal' },
+      status_group_aggr: { 'cont1-miner1': 'mining' }
+    },
+    {
+      ts: 1700021600000,
+      power_mode_group_aggr: { 'cont1-miner1': 'normal' },
+      status_group_aggr: { 'cont1-miner1': 'mining' }
+    }
+  ]]
+
+  const log = processPowerModeTimelineData(results)
+  t.is(log[0].segments.length, 1, 'should merge 3 entries into 1 segment')
+  t.is(log[0].segments[0].from, 1700000000000, 'segment should start at first entry')
+  t.is(log[0].segments[0].to, 1700021600000, 'segment should end at last entry')
+  t.pass()
+})
+
+test('processPowerModeTimelineData - mode changes create new segments', (t) => {
+  const results = [[
+    {
+      ts: 1700000000000,
+      power_mode_group_aggr: { 'cont1-miner1': 'normal' },
+      status_group_aggr: { 'cont1-miner1': 'mining' }
+    },
+    {
+      ts: 1700010800000,
+      power_mode_group_aggr: { 'cont1-miner1': 'low' },
+      status_group_aggr: { 'cont1-miner1': 'mining' }
+    },
+    {
+      ts: 1700021600000,
+      power_mode_group_aggr: { 'cont1-miner1': 'normal' },
+      status_group_aggr: { 'cont1-miner1': 'mining' }
+    }
+  ]]
+
+  const log = processPowerModeTimelineData(results)
+  t.is(log[0].segments.length, 3, 'should create 3 separate segments')
+  t.is(log[0].segments[0].powerMode, 'normal', 'first segment normal')
+  t.is(log[0].segments[1].powerMode, 'low', 'second segment low')
+  t.is(log[0].segments[2].powerMode, 'normal', 'third segment normal')
+  t.pass()
+})
+
+test('processPowerModeTimelineData - extracts container from miner id', (t) => {
+  const results = [[
+    {
+      ts: 1700000000000,
+      power_mode_group_aggr: { 'container-a-pos1-miner1': 'normal' },
+      status_group_aggr: { 'container-a-pos1-miner1': 'mining' }
+    }
+  ]]
+
+  const log = processPowerModeTimelineData(results)
+  t.is(log[0].container, 'container-a-pos1', 'should extract container from miner id')
+  t.pass()
+})
+
+test('getPowerModeTimeline - container filter passed through', async (t) => {
+  let capturedPayload = null
+  const mockCtx = {
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: {
+      jRequest: async (key, method, payload) => {
+        capturedPayload = payload
+        return []
+      }
+    }
+  }
+
+  await getPowerModeTimeline(mockCtx, {
+    query: { start: 1700000000000, end: 1700100000000, container: 'my-container' }
+  })
+
+  t.is(capturedPayload.tag, 'my-container', 'should pass container as tag')
+  t.pass()
+})
+
+// ==================== Temperature Tests ====================
+
+test('getTemperature - happy path', async (t) => {
+  const ts = 1700006400000
+  const mockCtx = {
+    conf: {
+      orks: [{ rpcPublicKey: 'key1' }]
+    },
+    net_r0: {
+      jRequest: async () => {
+        return [{
+          ts,
+          temperature_c_group_max_aggr: { container1: 65, container2: 72 },
+          temperature_c_group_avg_aggr: { container1: 55, container2: 60 }
+        }]
+      }
+    }
+  }
+
+  const result = await getTemperature(mockCtx, {
+    query: { start: 1700000000000, end: 1700100000000 }
+  })
+
+  t.ok(result.log, 'should return log array')
+  t.ok(result.summary, 'should return summary')
+  t.ok(Array.isArray(result.log), 'log should be array')
+  t.ok(result.log.length > 0, 'log should have entries')
+  t.ok(result.log[0].containers, 'should have containers object')
+  t.is(result.log[0].containers.container1.maxC, 65, 'should have container1 max temp')
+  t.is(result.log[0].containers.container2.avgC, 60, 'should have container2 avg temp')
+  t.is(result.log[0].siteMaxC, 72, 'should have site max temp')
+  t.ok(result.summary.peakTemp !== null, 'should have peak temp')
+  t.pass()
+})
+
+test('getTemperature - missing start/end throws', async (t) => {
+  const mockCtx = {
+    conf: { orks: [] },
+    net_r0: { jRequest: async () => ({}) }
+  }
+
+  try {
+    await getTemperature(mockCtx, { query: { end: 1700100000000 } })
+    t.fail('should have thrown')
+  } catch (err) {
+    t.is(err.message, 'ERR_MISSING_START_END', 'should throw missing start/end error')
+  }
+  t.pass()
+})
+
+test('getTemperature - invalid range throws', async (t) => {
+  const mockCtx = {
+    conf: { orks: [] },
+    net_r0: { jRequest: async () => ({}) }
+  }
+
+  try {
+    await getTemperature(mockCtx, { query: { start: 1700100000000, end: 1700000000000 } })
+    t.fail('should have thrown')
+  } catch (err) {
+    t.is(err.message, 'ERR_INVALID_DATE_RANGE', 'should throw invalid range error')
+  }
+  t.pass()
+})
+
+test('getTemperature - empty ork results', async (t) => {
+  const mockCtx = {
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: { jRequest: async () => ({}) }
+  }
+
+  const result = await getTemperature(mockCtx, {
+    query: { start: 1700000000000, end: 1700100000000 }
+  })
+
+  t.ok(result.log, 'should return log array')
+  t.is(result.log.length, 0, 'log should be empty')
+  t.is(result.summary.avgMaxTemp, null, 'avg max should be null')
+  t.is(result.summary.avgAvgTemp, null, 'avg avg should be null')
+  t.is(result.summary.peakTemp, null, 'peak should be null')
+  t.pass()
+})
+
+test('processTemperatureData - extracts per-container temps', (t) => {
+  const results = [[{
+    ts: 1700006400000,
+    temperature_c_group_max_aggr: { cont1: 65, cont2: 72 },
+    temperature_c_group_avg_aggr: { cont1: 55, cont2: 60 }
+  }]]
+
+  const points = processTemperatureData(results, '1D', null)
+  const key = Object.keys(points)[0]
+  t.is(points[key].containers.cont1.maxC, 65, 'should have cont1 max')
+  t.is(points[key].containers.cont2.maxC, 72, 'should have cont2 max')
+  t.is(points[key].containers.cont1.avgC, 55, 'should have cont1 avg')
+  t.is(points[key].containers.cont2.avgC, 60, 'should have cont2 avg')
+  t.pass()
+})
+
+test('processTemperatureData - calculates site-wide aggregates', (t) => {
+  const results = [[{
+    ts: 1700006400000,
+    temperature_c_group_max_aggr: { cont1: 65, cont2: 72 },
+    temperature_c_group_avg_aggr: { cont1: 55, cont2: 60 }
+  }]]
+
+  const points = processTemperatureData(results, '1D', null)
+  const key = Object.keys(points)[0]
+  t.is(points[key].siteMaxC, 72, 'site max should be highest container max')
+  t.is(points[key].siteAvgC, 57.5, 'site avg should average container avgs')
+  t.pass()
+})
+
+test('processTemperatureData - filters by container', (t) => {
+  const results = [[{
+    ts: 1700006400000,
+    temperature_c_group_max_aggr: { cont1: 65, cont2: 72 },
+    temperature_c_group_avg_aggr: { cont1: 55, cont2: 60 }
+  }]]
+
+  const points = processTemperatureData(results, '1D', 'cont1')
+  const key = Object.keys(points)[0]
+  t.ok(points[key].containers.cont1, 'should have cont1')
+  t.ok(!points[key].containers.cont2, 'should not have cont2')
+  t.is(points[key].siteMaxC, 65, 'site max should be cont1 max')
+  t.pass()
+})
+
+test('processTemperatureData - handles error results', (t) => {
+  const results = [{ error: 'timeout' }]
+  const points = processTemperatureData(results, '1D', null)
+  t.is(Object.keys(points).length, 0, 'should be empty')
+  t.pass()
+})
+
+test('calculateTemperatureSummary - calculates averages and peak', (t) => {
+  const log = [
+    { ts: 1, containers: {}, siteMaxC: 70, siteAvgC: 55 },
+    { ts: 2, containers: {}, siteMaxC: 75, siteAvgC: 60 }
+  ]
+
+  const summary = calculateTemperatureSummary(log)
+  t.is(summary.avgMaxTemp, 72.5, 'should average max temps')
+  t.is(summary.avgAvgTemp, 57.5, 'should average avg temps')
+  t.is(summary.peakTemp, 75, 'should find peak temp')
+  t.pass()
+})
+
+test('calculateTemperatureSummary - handles empty log', (t) => {
+  const summary = calculateTemperatureSummary([])
+  t.is(summary.avgMaxTemp, null, 'should be null')
+  t.is(summary.avgAvgTemp, null, 'should be null')
+  t.is(summary.peakTemp, null, 'should be null')
+  t.pass()
+})
+
+test('getTemperature - container filter passed through', async (t) => {
+  let capturedPayload = null
+  const mockCtx = {
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: {
+      jRequest: async (key, method, payload) => {
+        capturedPayload = payload
+        return []
+      }
+    }
+  }
+
+  await getTemperature(mockCtx, {
+    query: { start: 1700000000000, end: 1700100000000, container: 'my-container' }
+  })
+
+  t.is(capturedPayload.tag, 'my-container', 'should pass container as tag')
   t.pass()
 })

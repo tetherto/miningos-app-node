@@ -138,7 +138,10 @@ const ENDPOINTS = {
   METRICS_HASHRATE: '/auth/metrics/hashrate',
   METRICS_CONSUMPTION: '/auth/metrics/consumption',
   METRICS_EFFICIENCY: '/auth/metrics/efficiency',
-  METRICS_MINER_STATUS: '/auth/metrics/miner-status'
+  METRICS_MINER_STATUS: '/auth/metrics/miner-status',
+  METRICS_POWER_MODE: '/auth/metrics/power-mode',
+  METRICS_POWER_MODE_TIMELINE: '/auth/metrics/power-mode/timeline',
+  METRICS_TEMPERATURE: '/auth/metrics/temperature'
 }
 
 const HTTP_METHODS = {
@@ -239,7 +242,11 @@ const AGGR_FIELDS = {
   ENERGY_AGGR: 'energy_aggr',
   ACTIVE_ENERGY_IN: 'active_energy_in_aggr',
   UTE_ENERGY: 'ute_energy_aggr',
-  EFFICIENCY: 'efficiency_w_ths_avg_aggr'
+  EFFICIENCY: 'efficiency_w_ths_avg_aggr',
+  POWER_MODE_GROUP: 'power_mode_group_aggr',
+  STATUS_GROUP: 'status_group_aggr',
+  TEMP_MAX: 'temperature_c_group_max_aggr',
+  TEMP_AVG: 'temperature_c_group_avg_aggr'
 }
 
 const PERIOD_TYPES = {
