@@ -246,7 +246,11 @@ const AGGR_FIELDS = {
   POWER_MODE_GROUP: 'power_mode_group_aggr',
   STATUS_GROUP: 'status_group_aggr',
   TEMP_MAX: 'temperature_c_group_max_aggr',
-  TEMP_AVG: 'temperature_c_group_avg_aggr'
+  TEMP_AVG: 'temperature_c_group_avg_aggr',
+  TYPE_CNT: 'type_cnt',
+  OFFLINE_CNT: 'offline_cnt',
+  SLEEP_CNT: 'power_mode_sleep_cnt',
+  MAINTENANCE_CNT: 'maintenance_type_cnt'
 }
 
 const PERIOD_TYPES = {
