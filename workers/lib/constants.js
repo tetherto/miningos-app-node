@@ -357,6 +357,82 @@ const CONFIG_TYPES = {
   POOL: 'pool'
 }
 
+const MINER_FIELD_MAP = {
+  status: 'last.snap.stats.status',
+  hashrate: 'last.snap.stats.hashrate_mhs',
+  power: 'last.snap.stats.power_w',
+  efficiency: 'last.snap.stats.efficiency_w_ths',
+  temperature: 'last.snap.stats.temperature_c',
+  powerMode: 'last.snap.config.power_mode',
+  firmware: 'last.snap.config.firmware_ver',
+  model: 'last.snap.model',
+  ip: 'opts.address',
+  container: 'info.container',
+  rack: 'rack',
+  serialNum: 'info.serialNum',
+  macAddress: 'info.macAddress',
+  pool: 'last.snap.config.pool_config.url',
+  led: 'last.snap.config.led_status',
+  alerts: 'last.alerts'
+}
+
+const MINER_PROJECTION_MAP = {
+  id: ['id'],
+  type: ['type'],
+  model: ['last.snap.model', 'type'],
+  code: ['code'],
+  ip: ['opts.address'],
+  container: ['info.container'],
+  rack: ['rack'],
+  position: ['info.pos'],
+  status: ['last.snap.stats.status'],
+  hashrate: ['last.snap.stats.hashrate_mhs'],
+  power: ['last.snap.stats.power_w'],
+  temperature: ['last.snap.stats.temperature_c'],
+  efficiency: ['last.snap.stats.efficiency_w_ths'],
+  uptime: ['last.uptime'],
+  firmware: ['last.snap.config.firmware_ver'],
+  powerMode: ['last.snap.config.power_mode'],
+  ledStatus: ['last.snap.config.led_status'],
+  poolConfig: ['last.snap.config.pool_config'],
+  alerts: ['last.alerts'],
+  comments: ['comments'],
+  serialNum: ['info.serialNum'],
+  macAddress: ['info.macAddress'],
+  lastSeen: ['last.ts', 'ts']
+}
+
+const MINER_SEARCH_FIELDS = [
+  'id',
+  'opts.address',
+  'info.serialNum',
+  'info.macAddress',
+  'info.container',
+  'code',
+  'type'
+]
+
+const MINER_DEFAULT_FIELDS = {
+  id: 1,
+  type: 1,
+  code: 1,
+  info: 1,
+  tags: 1,
+  rack: 1,
+  comments: 1,
+  'last.alerts': 1,
+  'last.snap.stats': 1,
+  'last.snap.config': 1,
+  'last.snap.model': 1,
+  'last.uptime': 1,
+  'last.ts': 1,
+  'opts.address': 1,
+  ts: 1
+}
+
+const MINER_MAX_LIMIT = 200
+const MINER_DEFAULT_LIMIT = 50
+
 module.exports = {
   SUPER_ADMIN_ROLE,
   GLOBAL_DATA_TYPES,
@@ -402,5 +478,11 @@ module.exports = {
   SITE_ALERTS_SEARCH_FIELDS,
   HISTORY_FILTER_FIELDS,
   HISTORY_SEARCH_FIELDS,
-  DEVICE_LIST_FIELDS
+  DEVICE_LIST_FIELDS,
+  MINER_FIELD_MAP,
+  MINER_PROJECTION_MAP,
+  MINER_SEARCH_FIELDS,
+  MINER_DEFAULT_FIELDS,
+  MINER_MAX_LIMIT,
+  MINER_DEFAULT_LIMIT
 }

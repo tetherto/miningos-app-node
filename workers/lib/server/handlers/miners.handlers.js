@@ -1,115 +1,83 @@
 'use strict'
 
-const { parseJsonQueryParam, requestRpcMapLimit } = require('../../utils')
+const { parseJsonQueryParam, requestRpcMapLimit, requestRpcMapBatchLimit } = require('../../utils')
+const {
+  RPC_PAGE_LIMIT,
+  MINER_FIELD_MAP,
+  MINER_PROJECTION_MAP,
+  MINER_SEARCH_FIELDS,
+  MINER_DEFAULT_FIELDS,
+  MINER_MAX_LIMIT,
+  MINER_DEFAULT_LIMIT
+} = require('../../constants')
 const {
   mapFilterFields,
   mapSortFields,
   buildSearchQuery,
   flattenOrkResults,
-  sortItems,
-  paginateResults
+  sortItems
 } = require('../lib/queryUtils')
 
 /**
- * Maps clean miner field names to internal dot-paths.
- * Users can filter/sort using clean names; unknown keys pass through as-is.
+ * Builds ork projection from user-requested clean field names.
+ * Always includes id and code (needed for pool matching).
+ * Includes sort field paths so app-side sorting works on projected data.
  */
-const MINER_FIELD_MAP = {
-  status: 'last.snap.stats.status',
-  hashrate: 'last.snap.stats.hashrate_mhs',
-  power: 'last.snap.stats.power_w',
-  efficiency: 'last.snap.stats.efficiency_w_ths',
-  temperature: 'last.snap.stats.temperature_c',
-  powerMode: 'last.snap.config.power_mode',
-  firmware: 'last.snap.config.firmware_ver',
-  model: 'last.snap.model',
-  ip: 'opts.address',
-  container: 'info.container',
-  rack: 'rack',
-  serialNum: 'info.serialNum',
-  macAddress: 'info.macAddress',
-  pool: 'last.snap.config.pool_config.url',
-  led: 'last.snap.config.led_status',
-  alerts: 'last.alerts'
+function buildOrkProjection (userFields, mappedSort) {
+  const projection = { id: 1, code: 1 }
+
+  for (const [field, value] of Object.entries(userFields)) {
+    if (value !== 1) continue
+    const paths = MINER_PROJECTION_MAP[field]
+    if (paths) {
+      for (const path of paths) { projection[path] = 1 }
+    } else {
+      projection[field] = value
+    }
+  }
+
+  if (mappedSort) {
+    for (const path of Object.keys(mappedSort)) {
+      projection[path] = 1
+    }
+  }
+
+  return projection
 }
 
-/**
- * Internal fields searched when using the `search` query param.
- */
-const MINER_SEARCH_FIELDS = [
-  'id',
-  'opts.address',
-  'info.serialNum',
-  'info.macAddress',
-  'info.container',
-  'code',
-  'type'
-]
-
-/**
- * Default field projection when user doesn't specify fields.
- * Includes all fields needed for formatMiner.
- */
-const MINER_DEFAULT_FIELDS = {
-  id: 1,
-  type: 1,
-  code: 1,
-  info: 1,
-  tags: 1,
-  rack: 1,
-  comments: 1,
-  'last.alerts': 1,
-  'last.snap.stats': 1,
-  'last.snap.config': 1,
-  'last.snap.model': 1,
-  'last.uptime': 1,
-  'last.ts': 1,
-  'opts.address': 1,
-  ts: 1
-}
-
-const MAX_LIMIT = 200
-const DEFAULT_LIMIT = 50
-
-/**
- * Transforms a raw miner thing into the clean response format.
- *
- * @param {Object} raw - Raw miner object from listThings RPC
- * @param {Object|null} poolWorkers - Pool worker lookup { minerId: { hashrate } }
- * @returns {Object} Clean miner response object
- */
-function formatMiner (raw, poolWorkers) {
+function formatMiner (raw, poolWorkers, requestedFields) {
   const snap = raw.last?.snap || {}
   const stats = snap.stats || {}
   const config = snap.config || {}
 
-  const miner = {
-    id: raw.id,
-    type: raw.type,
-    model: snap.model || raw.type,
-    code: raw.code,
-    ip: raw.opts?.address,
-    container: raw.info?.container,
-    rack: raw.rack,
-    position: raw.info?.pos,
-    status: stats.status,
-    hashrate: stats.hashrate_mhs || 0,
-    power: stats.power_w || 0,
-    temperature: stats.temperature_c,
-    efficiency: stats.efficiency_w_ths || 0,
-    uptime: raw.last?.uptime,
-    firmware: config.firmware_ver,
-    powerMode: config.power_mode,
-    ledStatus: config.led_status,
-    poolConfig: config.pool_config,
-    alerts: raw.last?.alerts,
-    comments: raw.comments,
-    serialNum: raw.info?.serialNum,
-    macAddress: raw.info?.macAddress,
-    lastSeen: raw.last?.ts || raw.ts
-  }
+  const include = (field) => !requestedFields || requestedFields.has(field)
 
-  if (poolWorkers) {
+  const miner = { id: raw.id }
+
+  if (include('type')) miner.type = raw.type
+  if (include('model')) miner.model = snap.model || raw.type
+  if (include('code')) miner.code = raw.code
+  if (include('ip')) miner.ip = raw.opts?.address
+  if (include('container')) miner.container = raw.info?.container
+  if (include('rack')) miner.rack = raw.rack
+  if (include('position')) miner.position = raw.info?.pos
+  if (include('status')) miner.status = stats.status
+  if (include('hashrate')) miner.hashrate = stats.hashrate_mhs || 0
+  if (include('power')) miner.power = stats.power_w || 0
+  if (include('temperature')) miner.temperature = stats.temperature_c
+  if (include('efficiency')) miner.efficiency = stats.efficiency_w_ths || 0
+  if (include('uptime')) miner.uptime = raw.last?.uptime
+  if (include('firmware')) miner.firmware = config.firmware_ver
+  if (include('powerMode')) miner.powerMode = config.power_mode
+  if (include('ledStatus')) miner.ledStatus = config.led_status
+  if (include('poolConfig')) miner.poolConfig = config.pool_config
+  if (include('alerts')) miner.alerts = raw.last?.alerts
+  if (include('comments')) miner.comments = raw.comments
+  if (include('serialNum')) miner.serialNum = raw.info?.serialNum
+  if (include('macAddress')) miner.macAddress = raw.info?.macAddress
+  if (include('lastSeen')) miner.lastSeen = raw.last?.ts || raw.ts
+
+  if (poolWorkers && include('poolHashrate')) {
     const poolWorker = poolWorkers[raw.id] || poolWorkers[raw.code]
     if (poolWorker) {
       miner.poolHashrate = poolWorker.hashrate || 0
@@ -119,13 +87,6 @@ function formatMiner (raw, poolWorkers) {
   return miner
 }
 
-/**
- * Extracts a worker hashrate lookup from pool data RPC results.
- * Builds a map: workerId → { hashrate }
- *
- * @param {Array} poolDataResults - Array of ork responses from getWrkExtData
- * @returns {Object} Worker lookup map
- */
 function extractPoolWorkers (poolDataResults) {
   const workers = {}
   for (const orkResult of poolDataResults) {
@@ -140,15 +101,6 @@ function extractPoolWorkers (poolDataResults) {
   return workers
 }
 
-/**
- * GET /auth/miners
- *
- * Lists miners with unified filter/sort/search/pagination.
- * Auto-injects miner type filter, maps clean field names to internal paths,
- * aggregates multi-ork results, and returns a paginated response.
- *
- * Replaces: GET /auth/list-things?query={"tags":{"$in":["t-miner"]}}&status=1&...
- */
 async function listMiners (ctx, req) {
   const userFilter = req.query.filter
     ? parseJsonQueryParam(req.query.filter, 'ERR_FILTER_INVALID_JSON')
@@ -168,25 +120,36 @@ async function listMiners (ctx, req) {
     ? mapSortFields(parseJsonQueryParam(req.query.sort, 'ERR_SORT_INVALID_JSON'), MINER_FIELD_MAP)
     : undefined
 
-  const fields = req.query.fields
+  const userFields = req.query.fields
     ? parseJsonQueryParam(req.query.fields, 'ERR_FIELDS_INVALID_JSON')
+    : null
+
+  const orkProjection = userFields
+    ? buildOrkProjection(userFields, mappedSort)
     : MINER_DEFAULT_FIELDS
 
+  const requestedFields = userFields
+    ? new Set(Object.keys(userFields).filter(k => userFields[k] === 1))
+    : null
+
   const offset = req.query.offset || 0
-  const limit = Math.min(req.query.limit || DEFAULT_LIMIT, MAX_LIMIT)
+  const limit = Math.min(req.query.limit || MINER_DEFAULT_LIMIT, MINER_MAX_LIMIT)
+  const fetchLimit = offset + limit
 
-  const rpcPayload = {
-    query,
-    fields,
-    status: 1
-  }
+  const dataPayload = { query, fields: orkProjection, status: 1 }
+  if (mappedSort) { dataPayload.sort = mappedSort }
 
-  if (mappedSort) {
-    rpcPayload.sort = mappedSort
-  }
+  const countPayload = { query, fields: { id: 1 }, status: 1 }
 
-  const orkResults = await requestRpcMapLimit(ctx, 'listThings', rpcPayload)
+  const [orkResults, countResults] = await Promise.all([
+    fetchLimit <= RPC_PAGE_LIMIT
+      ? requestRpcMapLimit(ctx, 'listThings', { ...dataPayload, limit: fetchLimit })
+      : requestRpcMapBatchLimit(ctx, 'listThings', dataPayload, fetchLimit),
+    requestRpcMapLimit(ctx, 'listThings', countPayload)
+  ])
+
   let items = flattenOrkResults(orkResults)
+  const totalCount = flattenOrkResults(countResults).length
 
   if (mappedSort) {
     items = sortItems(items, mappedSort)
@@ -200,19 +163,17 @@ async function listMiners (ctx, req) {
         query: { key: 'stats' }
       })
       poolWorkers = extractPoolWorkers(poolData)
-    } catch {
-      // Pool enrichment is optional — don't fail the request
-    }
+    } catch { }
   }
 
-  const paginated = paginateResults(items, offset, limit)
+  const page = items.slice(offset, offset + limit)
 
   return {
-    data: paginated.data.map(miner => formatMiner(miner, poolWorkers)),
-    totalCount: paginated.totalCount,
-    offset: paginated.offset,
-    limit: paginated.limit,
-    hasMore: paginated.hasMore
+    data: page.map(miner => formatMiner(miner, poolWorkers, requestedFields)),
+    totalCount,
+    offset,
+    limit,
+    hasMore: offset + limit < totalCount
   }
 }
 
@@ -220,7 +181,5 @@ module.exports = {
   listMiners,
   formatMiner,
   extractPoolWorkers,
-  MINER_FIELD_MAP,
-  MINER_SEARCH_FIELDS,
-  MINER_DEFAULT_FIELDS
+  buildOrkProjection
 }
