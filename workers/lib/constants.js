@@ -132,7 +132,11 @@ const ENDPOINTS = {
   POOL_MANAGER_ASSIGN: '/auth/pool-manager/miners/assign',
   POOL_MANAGER_POWER_MODE: '/auth/pool-manager/miners/power-mode',
 
-  SITE_STATUS_LIVE: '/auth/site/status/live'
+  SITE_STATUS_LIVE: '/auth/site/status/live',
+
+  // Metrics endpoints
+  METRICS_HASHRATE: '/auth/metrics/hashrate',
+  METRICS_CONSUMPTION: '/auth/metrics/consumption'
 }
 
 const HTTP_METHODS = {
