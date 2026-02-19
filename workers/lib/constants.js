@@ -159,7 +159,9 @@ const ENDPOINTS = {
 
   // Alerts endpoints
   ALERTS_SITE: '/auth/alerts/site',
-  ALERTS_HISTORY: '/auth/alerts/history'
+  ALERTS_HISTORY: '/auth/alerts/history',
+
+  MINERS: '/auth/miners'
 }
 
 const HTTP_METHODS = {
