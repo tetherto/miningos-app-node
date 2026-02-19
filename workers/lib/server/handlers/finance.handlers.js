@@ -715,6 +715,104 @@ function calculateCostSummary (log) {
   }
 }
 
+// ==================== Subsidy Fees ====================
+
+async function getSubsidyFees (ctx, req) {
+  const start = Number(req.query.start)
+  const end = Number(req.query.end)
+  const period = req.query.period || PERIOD_TYPES.DAILY
+
+  if (!start || !end) {
+    throw new Error('ERR_MISSING_START_END')
+  }
+
+  if (start >= end) {
+    throw new Error('ERR_INVALID_DATE_RANGE')
+  }
+
+  const blockResults = await requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+    type: WORKER_TYPES.MEMPOOL,
+    query: { key: 'HISTORICAL_BLOCKSIZES', start, end }
+  })
+
+  const dailyBlocks = processBlockData(blockResults)
+
+  const log = []
+  for (const dayTs of Object.keys(dailyBlocks).sort()) {
+    const ts = Number(dayTs)
+    const block = dailyBlocks[dayTs]
+    log.push({
+      ts,
+      blockReward: block.blockReward,
+      blockTotalFees: block.blockTotalFees
+    })
+  }
+
+  const aggregated = aggregateByPeriod(log, period)
+  const summary = calculateSubsidyFeesSummary(aggregated)
+
+  return { log: aggregated, summary }
+}
+
+function processBlockData (results) {
+  const daily = {}
+  for (const res of results) {
+    if (!res || res.error) continue
+    const data = Array.isArray(res) ? res : (res.data || res.result || [])
+    if (!Array.isArray(data)) continue
+    for (const entry of data) {
+      if (!entry) continue
+      const items = entry.data || entry.blocks || entry
+      if (Array.isArray(items)) {
+        for (const item of items) {
+          if (!item) continue
+          const rawTs = item.ts || item.timestamp || item.time
+          const ts = getStartOfDay(normalizeTimestampMs(rawTs))
+          if (!ts) continue
+          if (!daily[ts]) daily[ts] = { blockReward: 0, blockTotalFees: 0 }
+          daily[ts].blockReward += (item.blockReward || item.block_reward || item.subsidy || 0)
+          daily[ts].blockTotalFees += (item.blockTotalFees || item.block_total_fees || item.totalFees || item.total_fees || 0)
+        }
+      } else if (typeof items === 'object' && !Array.isArray(items)) {
+        for (const [key, val] of Object.entries(items)) {
+          const ts = getStartOfDay(Number(key))
+          if (!ts) continue
+          if (!daily[ts]) daily[ts] = { blockReward: 0, blockTotalFees: 0 }
+          if (typeof val === 'object') {
+            daily[ts].blockReward += (val.blockReward || val.block_reward || val.subsidy || 0)
+            daily[ts].blockTotalFees += (val.blockTotalFees || val.block_total_fees || val.totalFees || val.total_fees || 0)
+          }
+        }
+      }
+    }
+  }
+  return daily
+}
+
+function calculateSubsidyFeesSummary (log) {
+  if (!log.length) {
+    return {
+      totalBlockReward: 0,
+      totalBlockTotalFees: 0,
+      avgBlockReward: null,
+      avgBlockTotalFees: null
+    }
+  }
+
+  const totals = log.reduce((acc, entry) => {
+    acc.blockReward += entry.blockReward || 0
+    acc.blockTotalFees += entry.blockTotalFees || 0
+    return acc
+  }, { blockReward: 0, blockTotalFees: 0 })
+
+  return {
+    totalBlockReward: totals.blockReward,
+    totalBlockTotalFees: totals.blockTotalFees,
+    avgBlockReward: safeDiv(totals.blockReward, log.length),
+    avgBlockTotalFees: safeDiv(totals.blockTotalFees, log.length)
+  }
+}
+
 // ==================== Shared ====================
 
 async function getProductionCosts (ctx, site, start, end) {
@@ -753,6 +851,7 @@ module.exports = {
   getEnergyBalance,
   getEbitda,
   getCostSummary,
+  getSubsidyFees,
   getProductionCosts,
   processConsumptionData,
   processTransactionData,
@@ -767,5 +866,7 @@ module.exports = {
   processEbitdaPrices,
   extractEbitdaCurrentPrice,
   calculateEbitdaSummary,
-  calculateCostSummary
+  calculateCostSummary,
+  processBlockData,
+  calculateSubsidyFeesSummary
 }
