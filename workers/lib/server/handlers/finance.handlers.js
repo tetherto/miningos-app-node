@@ -715,6 +715,324 @@ function calculateCostSummary (log) {
   }
 }
 
+// ==================== Revenue Summary ====================
+
+async function getRevenueSummary (ctx, req) {
+  const start = Number(req.query.start)
+  const end = Number(req.query.end)
+  const period = req.query.period || PERIOD_TYPES.DAILY
+
+  if (!start || !end) {
+    throw new Error('ERR_MISSING_START_END')
+  }
+
+  if (start >= end) {
+    throw new Error('ERR_INVALID_DATE_RANGE')
+  }
+
+  const startDate = new Date(start).toISOString()
+  const endDate = new Date(end).toISOString()
+
+  const [
+    transactionResults,
+    priceResults,
+    currentPriceResults,
+    tailLogResults,
+    productionCosts,
+    blockResults,
+    activeEnergyInResults,
+    uteEnergyResults,
+    globalConfigResults
+  ] = await runParallel([
+    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+      type: WORKER_TYPES.MINERPOOL,
+      query: { key: MINERPOOL_EXT_DATA_KEYS.TRANSACTIONS, start, end }
+    }).then(r => cb(null, r)).catch(cb),
+
+    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+      type: WORKER_TYPES.MEMPOOL,
+      query: { key: 'HISTORICAL_PRICES', start, end }
+    }).then(r => cb(null, r)).catch(cb),
+
+    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+      type: WORKER_TYPES.MEMPOOL,
+      query: { key: 'current_price' }
+    }).then(r => cb(null, r)).catch(cb),
+
+    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.TAIL_LOG_RANGE_AGGR, {
+      keys: [
+        {
+          type: WORKER_TYPES.POWERMETER,
+          startDate,
+          endDate,
+          fields: { [AGGR_FIELDS.SITE_POWER]: 1 },
+          shouldReturnDailyData: 1
+        },
+        {
+          type: WORKER_TYPES.MINER,
+          startDate,
+          endDate,
+          fields: { [AGGR_FIELDS.HASHRATE_SUM]: 1 },
+          shouldReturnDailyData: 1
+        }
+      ]
+    }).then(r => cb(null, r)).catch(cb),
+
+    (cb) => getProductionCosts(ctx, null, start, end)
+      .then(r => cb(null, r)).catch(cb),
+
+    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+      type: WORKER_TYPES.MEMPOOL,
+      query: { key: 'HISTORICAL_BLOCKSIZES', start, end }
+    }).then(r => cb(null, r)).catch(cb),
+
+    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+      type: WORKER_TYPES.ELECTRICITY,
+      query: { key: 'stats-history', start, end, groupRange: '1D' }
+    }).then(r => cb(null, r)).catch(cb),
+
+    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+      type: WORKER_TYPES.ELECTRICITY,
+      query: { key: 'stats-history', start, end, groupRange: '1D' }
+    }).then(r => cb(null, r)).catch(cb),
+
+    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GLOBAL_CONFIG, {})
+      .then(r => cb(null, r)).catch(cb)
+  ])
+
+  const dailyRevenue = processRevenueTransactions(transactionResults)
+  const dailyPrices = processEbitdaPrices(priceResults)
+  const currentBtcPrice = extractEbitdaCurrentPrice(currentPriceResults)
+  const dailyTailLog = processTailLogData(tailLogResults)
+  const costsByMonth = processCostsData(productionCosts)
+  const dailyBlocks = processBlockData(blockResults)
+  const dailyActiveEnergyIn = processEnergyData(activeEnergyInResults, AGGR_FIELDS.ACTIVE_ENERGY_IN)
+  const dailyUteEnergy = processEnergyData(uteEnergyResults, AGGR_FIELDS.UTE_ENERGY)
+  const nominalPowerMW = extractNominalPower(globalConfigResults)
+
+  const allDays = new Set([
+    ...Object.keys(dailyRevenue),
+    ...Object.keys(dailyTailLog),
+    ...Object.keys(dailyPrices)
+  ])
+
+  const log = []
+  for (const dayTs of [...allDays].sort()) {
+    const ts = Number(dayTs)
+    const revenue = dailyRevenue[dayTs] || {}
+    const tailLog = dailyTailLog[dayTs] || {}
+    const btcPrice = dailyPrices[dayTs] || currentBtcPrice || 0
+    const block = dailyBlocks[dayTs] || {}
+
+    const revenueBTC = revenue.revenueBTC || 0
+    const feesBTC = revenue.feesBTC || 0
+    const revenueUSD = revenueBTC * btcPrice
+    const feesUSD = feesBTC * btcPrice
+
+    const powerW = tailLog.powerW || 0
+    const consumptionMWh = (powerW * 24) / 1000000
+    const hashrateMhs = tailLog.hashrateMhs || 0
+    const hashratePhs = hashrateMhs / 1e9
+
+    const monthKey = `${new Date(ts).getFullYear()}-${String(new Date(ts).getMonth() + 1).padStart(2, '0')}`
+    const costs = costsByMonth[monthKey] || {}
+    const energyCostsUSD = costs.energyCostPerDay || 0
+    const operationalCostsUSD = costs.operationalCostPerDay || 0
+    const totalCostsUSD = energyCostsUSD + operationalCostsUSD
+
+    const activeEnergyIn = dailyActiveEnergyIn[dayTs] || 0
+    const uteEnergy = dailyUteEnergy[dayTs] || 0
+
+    const curtailmentMWh = activeEnergyIn > 0
+      ? activeEnergyIn - consumptionMWh
+      : null
+    const curtailmentRate = curtailmentMWh !== null
+      ? safeDiv(curtailmentMWh, consumptionMWh)
+      : null
+
+    const operationalIssuesRate = uteEnergy > 0
+      ? safeDiv(uteEnergy - consumptionMWh, uteEnergy)
+      : null
+
+    const actualPowerMW = powerW / 1000000
+    const powerUtilization = nominalPowerMW > 0
+      ? safeDiv(actualPowerMW, nominalPowerMW)
+      : null
+
+    log.push({
+      ts,
+      revenueBTC,
+      feesBTC,
+      revenueUSD,
+      feesUSD,
+      btcPrice,
+      powerW,
+      consumptionMWh,
+      hashrateMhs,
+      energyCostsUSD,
+      operationalCostsUSD,
+      totalCostsUSD,
+      ebitdaSelling: revenueUSD - totalCostsUSD,
+      ebitdaHodl: (revenueBTC * currentBtcPrice) - totalCostsUSD,
+      btcProductionCost: safeDiv(totalCostsUSD, revenueBTC),
+      energyRevenuePerMWh: safeDiv(revenueUSD, consumptionMWh),
+      allInCostPerMWh: safeDiv(totalCostsUSD, consumptionMWh),
+      hashRevenueBTCPerPHsPerDay: safeDiv(revenueBTC, hashratePhs),
+      hashRevenueUSDPerPHsPerDay: safeDiv(revenueUSD, hashratePhs),
+      blockReward: block.blockReward || 0,
+      blockTotalFees: block.blockTotalFees || 0,
+      curtailmentMWh,
+      curtailmentRate,
+      operationalIssuesRate,
+      powerUtilization
+    })
+  }
+
+  const aggregated = aggregateByPeriod(log, period)
+  const summary = calculateRevenueSummarySummary(aggregated, currentBtcPrice)
+
+  return { log: aggregated, summary }
+}
+
+function processRevenueTransactions (results) {
+  const daily = {}
+  for (const res of results) {
+    if (!res || res.error) continue
+    const data = Array.isArray(res) ? res : (res.data || res.result || [])
+    if (!Array.isArray(data)) continue
+    for (const tx of data) {
+      if (!tx) continue
+      const txList = tx.data || tx.transactions || tx
+      if (!Array.isArray(txList)) continue
+      for (const t of txList) {
+        if (!t) continue
+        const rawTs = t.ts || t.created_at || t.timestamp || t.time
+        const ts = getStartOfDay(normalizeTimestampMs(rawTs))
+        if (!ts) continue
+        const day = daily[ts] ??= { revenueBTC: 0, feesBTC: 0 }
+        if (t.satoshis_net_earned) {
+          day.revenueBTC += Math.abs(t.satoshis_net_earned) / BTC_SATS
+          day.feesBTC += (t.fees_colected_satoshis || 0) / BTC_SATS
+        } else {
+          day.revenueBTC += Math.abs(t.changed_balance || t.amount || t.value || 0)
+          day.feesBTC += (t.mining_extra?.tx_fee || 0)
+        }
+      }
+    }
+  }
+  return daily
+}
+
+function processBlockData (results) {
+  const daily = {}
+  for (const res of results) {
+    if (!res || res.error) continue
+    const data = Array.isArray(res) ? res : (res.data || res.result || [])
+    if (!Array.isArray(data)) continue
+    for (const entry of data) {
+      if (!entry) continue
+      const items = entry.data || entry.blocks || entry
+      if (Array.isArray(items)) {
+        for (const item of items) {
+          if (!item) continue
+          const rawTs = item.ts || item.timestamp || item.time
+          const ts = getStartOfDay(normalizeTimestampMs(rawTs))
+          if (!ts) continue
+          if (!daily[ts]) daily[ts] = { blockReward: 0, blockTotalFees: 0 }
+          daily[ts].blockReward += (item.blockReward || item.block_reward || item.subsidy || 0)
+          daily[ts].blockTotalFees += (item.blockTotalFees || item.block_total_fees || item.totalFees || item.total_fees || 0)
+        }
+      } else if (typeof items === 'object' && !Array.isArray(items)) {
+        for (const [key, val] of Object.entries(items)) {
+          const ts = getStartOfDay(Number(key))
+          if (!ts) continue
+          if (!daily[ts]) daily[ts] = { blockReward: 0, blockTotalFees: 0 }
+          if (typeof val === 'object') {
+            daily[ts].blockReward += (val.blockReward || val.block_reward || val.subsidy || 0)
+            daily[ts].blockTotalFees += (val.blockTotalFees || val.block_total_fees || val.totalFees || val.total_fees || 0)
+          }
+        }
+      }
+    }
+  }
+  return daily
+}
+
+function calculateRevenueSummarySummary (log, currentBtcPrice) {
+  if (!log.length) {
+    return {
+      totalRevenueBTC: 0,
+      totalRevenueUSD: 0,
+      totalFeesBTC: 0,
+      totalFeesUSD: 0,
+      totalCostsUSD: 0,
+      totalConsumptionMWh: 0,
+      avgCostPerMWh: null,
+      avgRevenuePerMWh: null,
+      avgBtcPrice: null,
+      avgCurtailmentRate: null,
+      avgPowerUtilization: null,
+      totalEbitdaSelling: 0,
+      totalEbitdaHodl: 0,
+      currentBtcPrice: currentBtcPrice || 0
+    }
+  }
+
+  const totals = log.reduce((acc, entry) => {
+    acc.revenueBTC += entry.revenueBTC || 0
+    acc.revenueUSD += entry.revenueUSD || 0
+    acc.feesBTC += entry.feesBTC || 0
+    acc.feesUSD += entry.feesUSD || 0
+    acc.costsUSD += entry.totalCostsUSD || 0
+    acc.consumptionMWh += entry.consumptionMWh || 0
+    acc.ebitdaSelling += entry.ebitdaSelling || 0
+    acc.ebitdaHodl += entry.ebitdaHodl || 0
+    acc.btcPriceSum += entry.btcPrice || 0
+    acc.btcPriceCount += entry.btcPrice ? 1 : 0
+    if (entry.curtailmentRate !== null && entry.curtailmentRate !== undefined) {
+      acc.curtailmentRateSum += entry.curtailmentRate
+      acc.curtailmentRateCount++
+    }
+    if (entry.powerUtilization !== null && entry.powerUtilization !== undefined) {
+      acc.powerUtilizationSum += entry.powerUtilization
+      acc.powerUtilizationCount++
+    }
+    return acc
+  }, {
+    revenueBTC: 0,
+    revenueUSD: 0,
+    feesBTC: 0,
+    feesUSD: 0,
+    costsUSD: 0,
+    consumptionMWh: 0,
+    ebitdaSelling: 0,
+    ebitdaHodl: 0,
+    btcPriceSum: 0,
+    btcPriceCount: 0,
+    curtailmentRateSum: 0,
+    curtailmentRateCount: 0,
+    powerUtilizationSum: 0,
+    powerUtilizationCount: 0
+  })
+
+  return {
+    totalRevenueBTC: totals.revenueBTC,
+    totalRevenueUSD: totals.revenueUSD,
+    totalFeesBTC: totals.feesBTC,
+    totalFeesUSD: totals.feesUSD,
+    totalCostsUSD: totals.costsUSD,
+    totalConsumptionMWh: totals.consumptionMWh,
+    avgCostPerMWh: safeDiv(totals.costsUSD, totals.consumptionMWh),
+    avgRevenuePerMWh: safeDiv(totals.revenueUSD, totals.consumptionMWh),
+    avgBtcPrice: safeDiv(totals.btcPriceSum, totals.btcPriceCount),
+    avgCurtailmentRate: safeDiv(totals.curtailmentRateSum, totals.curtailmentRateCount),
+    avgPowerUtilization: safeDiv(totals.powerUtilizationSum, totals.powerUtilizationCount),
+    totalEbitdaSelling: totals.ebitdaSelling,
+    totalEbitdaHodl: totals.ebitdaHodl,
+    currentBtcPrice: currentBtcPrice || 0
+  }
+}
+
 // ==================== Shared ====================
 
 async function getProductionCosts (ctx, site, start, end) {
@@ -753,6 +1071,7 @@ module.exports = {
   getEnergyBalance,
   getEbitda,
   getCostSummary,
+  getRevenueSummary,
   getProductionCosts,
   processConsumptionData,
   processTransactionData,
@@ -767,5 +1086,8 @@ module.exports = {
   processEbitdaPrices,
   extractEbitdaCurrentPrice,
   calculateEbitdaSummary,
-  calculateCostSummary
+  calculateCostSummary,
+  processRevenueTransactions,
+  processBlockData,
+  calculateRevenueSummarySummary
 }
