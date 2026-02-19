@@ -25,7 +25,7 @@
     "test:watch": "brittle tests/unit/**/*.js --watch",
     "test:coverage": "brittle --coverage tests/unit/**/*.js",
     "test:demo-ui": "http-server ./tests/demo-ui -p 3030",
-    "dev": "node worker.js --wtype wrk-node-http --env development --port 3000 --noauth",
+    "dev": "node worker.js --wtype wrk-node-http --env development --port 3000",
     "start": "node worker.js --wtype wrk-node-http --env production --port 3000"
   },
   "dependencies": {
