@@ -137,7 +137,8 @@ const ENDPOINTS = {
   // Metrics endpoints
   METRICS_HASHRATE: '/auth/metrics/hashrate',
   METRICS_CONSUMPTION: '/auth/metrics/consumption',
-  METRICS_EFFICIENCY: '/auth/metrics/efficiency'
+  METRICS_EFFICIENCY: '/auth/metrics/efficiency',
+  METRICS_MINER_STATUS: '/auth/metrics/miner-status'
 }
 
 const HTTP_METHODS = {

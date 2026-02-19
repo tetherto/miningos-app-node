@@ -7,7 +7,8 @@ const {
 const {
   getHashrate,
   getConsumption,
-  getEfficiency
+  getEfficiency,
+  getMinerStatus
 } = require('../handlers/metrics.handlers')
 const { createCachedAuthRoute } = require('../lib/routeHelpers')
 
@@ -64,6 +65,23 @@ module.exports = (ctx) => {
         ],
         ENDPOINTS.METRICS_EFFICIENCY,
         getEfficiency
+      )
+    },
+    {
+      method: HTTP_METHODS.GET,
+      url: ENDPOINTS.METRICS_MINER_STATUS,
+      schema: {
+        querystring: schemas.query.minerStatus
+      },
+      ...createCachedAuthRoute(
+        ctx,
+        (req) => [
+          'metrics/miner-status',
+          req.query.start,
+          req.query.end
+        ],
+        ENDPOINTS.METRICS_MINER_STATUS,
+        getMinerStatus
       )
     }
   ]
