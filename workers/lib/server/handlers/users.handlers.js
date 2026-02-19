@@ -149,9 +149,26 @@ async function getUserSettings (ctx, req, res) {
   return await ctx.globalDataLib.getUserSettings(userId)
 }
 
-function getRolesPermissions (ctx) {
+function getRolesPermissions (ctx, req) {
   const { roles, roleManagement } = ctx.auth_a0.conf
-  return { roles, roleManagement }
+  const userRole = JSON.parse(req._info.user.metadata.roles)[0]
+
+  if (userRole === SUPER_ADMIN_ROLE) {
+    return { roles, roleManagement }
+  }
+
+  const allowedRoles = roleManagement[userRole] || []
+  const filteredRoles = {}
+  for (const role of allowedRoles) {
+    if (roles[role]) {
+      filteredRoles[role] = roles[role]
+    }
+  }
+
+  return {
+    roles: filteredRoles,
+    roleManagement: { [userRole]: allowedRoles }
+  }
 }
 
 module.exports = {
