@@ -70,7 +70,7 @@ async function getEnergyBalance (ctx, req) {
       query: { key: 'current_price' }
     }).then(r => cb(null, r)).catch(cb),
 
-    (cb) => getProductionCosts(ctx, null, start, end)
+    (cb) => getProductionCosts(ctx, start, end)
       .then(r => cb(null, r)).catch(cb),
 
     (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
@@ -412,7 +412,7 @@ async function getEbitda (ctx, req) {
       query: { key: 'current_price' }
     }).then(r => cb(null, r)).catch(cb),
 
-    (cb) => getProductionCosts(ctx, null, start, end)
+    (cb) => getProductionCosts(ctx, start, end)
       .then(r => cb(null, r)).catch(cb)
   ])
 
@@ -620,7 +620,7 @@ async function getCostSummary (ctx, req) {
   const endDate = new Date(end).toISOString()
 
   const [productionCosts, priceResults, consumptionResults] = await runParallel([
-    (cb) => getProductionCosts(ctx, null, start, end)
+    (cb) => getProductionCosts(ctx, start, end)
       .then(r => cb(null, r)).catch(cb),
 
     (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
@@ -815,7 +815,7 @@ function calculateSubsidyFeesSummary (log) {
 
 // ==================== Shared ====================
 
-async function getProductionCosts (ctx, site, start, end) {
+async function getProductionCosts (ctx, start, end) {
   if (!ctx.globalDataLib) return []
   const costs = await ctx.globalDataLib.getGlobalData({
     type: GLOBAL_DATA_TYPES.PRODUCTION_COSTS
@@ -826,7 +826,6 @@ async function getProductionCosts (ctx, site, start, end) {
   const endDate = new Date(end)
   return costs.filter(entry => {
     if (!entry || !entry.year || !entry.month) return false
-    if (site && entry.site !== site) return false
     const entryDate = new Date(entry.year, entry.month - 1, 1)
     return entryDate >= startDate && entryDate <= endDate
   })
