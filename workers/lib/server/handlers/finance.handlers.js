@@ -731,11 +731,11 @@ async function getRevenue (ctx, req) {
     throw new Error('ERR_INVALID_DATE_RANGE')
   }
 
+  const type = pool ? WORKER_TYPES.MINERPOOL + '-' + pool : WORKER_TYPES.MINERPOOL
   const query = { key: MINERPOOL_EXT_DATA_KEYS.TRANSACTIONS, start, end }
-  if (pool) query.pool = pool
 
   const transactionResults = await requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
-    type: WORKER_TYPES.MINERPOOL,
+    type,
     query
   })
 

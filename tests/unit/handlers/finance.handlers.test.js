@@ -662,7 +662,7 @@ test('getRevenue - pool filter', async (t) => {
   }
 
   await getRevenue(mockCtx, mockReq, {})
-  t.is(capturedPayload.query.pool, 'f2pool', 'should pass pool filter to RPC')
+  t.is(capturedPayload.type, 'minerpool-f2pool', 'should include pool in worker type')
   t.pass()
 })
 
