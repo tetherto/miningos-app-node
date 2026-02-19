@@ -15,6 +15,7 @@ const {
   processMinerStatusData,
   calculateMinerStatusSummary,
   sumObjectValues,
+  parseEntryTs,
   resolveInterval,
   getIntervalConfig,
   getPowerMode,
@@ -689,7 +690,59 @@ test('getIntervalConfig - returns correct configs', (t) => {
   t.pass()
 })
 
+// ==================== parseEntryTs Tests ====================
+
+test('parseEntryTs - handles numeric ts', (t) => {
+  t.is(parseEntryTs(1700006400000), 1700006400000, 'should return number as-is')
+  t.pass()
+})
+
+test('parseEntryTs - handles range string ts', (t) => {
+  t.is(parseEntryTs('1770854400000-1771459199999'), 1770854400000, 'should extract start of range')
+  t.is(parseEntryTs('1771459200000-1771545599999'), 1771459200000, 'should extract start of range')
+  t.pass()
+})
+
+test('parseEntryTs - handles plain numeric string', (t) => {
+  t.is(parseEntryTs('1700006400000'), 1700006400000, 'should parse numeric string')
+  t.pass()
+})
+
+test('parseEntryTs - returns null for invalid input', (t) => {
+  t.is(parseEntryTs(null), null, 'null returns null')
+  t.is(parseEntryTs(undefined), null, 'undefined returns null')
+  t.pass()
+})
+
 // ==================== Power Mode Tests ====================
+
+test('processPowerModeData - handles range string ts with groupRange', (t) => {
+  const results = [[{
+    ts: '1700006400000-1700092799999',
+    power_mode_group_aggr: { 'cont1-miner1': 'normal' },
+    status_group_aggr: { 'cont1-miner1': 'mining' }
+  }]]
+
+  const points = processPowerModeData(results, '1D')
+  t.ok(Object.keys(points).length > 0, 'should have entries despite range string ts')
+  const key = Object.keys(points)[0]
+  t.is(points[key].normal, 1, 'should count normal')
+  t.pass()
+})
+
+test('processTemperatureData - handles range string ts with groupRange', (t) => {
+  const results = [[{
+    ts: '1700006400000-1700092799999',
+    temperature_c_group_max_aggr: { cont1: 65 },
+    temperature_c_group_avg_aggr: { cont1: 55 }
+  }]]
+
+  const points = processTemperatureData(results, '1D', null)
+  t.ok(Object.keys(points).length > 0, 'should have entries despite range string ts')
+  const key = Object.keys(points)[0]
+  t.is(points[key].containers.cont1.maxC, 65, 'should have temp data')
+  t.pass()
+})
 
 test('getPowerMode - happy path', async (t) => {
   const ts = 1700006400000
@@ -949,7 +1002,7 @@ test('processPowerModeTimelineData - groups by miner and sorts by ts', (t) => {
     }
   ]]
 
-  const log = processPowerModeTimelineData(results)
+  const log = processPowerModeTimelineData(results, null)
   t.is(log.length, 1, 'should group into 1 miner')
   t.is(log[0].minerId, 'cont1-miner1', 'should have correct miner id')
   t.is(log[0].segments[0].powerMode, 'normal', 'first segment should be earlier entry (normal)')
@@ -976,7 +1029,7 @@ test('processPowerModeTimelineData - merges consecutive same-mode segments', (t)
     }
   ]]
 
-  const log = processPowerModeTimelineData(results)
+  const log = processPowerModeTimelineData(results, null)
   t.is(log[0].segments.length, 1, 'should merge 3 entries into 1 segment')
   t.is(log[0].segments[0].from, 1700000000000, 'segment should start at first entry')
   t.is(log[0].segments[0].to, 1700021600000, 'segment should end at last entry')
@@ -1002,7 +1055,7 @@ test('processPowerModeTimelineData - mode changes create new segments', (t) => {
     }
   ]]
 
-  const log = processPowerModeTimelineData(results)
+  const log = processPowerModeTimelineData(results, null)
   t.is(log[0].segments.length, 3, 'should create 3 separate segments')
   t.is(log[0].segments[0].powerMode, 'normal', 'first segment normal')
   t.is(log[0].segments[1].powerMode, 'low', 'second segment low')
@@ -1019,12 +1072,12 @@ test('processPowerModeTimelineData - extracts container from miner id', (t) => {
     }
   ]]
 
-  const log = processPowerModeTimelineData(results)
+  const log = processPowerModeTimelineData(results, null)
   t.is(log[0].container, 'container-a-pos1', 'should extract container from miner id')
   t.pass()
 })
 
-test('getPowerModeTimeline - container filter passed through', async (t) => {
+test('getPowerModeTimeline - always uses t-miner tag', async (t) => {
   let capturedPayload = null
   const mockCtx = {
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
@@ -1040,7 +1093,22 @@ test('getPowerModeTimeline - container filter passed through', async (t) => {
     query: { start: 1700000000000, end: 1700100000000, container: 'my-container' }
   })
 
-  t.is(capturedPayload.tag, 'my-container', 'should pass container as tag')
+  t.is(capturedPayload.tag, 't-miner', 'should always use t-miner tag for RPC')
+  t.pass()
+})
+
+test('processPowerModeTimelineData - filters by container post-RPC', (t) => {
+  const results = [[
+    {
+      ts: 1700000000000,
+      power_mode_group_aggr: { 'cont1-miner1': 'normal', 'cont2-miner1': 'low' },
+      status_group_aggr: { 'cont1-miner1': 'mining', 'cont2-miner1': 'mining' }
+    }
+  ]]
+
+  const log = processPowerModeTimelineData(results, 'cont1')
+  t.is(log.length, 1, 'should only include miners from cont1')
+  t.is(log[0].container, 'cont1', 'should be cont1')
   t.pass()
 })
 
@@ -1200,7 +1268,7 @@ test('calculateTemperatureSummary - handles empty log', (t) => {
   t.pass()
 })
 
-test('getTemperature - container filter passed through', async (t) => {
+test('getTemperature - always uses t-miner tag with container post-filter', async (t) => {
   let capturedPayload = null
   const mockCtx = {
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
@@ -1216,6 +1284,6 @@ test('getTemperature - container filter passed through', async (t) => {
     query: { start: 1700000000000, end: 1700100000000, container: 'my-container' }
   })
 
-  t.is(capturedPayload.tag, 'my-container', 'should pass container as tag')
+  t.is(capturedPayload.tag, 't-miner', 'should always use t-miner tag for RPC')
   t.pass()
 })

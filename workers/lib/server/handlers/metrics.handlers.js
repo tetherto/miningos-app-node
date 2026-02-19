@@ -16,6 +16,21 @@ const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000
 const THREE_HOURS_MS = 3 * 60 * 60 * 1000
 const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000
 
+/**
+ * Parse timestamp from RPC entry.
+ * With groupRange, ts may be a range string like "1770854400000-1771459199999".
+ * Extracts the start of the range in that case.
+ */
+function parseEntryTs (ts) {
+  if (typeof ts === 'number') return ts
+  if (typeof ts === 'string') {
+    const dashIdx = ts.indexOf('-')
+    if (dashIdx > 0) return Number(ts.slice(0, dashIdx))
+    return Number(ts)
+  }
+  return null
+}
+
 // ==================== Hashrate ====================
 
 async function getHashrate (ctx, req) {
@@ -330,7 +345,8 @@ function processMinerStatusData (results) {
     if (!Array.isArray(data)) continue
     for (const entry of data) {
       if (!entry) continue
-      const ts = getStartOfDay(entry.ts || entry.timestamp)
+      const rawTs = parseEntryTs(entry.ts || entry.timestamp)
+      const ts = rawTs ? getStartOfDay(rawTs) : null
       if (!ts) continue
       if (!daily[ts]) {
         daily[ts] = { online: 0, offline: 0, sleep: 0, maintenance: 0 }
@@ -469,7 +485,8 @@ function processPowerModeData (results, groupRange) {
     if (!Array.isArray(data)) continue
     for (const entry of data) {
       if (!entry) continue
-      const ts = groupRange ? getStartOfDay(entry.ts || entry.timestamp) : (entry.ts || entry.timestamp)
+      const rawTs = parseEntryTs(entry.ts || entry.timestamp)
+      const ts = groupRange && rawTs ? getStartOfDay(rawTs) : rawTs
       if (!ts) continue
 
       if (!timePoints[ts]) timePoints[ts] = emptyPoint()
@@ -530,7 +547,7 @@ async function getPowerModeTimeline (ctx, req) {
   const rpcPayload = {
     key: 'stat-3h',
     type: WORKER_TYPES.MINER,
-    tag: container || 't-miner',
+    tag: 't-miner',
     aggrFields: {
       [AGGR_FIELDS.POWER_MODE_GROUP]: 1,
       [AGGR_FIELDS.STATUS_GROUP]: 1
@@ -540,12 +557,12 @@ async function getPowerModeTimeline (ctx, req) {
 
   const results = await requestRpcEachLimit(ctx, RPC_METHODS.TAIL_LOG, rpcPayload)
 
-  const log = processPowerModeTimelineData(results)
+  const log = processPowerModeTimelineData(results, container)
 
   return { log }
 }
 
-function processPowerModeTimelineData (results) {
+function processPowerModeTimelineData (results, containerFilter) {
   const minerTimelines = {}
 
   for (const res of results) {
@@ -554,7 +571,7 @@ function processPowerModeTimelineData (results) {
     if (!Array.isArray(data)) continue
     for (const entry of data) {
       if (!entry) continue
-      const ts = entry.ts || entry.timestamp
+      const ts = parseEntryTs(entry.ts || entry.timestamp)
       if (!ts) continue
 
       const powerModeObj = entry[AGGR_FIELDS.POWER_MODE_GROUP] || entry.aggrFields?.[AGGR_FIELDS.POWER_MODE_GROUP] || {}
@@ -577,6 +594,11 @@ function processPowerModeTimelineData (results) {
   for (const [minerId, entries] of Object.entries(minerTimelines)) {
     entries.sort((a, b) => a.ts - b.ts)
 
+    const parts = minerId.split('-')
+    const container = parts.length >= 2 ? parts.slice(0, -1).join('-') : minerId
+
+    if (containerFilter && container !== containerFilter) continue
+
     const segments = []
     let current = null
 
@@ -592,9 +614,6 @@ function processPowerModeTimelineData (results) {
       }
     }
     if (current) segments.push(current)
-
-    const parts = minerId.split('-')
-    const container = parts.length >= 2 ? parts.slice(0, -1).join('-') : minerId
 
     log.push({ minerId, container, segments })
   }
@@ -624,7 +643,7 @@ async function getTemperature (ctx, req) {
   const rpcPayload = {
     key: config.key,
     type: WORKER_TYPES.MINER,
-    tag: container || 't-miner',
+    tag: 't-miner',
     aggrFields: {
       [AGGR_FIELDS.TEMP_MAX]: 1,
       [AGGR_FIELDS.TEMP_AVG]: 1
@@ -659,7 +678,8 @@ function processTemperatureData (results, groupRange, containerFilter) {
     if (!Array.isArray(data)) continue
     for (const entry of data) {
       if (!entry) continue
-      const ts = groupRange ? getStartOfDay(entry.ts || entry.timestamp) : (entry.ts || entry.timestamp)
+      const rawTs = parseEntryTs(entry.ts || entry.timestamp)
+      const ts = groupRange && rawTs ? getStartOfDay(rawTs) : rawTs
       if (!ts) continue
 
       const maxObj = entry[AGGR_FIELDS.TEMP_MAX] || entry.aggrFields?.[AGGR_FIELDS.TEMP_MAX] || {}
@@ -730,6 +750,7 @@ module.exports = {
   processMinerStatusData,
   calculateMinerStatusSummary,
   sumObjectValues,
+  parseEntryTs,
   resolveInterval,
   getIntervalConfig,
   getPowerMode,
