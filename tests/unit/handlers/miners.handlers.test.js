@@ -5,8 +5,12 @@ const {
   listMiners,
   formatMiner,
   extractPoolWorkers,
-  MINER_FIELD_MAP
+  buildOrkProjection
 } = require('../../../workers/lib/server/handlers/miners.handlers')
+const {
+  MINER_FIELD_MAP,
+  MINER_PROJECTION_MAP
+} = require('../../../workers/lib/constants')
 
 function createMockMiner (overrides = {}) {
   return {
@@ -217,7 +221,7 @@ test('listMiners - enforces max limit of 200', async (t) => {
 })
 
 test('listMiners - parses filter JSON', async (t) => {
-  let capturedPayload = null
+  const capturedPayloads = []
   const ctx = {
     conf: {
       orks: [{ rpcPublicKey: 'key1' }],
@@ -225,7 +229,7 @@ test('listMiners - parses filter JSON', async (t) => {
     },
     net_r0: {
       jRequest: async (key, method, payload) => {
-        capturedPayload = payload
+        capturedPayloads.push(payload)
         return []
       }
     }
@@ -234,14 +238,16 @@ test('listMiners - parses filter JSON', async (t) => {
 
   await listMiners(ctx, req)
 
-  t.ok(capturedPayload.query.$and)
-  t.is(capturedPayload.query.$and[0].tags.$in[0], 't-miner')
-  t.is(capturedPayload.query.$and[1]['last.snap.stats.status'], 'error')
+  // Both data and count payloads share the same query
+  const dataPayload = capturedPayloads.find(p => p.limit !== undefined)
+  t.ok(dataPayload.query.$and)
+  t.is(dataPayload.query.$and[0].tags.$in[0], 't-miner')
+  t.is(dataPayload.query.$and[1]['last.snap.stats.status'], 'error')
   t.pass()
 })
 
 test('listMiners - builds search query', async (t) => {
-  let capturedPayload = null
+  const capturedPayloads = []
   const ctx = {
     conf: {
       orks: [{ rpcPublicKey: 'key1' }],
@@ -249,7 +255,7 @@ test('listMiners - builds search query', async (t) => {
     },
     net_r0: {
       jRequest: async (key, method, payload) => {
-        capturedPayload = payload
+        capturedPayloads.push(payload)
         return []
       }
     }
@@ -258,7 +264,8 @@ test('listMiners - builds search query', async (t) => {
 
   await listMiners(ctx, req)
 
-  const lastCondition = capturedPayload.query.$and[capturedPayload.query.$and.length - 1]
+  const dataPayload = capturedPayloads.find(p => p.limit !== undefined)
+  const lastCondition = dataPayload.query.$and[dataPayload.query.$and.length - 1]
   t.ok(lastCondition.$or)
   t.ok(lastCondition.$or.some(c => c.id?.$regex === '192.168'))
   t.ok(lastCondition.$or.some(c => c['opts.address']?.$regex === '192.168'))
@@ -308,5 +315,213 @@ test('MINER_FIELD_MAP - has expected field mappings', (t) => {
   t.is(MINER_FIELD_MAP.ip, 'opts.address')
   t.is(MINER_FIELD_MAP.container, 'info.container')
   t.is(MINER_FIELD_MAP.model, 'last.snap.model')
+  t.pass()
+})
+
+test('listMiners - sends limit (offset+limit) to ork data query', async (t) => {
+  const capturedPayloads = []
+  const ctx = {
+    conf: {
+      orks: [{ rpcPublicKey: 'key1' }],
+      featureConfig: {}
+    },
+    net_r0: {
+      jRequest: async (key, method, payload) => {
+        capturedPayloads.push(payload)
+        return []
+      }
+    }
+  }
+  const req = { query: { offset: 10, limit: 25 } }
+
+  await listMiners(ctx, req)
+
+  // Data payload should have limit = offset + limit = 35
+  const dataPayload = capturedPayloads.find(p => p.limit !== undefined)
+  t.is(dataPayload.limit, 35)
+  t.pass()
+})
+
+test('listMiners - sends lightweight count query with id-only projection', async (t) => {
+  const capturedPayloads = []
+  const ctx = {
+    conf: {
+      orks: [{ rpcPublicKey: 'key1' }],
+      featureConfig: {}
+    },
+    net_r0: {
+      jRequest: async (key, method, payload) => {
+        capturedPayloads.push(payload)
+        return []
+      }
+    }
+  }
+  const req = { query: {} }
+
+  await listMiners(ctx, req)
+
+  // Count payload should have fields: { id: 1 } and no limit
+  const countPayload = capturedPayloads.find(p => p.limit === undefined)
+  t.ok(countPayload)
+  t.alike(countPayload.fields, { id: 1 })
+  t.is(countPayload.sort, undefined)
+  t.pass()
+})
+
+test('listMiners - totalCount reflects all matching items, not just overfetched page', async (t) => {
+  // Simulate: 50 miners exist, but user requests offset=0, limit=5 → overfetch 5 from ork
+  // The count query returns all 50, data query returns 5 (mock returns all, but real ork would limit)
+  const allMiners = Array.from({ length: 50 }, (_, i) =>
+    createMockMiner({ id: `miner-${i}`, code: `A${i}` })
+  )
+  const ctx = createMockCtx(allMiners)
+  const req = { query: { offset: 0, limit: 5 } }
+
+  const result = await listMiners(ctx, req)
+
+  // totalCount should be 50 (from count query), data should be 5 (sliced)
+  t.is(result.totalCount, 50)
+  t.is(result.data.length, 5)
+  t.is(result.hasMore, true)
+  t.pass()
+})
+
+test('listMiners - makes two listThings RPC calls (data + count)', async (t) => {
+  let callCount = 0
+  const ctx = {
+    conf: {
+      orks: [{ rpcPublicKey: 'key1' }],
+      featureConfig: {}
+    },
+    net_r0: {
+      jRequest: async (key, method, payload) => {
+        if (method === 'listThings') callCount++
+        return []
+      }
+    }
+  }
+  const req = { query: {} }
+
+  await listMiners(ctx, req)
+
+  t.is(callCount, 2)
+  t.pass()
+})
+
+// --- Projection: clean field names ---
+
+test('buildOrkProjection - maps clean names to internal paths', (t) => {
+  const result = buildOrkProjection({ firmware: 1, ip: 1 })
+
+  t.is(result.id, 1, 'always includes id')
+  t.is(result.code, 1, 'always includes code')
+  t.is(result['last.snap.config.firmware_ver'], 1, 'maps firmware')
+  t.is(result['opts.address'], 1, 'maps ip')
+  t.is(result['last.snap.stats.hashrate_mhs'], undefined, 'does not include unrequested fields')
+  t.pass()
+})
+
+test('buildOrkProjection - includes sort fields for app-side sorting', (t) => {
+  const userFields = { status: 1 }
+  const mappedSort = { 'last.snap.stats.hashrate_mhs': -1 }
+  const result = buildOrkProjection(userFields, mappedSort)
+
+  t.is(result['last.snap.stats.status'], 1, 'maps requested field')
+  t.is(result['last.snap.stats.hashrate_mhs'], 1, 'includes sort field')
+  t.pass()
+})
+
+test('buildOrkProjection - handles multi-path fields (model needs snap.model + type)', (t) => {
+  const result = buildOrkProjection({ model: 1 })
+
+  t.is(result['last.snap.model'], 1, 'includes primary path')
+  t.is(result.type, 1, 'includes fallback path')
+  t.pass()
+})
+
+test('buildOrkProjection - passes through unknown field names as-is', (t) => {
+  const result = buildOrkProjection({ 'some.custom.path': 1 })
+
+  t.is(result['some.custom.path'], 1, 'passes through raw path')
+  t.pass()
+})
+
+test('MINER_PROJECTION_MAP - covers all response fields', (t) => {
+  const expectedFields = [
+    'id', 'type', 'model', 'code', 'ip', 'container', 'rack', 'position',
+    'status', 'hashrate', 'power', 'temperature', 'efficiency', 'uptime',
+    'firmware', 'powerMode', 'ledStatus', 'poolConfig', 'alerts',
+    'comments', 'serialNum', 'macAddress', 'lastSeen'
+  ]
+  for (const field of expectedFields) {
+    t.ok(MINER_PROJECTION_MAP[field], `should have mapping for ${field}`)
+    t.ok(Array.isArray(MINER_PROJECTION_MAP[field]), `${field} should be an array of paths`)
+  }
+  t.pass()
+})
+
+test('formatMiner - only includes requested fields when projection specified', (t) => {
+  const raw = createMockMiner()
+  const requestedFields = new Set(['firmware', 'ip', 'status'])
+  const result = formatMiner(raw, null, requestedFields)
+
+  t.is(result.id, 't-miner-antminer-192-168-1-101', 'always includes id')
+  t.is(result.firmware, '2024.01.15', 'includes requested firmware')
+  t.is(result.ip, '192.168.1.101', 'includes requested ip')
+  t.is(result.status, 'mining', 'includes requested status')
+  t.is(result.hashrate, undefined, 'excludes unrequested hashrate')
+  t.is(result.power, undefined, 'excludes unrequested power')
+  t.is(result.efficiency, undefined, 'excludes unrequested efficiency')
+  t.is(result.model, undefined, 'excludes unrequested model')
+  t.is(result.container, undefined, 'excludes unrequested container')
+  t.pass()
+})
+
+test('formatMiner - returns all fields when no projection (null)', (t) => {
+  const raw = createMockMiner()
+  const result = formatMiner(raw, null, null)
+
+  t.ok(result.hashrate !== undefined, 'includes hashrate')
+  t.ok(result.power !== undefined, 'includes power')
+  t.ok(result.efficiency !== undefined, 'includes efficiency')
+  t.ok(result.firmware !== undefined, 'includes firmware')
+  t.ok(result.model !== undefined, 'includes model')
+  t.pass()
+})
+
+test('listMiners - maps user fields to ork projection and filters response', async (t) => {
+  const capturedPayloads = []
+  const miners = [createMockMiner()]
+  const ctx = {
+    conf: {
+      orks: [{ rpcPublicKey: 'key1' }],
+      featureConfig: {}
+    },
+    net_r0: {
+      jRequest: async (key, method, payload) => {
+        capturedPayloads.push(payload)
+        return miners
+      }
+    }
+  }
+  const req = { query: { fields: '{"firmware":1,"ip":1}' } }
+
+  const result = await listMiners(ctx, req)
+
+  // Check ork projection was mapped correctly
+  const dataPayload = capturedPayloads.find(p => p.limit !== undefined)
+  t.is(dataPayload.fields['last.snap.config.firmware_ver'], 1, 'maps firmware to ork path')
+  t.is(dataPayload.fields['opts.address'], 1, 'maps ip to ork path')
+  t.is(dataPayload.fields.id, 1, 'always includes id')
+  t.is(dataPayload.fields.code, 1, 'always includes code')
+
+  // Check response only has requested fields
+  const miner = result.data[0]
+  t.ok(miner.id, 'always includes id in response')
+  t.ok(miner.firmware, 'includes requested firmware')
+  t.ok(miner.ip, 'includes requested ip')
+  t.is(miner.hashrate, undefined, 'excludes unrequested hashrate')
+  t.is(miner.power, undefined, 'excludes unrequested power')
+  t.is(miner.efficiency, undefined, 'excludes unrequested efficiency')
   t.pass()
 })

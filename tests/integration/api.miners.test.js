@@ -603,13 +603,23 @@ test('Miners API', { timeout: 90000 }, async (main) => {
       const headers = await createAuthHeaders(siteOperatorUser)
       const filter = JSON.stringify({ status: 'online' })
       const sort = JSON.stringify({ temperature: 1 })
-      const fields = JSON.stringify({ id: 1, 'last.snap.stats': 1, 'opts.address': 1 })
+      const fields = JSON.stringify({ status: 1, ip: 1, temperature: 1 })
       const api = `${minersApi}?filter=${encodeURIComponent(filter)}&sort=${encodeURIComponent(sort)}&fields=${encodeURIComponent(fields)}&search=192&limit=3&offset=0`
       const { body: data } = await httpClient.get(api, { headers, encoding })
 
       t.ok(Array.isArray(data.data), 'should return data array')
       t.ok(data.data.length <= 3, 'should respect limit')
       t.is(data.offset, 0, 'offset should be 0')
+      // Verify projection: only requested fields + id should be present
+      if (data.data.length > 0) {
+        const miner = data.data[0]
+        t.ok(miner.id, 'should always include id')
+        t.ok(miner.status !== undefined, 'should include requested field: status')
+        t.ok(miner.ip !== undefined, 'should include requested field: ip')
+        t.is(miner.hashrate, undefined, 'should exclude non-requested field: hashrate')
+        t.is(miner.power, undefined, 'should exclude non-requested field: power')
+        t.is(miner.firmware, undefined, 'should exclude non-requested field: firmware')
+      }
     })
   })
 
