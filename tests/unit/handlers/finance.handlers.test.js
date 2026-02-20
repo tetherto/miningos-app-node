@@ -14,7 +14,9 @@ const {
   getCostSummary,
   calculateCostSummary,
   getRevenue,
-  calculateRevenueSummary
+  calculateRevenueSummary,
+  getRevenueSummary,
+  calculateDetailedRevenueSummary
 } = require('../../../workers/lib/server/handlers/finance.handlers')
 
 // ==================== Energy Balance Tests ====================
@@ -599,5 +601,168 @@ test('calculateRevenueSummary - handles empty log', (t) => {
   t.is(summary.totalRevenueBTC, 0, 'should be zero')
   t.is(summary.totalFeesBTC, 0, 'should be zero')
   t.is(summary.totalNetRevenueBTC, 0, 'should be zero')
+  t.pass()
+})
+
+// ==================== Revenue Summary Tests ====================
+
+test('getRevenueSummary - happy path', async (t) => {
+  const dayTs = 1700006400000
+  const mockCtx = {
+    conf: {
+      orks: [{ rpcPublicKey: 'key1' }]
+    },
+    net_r0: {
+      jRequest: async (key, method, payload) => {
+        if (method === 'tailLogCustomRangeAggr') {
+          return [{ data: { [dayTs]: { site_power_w: 5000, hashrate_mhs_5m_sum_aggr: 100000 } } }]
+        }
+        if (method === 'getWrkExtData') {
+          if (payload.query && payload.query.key === 'transactions') {
+            return [{ transactions: [{ ts: dayTs, changed_balance: 0.5, mining_extra: { tx_fee: 0.001 } }] }]
+          }
+          if (payload.query && payload.query.key === 'HISTORICAL_PRICES') {
+            return [{ data: [{ ts: dayTs, priceUSD: 40000 }] }]
+          }
+          if (payload.query && payload.query.key === 'current_price') {
+            return { data: { USD: 40000 } }
+          }
+          if (payload.query && payload.query.key === 'HISTORICAL_BLOCKSIZES') {
+            return [{ data: [{ ts: dayTs, blockReward: 6.25, blockTotalFees: 0.5 }] }]
+          }
+          if (payload.query && payload.query.key === 'stats-history') {
+            return []
+          }
+        }
+        if (method === 'getGlobalConfig') {
+          return { nominalPowerAvailability_MW: 10 }
+        }
+        return {}
+      }
+    },
+    globalDataLib: {
+      getGlobalData: async () => []
+    }
+  }
+
+  const mockReq = {
+    query: { start: 1700000000000, end: 1700100000000, period: 'daily' }
+  }
+
+  const result = await getRevenueSummary(mockCtx, mockReq, {})
+  t.ok(result.log, 'should return log array')
+  t.ok(result.summary, 'should return summary')
+  t.ok(Array.isArray(result.log), 'log should be array')
+  t.ok(result.summary.currentBtcPrice !== undefined, 'summary should have currentBtcPrice')
+  if (result.log.length > 0) {
+    const entry = result.log[0]
+    t.ok(entry.revenueBTC !== undefined, 'entry should have revenueBTC')
+    t.ok(entry.feesBTC !== undefined, 'entry should have feesBTC')
+    t.ok(entry.revenueUSD !== undefined, 'entry should have revenueUSD')
+    t.ok(entry.ebitdaSelling !== undefined, 'entry should have ebitdaSelling')
+    t.ok(entry.ebitdaHodl !== undefined, 'entry should have ebitdaHodl')
+    t.ok(entry.blockReward !== undefined, 'entry should have blockReward')
+  }
+  t.pass()
+})
+
+test('getRevenueSummary - missing start throws', async (t) => {
+  const mockCtx = {
+    conf: { orks: [] },
+    net_r0: { jRequest: async () => ({}) },
+    globalDataLib: { getGlobalData: async () => [] }
+  }
+
+  try {
+    await getRevenueSummary(mockCtx, { query: { end: 1700100000000 } }, {})
+    t.fail('should have thrown')
+  } catch (err) {
+    t.is(err.message, 'ERR_MISSING_START_END', 'should throw missing start/end error')
+  }
+  t.pass()
+})
+
+test('getRevenueSummary - invalid range throws', async (t) => {
+  const mockCtx = {
+    conf: { orks: [] },
+    net_r0: { jRequest: async () => ({}) },
+    globalDataLib: { getGlobalData: async () => [] }
+  }
+
+  try {
+    await getRevenueSummary(mockCtx, { query: { start: 1700100000000, end: 1700000000000 } }, {})
+    t.fail('should have thrown')
+  } catch (err) {
+    t.is(err.message, 'ERR_INVALID_DATE_RANGE', 'should throw invalid range error')
+  }
+  t.pass()
+})
+
+test('getRevenueSummary - empty ork results', async (t) => {
+  const mockCtx = {
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: { jRequest: async () => ({}) },
+    globalDataLib: { getGlobalData: async () => [] }
+  }
+
+  const result = await getRevenueSummary(mockCtx, { query: { start: 1700000000000, end: 1700100000000 } }, {})
+  t.ok(result.log, 'should return log array')
+  t.is(result.log.length, 0, 'log should be empty')
+  t.pass()
+})
+
+test('calculateDetailedRevenueSummary - calculates from log entries', (t) => {
+  const log = [
+    {
+      revenueBTC: 0.5,
+      revenueUSD: 20000,
+      feesBTC: 0.01,
+      feesUSD: 400,
+      totalCostsUSD: 5000,
+      consumptionMWh: 100,
+      ebitdaSelling: 15000,
+      ebitdaHodl: 15000,
+      btcPrice: 40000,
+      curtailmentRate: 0.1,
+      powerUtilization: 0.8
+    },
+    {
+      revenueBTC: 0.3,
+      revenueUSD: 12600,
+      feesBTC: 0.005,
+      feesUSD: 210,
+      totalCostsUSD: 3000,
+      consumptionMWh: 60,
+      ebitdaSelling: 9600,
+      ebitdaHodl: 9600,
+      btcPrice: 42000,
+      curtailmentRate: 0.15,
+      powerUtilization: 0.85
+    }
+  ]
+
+  const summary = calculateDetailedRevenueSummary(log, 42000)
+  t.is(summary.totalRevenueBTC, 0.8, 'should sum BTC revenue')
+  t.is(summary.totalRevenueUSD, 32600, 'should sum USD revenue')
+  t.is(summary.totalFeesBTC, 0.015, 'should sum fees BTC')
+  t.is(summary.totalCostsUSD, 8000, 'should sum costs')
+  t.is(summary.totalConsumptionMWh, 160, 'should sum consumption')
+  t.is(summary.totalEbitdaSelling, 24600, 'should sum selling EBITDA')
+  t.ok(summary.avgCostPerMWh !== null, 'should calculate avg cost per MWh')
+  t.ok(summary.avgRevenuePerMWh !== null, 'should calculate avg revenue per MWh')
+  t.ok(summary.avgBtcPrice !== null, 'should calculate avg BTC price')
+  t.ok(summary.avgCurtailmentRate !== null, 'should calculate avg curtailment rate')
+  t.ok(summary.avgPowerUtilization !== null, 'should calculate avg power utilization')
+  t.is(summary.currentBtcPrice, 42000, 'should include current BTC price')
+  t.pass()
+})
+
+test('calculateDetailedRevenueSummary - handles empty log', (t) => {
+  const summary = calculateDetailedRevenueSummary([], 42000)
+  t.is(summary.totalRevenueBTC, 0, 'should be zero')
+  t.is(summary.totalRevenueUSD, 0, 'should be zero')
+  t.is(summary.totalFeesBTC, 0, 'should be zero')
+  t.is(summary.avgCostPerMWh, null, 'should be null')
+  t.is(summary.currentBtcPrice, 42000, 'should include current price')
   t.pass()
 })
