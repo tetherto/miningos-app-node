@@ -4,21 +4,16 @@ const test = require('brittle')
 const {
   getEnergyBalance,
   processConsumptionData,
-  processTransactionData,
   processPriceData,
-  extractCurrentPrice,
   processCostsData,
   calculateSummary,
   getEbitda,
   processTailLogData,
-  processEbitdaTransactions,
   processEbitdaPrices,
-  extractEbitdaCurrentPrice,
   calculateEbitdaSummary,
   getCostSummary,
   calculateCostSummary,
   getRevenue,
-  processRevenueTransactions,
   calculateRevenueSummary
 } = require('../../../workers/lib/server/handlers/finance.handlers')
 
@@ -184,40 +179,6 @@ test('processConsumptionData - handles error results', (t) => {
   t.pass()
 })
 
-test('processTransactionData - processes F2Pool data', (t) => {
-  const results = [
-    [{ ts: 1700006400000, transactions: [{ created_at: 1700006400, changed_balance: 0.001 }] }]
-  ]
-
-  const daily = processTransactionData(results)
-  t.ok(typeof daily === 'object', 'should return object')
-  t.ok(Object.keys(daily).length > 0, 'should have entries')
-  const key = Object.keys(daily)[0]
-  t.is(daily[key].revenueBTC, 0.001, 'should use changed_balance directly as BTC')
-  t.pass()
-})
-
-test('processTransactionData - processes Ocean data', (t) => {
-  const results = [
-    [{ ts: 1700006400000, transactions: [{ ts: 1700006400, satoshis_net_earned: 50000000 }] }]
-  ]
-
-  const daily = processTransactionData(results)
-  t.ok(typeof daily === 'object', 'should return object')
-  t.ok(Object.keys(daily).length > 0, 'should have entries')
-  const key = Object.keys(daily)[0]
-  t.is(daily[key].revenueBTC, 0.5, 'should convert sats to BTC')
-  t.pass()
-})
-
-test('processTransactionData - handles error results', (t) => {
-  const results = [{ error: 'timeout' }]
-  const daily = processTransactionData(results)
-  t.ok(typeof daily === 'object', 'should return object')
-  t.is(Object.keys(daily).length, 0, 'should be empty for error results')
-  t.pass()
-})
-
 test('processPriceData - processes mempool price data', (t) => {
   const results = [
     [{ ts: 1700006400000, priceUSD: 40000 }]
@@ -228,31 +189,6 @@ test('processPriceData - processes mempool price data', (t) => {
   t.ok(Object.keys(daily).length > 0, 'should have entries')
   const key = Object.keys(daily)[0]
   t.is(daily[key], 40000, 'should extract priceUSD')
-  t.pass()
-})
-
-test('extractCurrentPrice - extracts currentPrice from mempool data', (t) => {
-  const results = [
-    [{ currentPrice: 42000, blockHeight: 900000 }]
-  ]
-  const price = extractCurrentPrice(results)
-  t.is(price, 42000, 'should extract currentPrice')
-  t.pass()
-})
-
-test('extractCurrentPrice - extracts priceUSD', (t) => {
-  const results = [
-    [{ ts: 1700006400000, priceUSD: 42000 }]
-  ]
-  const price = extractCurrentPrice(results)
-  t.is(price, 42000, 'should extract priceUSD')
-  t.pass()
-})
-
-test('extractCurrentPrice - handles error results', (t) => {
-  const results = [{ error: 'timeout' }]
-  const price = extractCurrentPrice(results)
-  t.is(price, 0, 'should return 0 for error results')
   t.pass()
 })
 
@@ -417,33 +353,12 @@ test('processTailLogData - handles error results', (t) => {
   t.pass()
 })
 
-test('processEbitdaTransactions - processes valid data', (t) => {
-  const results = [
-    [{ transactions: [{ ts: 1700006400000, changed_balance: 100000000 }] }]
-  ]
-  const daily = processEbitdaTransactions(results)
-  t.ok(typeof daily === 'object', 'should return object')
-  t.pass()
-})
-
 test('processEbitdaPrices - processes valid data', (t) => {
   const results = [
     [{ prices: [{ ts: 1700006400000, price: 40000 }] }]
   ]
   const daily = processEbitdaPrices(results)
   t.ok(typeof daily === 'object', 'should return object')
-  t.pass()
-})
-
-test('extractEbitdaCurrentPrice - extracts numeric price', (t) => {
-  const results = [{ data: 42000 }]
-  t.is(extractEbitdaCurrentPrice(results), 42000, 'should extract numeric price')
-  t.pass()
-})
-
-test('extractEbitdaCurrentPrice - extracts object price', (t) => {
-  const results = [{ data: { USD: 42000 } }]
-  t.is(extractEbitdaCurrentPrice(results), 42000, 'should extract USD')
   t.pass()
 })
 
@@ -663,57 +578,6 @@ test('getRevenue - pool filter', async (t) => {
 
   await getRevenue(mockCtx, mockReq, {})
   t.is(capturedPayload.type, 'minerpool-f2pool', 'should include pool in worker type')
-  t.pass()
-})
-
-test('processRevenueTransactions - processes F2Pool data (changed_balance + tx_fee)', (t) => {
-  const results = [
-    [{ transactions: [{ created_at: 1700006400, changed_balance: 0.5, mining_extra: { tx_fee: 0.001 } }] }]
-  ]
-
-  const daily = processRevenueTransactions(results)
-  t.ok(typeof daily === 'object', 'should return object')
-  t.ok(Object.keys(daily).length > 0, 'should have entries')
-  const key = Object.keys(daily)[0]
-  t.is(daily[key].revenueBTC, 0.5, 'should use changed_balance as revenue')
-  t.is(daily[key].feesBTC, 0.001, 'should extract tx_fee from mining_extra')
-  t.pass()
-})
-
-test('processRevenueTransactions - processes Ocean data (satoshis)', (t) => {
-  const results = [
-    [{ transactions: [{ ts: 1700006400, satoshis_net_earned: 50000000, fees_colected_satoshis: 1000000 }] }]
-  ]
-
-  const daily = processRevenueTransactions(results)
-  t.ok(typeof daily === 'object', 'should return object')
-  t.ok(Object.keys(daily).length > 0, 'should have entries')
-  const key = Object.keys(daily)[0]
-  t.is(daily[key].revenueBTC, 0.5, 'should convert sats to BTC')
-  t.is(daily[key].feesBTC, 0.01, 'should convert fee sats to BTC')
-  t.pass()
-})
-
-test('processRevenueTransactions - handles error results', (t) => {
-  const results = [{ error: 'timeout' }]
-  const daily = processRevenueTransactions(results)
-  t.ok(typeof daily === 'object', 'should return object')
-  t.is(Object.keys(daily).length, 0, 'should be empty for error results')
-  t.pass()
-})
-
-test('processRevenueTransactions - handles mixed formats', (t) => {
-  const results = [
-    [
-      { transactions: [{ ts: 1700006400000, changed_balance: 0.3, mining_extra: { tx_fee: 0.001 } }] },
-      { transactions: [{ ts: 1700006400000, satoshis_net_earned: 20000000, fees_colected_satoshis: 500000 }] }
-    ]
-  ]
-
-  const daily = processRevenueTransactions(results)
-  const key = Object.keys(daily)[0]
-  t.ok(daily[key].revenueBTC > 0.3, 'should combine both formats')
-  t.ok(daily[key].feesBTC > 0.001, 'should combine fees from both formats')
   t.pass()
 })
 
