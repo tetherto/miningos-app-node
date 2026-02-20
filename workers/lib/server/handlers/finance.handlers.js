@@ -67,7 +67,7 @@ async function getEnergyBalance (ctx, req) {
       query: { key: 'current_price' }
     }).then(r => cb(null, r)).catch(cb),
 
-    (cb) => getProductionCosts(ctx, null, start, end)
+    (cb) => getProductionCosts(ctx, start, end)
       .then(r => cb(null, r)).catch(cb),
 
     (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
@@ -354,7 +354,7 @@ async function getEbitda (ctx, req) {
       query: { key: 'current_price' }
     }).then(r => cb(null, r)).catch(cb),
 
-    (cb) => getProductionCosts(ctx, null, start, end)
+    (cb) => getProductionCosts(ctx, start, end)
       .then(r => cb(null, r)).catch(cb)
   ])
 
@@ -518,7 +518,7 @@ async function getCostSummary (ctx, req) {
   const endDate = new Date(end).toISOString()
 
   const [productionCosts, priceResults, consumptionResults] = await runParallel([
-    (cb) => getProductionCosts(ctx, null, start, end)
+    (cb) => getProductionCosts(ctx, start, end)
       .then(r => cb(null, r)).catch(cb),
 
     (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
@@ -610,6 +610,60 @@ function calculateCostSummary (log) {
     avgAllInCostPerMWh: safeDiv(totals.totalCosts, totals.consumption),
     avgEnergyCostPerMWh: safeDiv(totals.energyCosts, totals.consumption),
     avgBtcPrice: safeDiv(totals.btcPriceSum, totals.btcPriceCount)
+  }
+}
+
+// ==================== Subsidy Fees ====================
+
+async function getSubsidyFees (ctx, req) {
+  const { start, end } = validateStartEnd(req)
+  const period = req.query.period || PERIOD_TYPES.DAILY
+
+  const blockResults = await requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+    type: WORKER_TYPES.MEMPOOL,
+    query: { key: 'HISTORICAL_BLOCKSIZES', start, end }
+  })
+
+  const dailyBlocks = processBlockData(blockResults)
+
+  const log = []
+  for (const dayTs of Object.keys(dailyBlocks).sort()) {
+    const ts = Number(dayTs)
+    const block = dailyBlocks[dayTs]
+    log.push({
+      ts,
+      blockReward: block.blockReward,
+      blockTotalFees: block.blockTotalFees
+    })
+  }
+
+  const aggregated = aggregateByPeriod(log, period)
+  const summary = calculateSubsidyFeesSummary(aggregated)
+
+  return { log: aggregated, summary }
+}
+
+function calculateSubsidyFeesSummary (log) {
+  if (!log.length) {
+    return {
+      totalBlockReward: 0,
+      totalBlockTotalFees: 0,
+      avgBlockReward: null,
+      avgBlockTotalFees: null
+    }
+  }
+
+  const totals = log.reduce((acc, entry) => {
+    acc.blockReward += entry.blockReward || 0
+    acc.blockTotalFees += entry.blockTotalFees || 0
+    return acc
+  }, { blockReward: 0, blockTotalFees: 0 })
+
+  return {
+    totalBlockReward: totals.blockReward,
+    totalBlockTotalFees: totals.blockTotalFees,
+    avgBlockReward: safeDiv(totals.blockReward, log.length),
+    avgBlockTotalFees: safeDiv(totals.blockTotalFees, log.length)
   }
 }
 
@@ -727,7 +781,7 @@ async function getRevenueSummary (ctx, req) {
       ]
     }).then(r => cb(null, r)).catch(cb),
 
-    (cb) => getProductionCosts(ctx, null, start, end)
+    (cb) => getProductionCosts(ctx, start, end)
       .then(r => cb(null, r)).catch(cb),
 
     (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
@@ -920,7 +974,7 @@ function calculateDetailedRevenueSummary (log, currentBtcPrice) {
 
 // ==================== Shared ====================
 
-async function getProductionCosts (ctx, site, start, end) {
+async function getProductionCosts (ctx, start, end) {
   if (!ctx.globalDataLib) return []
   const costs = await ctx.globalDataLib.getGlobalData({
     type: GLOBAL_DATA_TYPES.PRODUCTION_COSTS
@@ -931,7 +985,6 @@ async function getProductionCosts (ctx, site, start, end) {
   const endDate = new Date(end)
   return costs.filter(entry => {
     if (!entry || !entry.year || !entry.month) return false
-    if (site && entry.site !== site) return false
     const entryDate = new Date(entry.year, entry.month - 1, 1)
     return entryDate >= startDate && entryDate <= endDate
   })
@@ -956,6 +1009,7 @@ module.exports = {
   getEnergyBalance,
   getEbitda,
   getCostSummary,
+  getSubsidyFees,
   getRevenue,
   getRevenueSummary,
   getProductionCosts,
@@ -969,6 +1023,7 @@ module.exports = {
   processEbitdaPrices,
   calculateEbitdaSummary,
   calculateCostSummary,
+  calculateSubsidyFeesSummary,
   calculateRevenueSummary,
   calculateDetailedRevenueSummary,
   // Re-export from finance.utils
