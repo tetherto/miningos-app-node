@@ -6,7 +6,6 @@ const {
   PERIOD_TYPES,
   MINERPOOL_EXT_DATA_KEYS,
   RPC_METHODS,
-  BTC_SATS,
   GLOBAL_DATA_TYPES
 } = require('../../constants')
 const {
@@ -16,21 +15,19 @@ const {
   runParallel
 } = require('../../utils')
 const { aggregateByPeriod } = require('../../period.utils')
+const {
+  validateStartEnd,
+  normalizeTimestampMs,
+  processTransactions,
+  extractCurrentPrice,
+  processBlockData
+} = require('./finance.utils')
 
 // ==================== Energy Balance ====================
 
 async function getEnergyBalance (ctx, req) {
-  const start = Number(req.query.start)
-  const end = Number(req.query.end)
+  const { start, end } = validateStartEnd(req)
   const period = req.query.period || PERIOD_TYPES.DAILY
-
-  if (!start || !end) {
-    throw new Error('ERR_MISSING_START_END')
-  }
-
-  if (start >= end) {
-    throw new Error('ERR_INVALID_DATE_RANGE')
-  }
 
   const startDate = new Date(start).toISOString()
   const endDate = new Date(end).toISOString()
@@ -88,7 +85,7 @@ async function getEnergyBalance (ctx, req) {
   ])
 
   const dailyConsumption = processConsumptionData(consumptionResults)
-  const dailyTransactions = processTransactionData(transactionResults)
+  const dailyTransactions = processTransactions(transactionResults)
   const dailyPrices = processPriceData(priceResults)
   const currentBtcPrice = extractCurrentPrice(currentPriceResults)
   const costsByMonth = processCostsData(productionCosts)
@@ -194,38 +191,6 @@ function processConsumptionData (results) {
   return daily
 }
 
-function normalizeTimestampMs (ts) {
-  if (!ts) return 0
-  return ts < 1e12 ? ts * 1000 : ts
-}
-
-function processTransactionData (results) {
-  const daily = {}
-  for (const res of results) {
-    if (!res || res.error) continue
-    const data = Array.isArray(res) ? res : (res.data || res.result || [])
-    if (!Array.isArray(data)) continue
-    for (const tx of data) {
-      if (!tx) continue
-      const txList = tx.data || tx.transactions || tx
-      if (!Array.isArray(txList)) continue
-      for (const t of txList) {
-        if (!t) continue
-        const rawTs = t.ts || t.created_at || t.timestamp || t.time
-        const ts = getStartOfDay(normalizeTimestampMs(rawTs))
-        if (!ts) continue
-        const day = daily[ts] ??= { revenueBTC: 0 }
-        if (t.satoshis_net_earned) {
-          day.revenueBTC += Math.abs(t.satoshis_net_earned) / BTC_SATS
-        } else {
-          day.revenueBTC += Math.abs(t.changed_balance || t.amount || t.value || 0)
-        }
-      }
-    }
-  }
-  return daily
-}
-
 function processPriceData (results) {
   const daily = {}
   for (const res of results) {
@@ -243,20 +208,6 @@ function processPriceData (results) {
     }
   }
   return daily
-}
-
-function extractCurrentPrice (results) {
-  for (const res of results) {
-    if (res.error || !res) continue
-    const data = Array.isArray(res) ? res : [res]
-    for (const entry of data) {
-      if (!entry) continue
-      if (entry.currentPrice) return entry.currentPrice
-      if (entry.priceUSD) return entry.priceUSD
-      if (entry.price) return entry.price
-    }
-  }
-  return 0
 }
 
 function processEnergyData (results, aggrField) {
@@ -362,17 +313,8 @@ function calculateSummary (log) {
 // ==================== EBITDA ====================
 
 async function getEbitda (ctx, req) {
-  const start = Number(req.query.start)
-  const end = Number(req.query.end)
+  const { start, end } = validateStartEnd(req)
   const period = req.query.period || PERIOD_TYPES.MONTHLY
-
-  if (!start || !end) {
-    throw new Error('ERR_MISSING_START_END')
-  }
-
-  if (start >= end) {
-    throw new Error('ERR_INVALID_DATE_RANGE')
-  }
 
   const startDate = new Date(start).toISOString()
   const endDate = new Date(end).toISOString()
@@ -416,10 +358,10 @@ async function getEbitda (ctx, req) {
       .then(r => cb(null, r)).catch(cb)
   ])
 
-  const dailyTransactions = processEbitdaTransactions(transactionResults)
+  const dailyTransactions = processTransactions(transactionResults)
   const dailyTailLog = processTailLogData(tailLogResults)
   const dailyPrices = processEbitdaPrices(priceResults)
-  const currentBtcPrice = extractEbitdaCurrentPrice(currentPriceResults)
+  const currentBtcPrice = extractCurrentPrice(currentPriceResults)
   const costsByMonth = processCostsData(productionCosts)
 
   const allDays = new Set([
@@ -504,29 +446,6 @@ function processTailLogData (results) {
   return daily
 }
 
-function processEbitdaTransactions (results) {
-  const daily = {}
-  for (const res of results) {
-    if (res.error || !res) continue
-    const data = Array.isArray(res) ? res : (res.data || res.result || [])
-    if (!Array.isArray(data)) continue
-    for (const tx of data) {
-      if (!tx) continue
-      const txList = tx.data || tx.transactions || tx
-      if (!Array.isArray(txList)) continue
-      for (const t of txList) {
-        if (!t) continue
-        const ts = getStartOfDay(t.ts || t.timestamp || t.time)
-        if (!ts) continue
-        if (!daily[ts]) daily[ts] = { revenueBTC: 0 }
-        const amount = t.changed_balance || t.amount || t.value || 0
-        daily[ts].revenueBTC += Math.abs(amount) / BTC_SATS
-      }
-    }
-  }
-  return daily
-}
-
 function processEbitdaPrices (results) {
   const daily = {}
   for (const res of results) {
@@ -554,18 +473,6 @@ function processEbitdaPrices (results) {
     }
   }
   return daily
-}
-
-function extractEbitdaCurrentPrice (results) {
-  for (const res of results) {
-    if (res.error || !res) continue
-    const data = Array.isArray(res) ? res[0] : res
-    if (!data) continue
-    const price = data.data || data.result || data
-    if (typeof price === 'number') return price
-    if (typeof price === 'object') return price.USD || price.price || price.current_price || 0
-  }
-  return 0
 }
 
 function calculateEbitdaSummary (log, currentBtcPrice) {
@@ -604,17 +511,8 @@ function calculateEbitdaSummary (log, currentBtcPrice) {
 // ==================== Cost Summary ====================
 
 async function getCostSummary (ctx, req) {
-  const start = Number(req.query.start)
-  const end = Number(req.query.end)
+  const { start, end } = validateStartEnd(req)
   const period = req.query.period || PERIOD_TYPES.MONTHLY
-
-  if (!start || !end) {
-    throw new Error('ERR_MISSING_START_END')
-  }
-
-  if (start >= end) {
-    throw new Error('ERR_INVALID_DATE_RANGE')
-  }
 
   const startDate = new Date(start).toISOString()
   const endDate = new Date(end).toISOString()
@@ -715,6 +613,66 @@ function calculateCostSummary (log) {
   }
 }
 
+// ==================== Revenue ====================
+
+async function getRevenue (ctx, req) {
+  const { start, end } = validateStartEnd(req)
+  const period = req.query.period || PERIOD_TYPES.DAILY
+  const pool = req.query.pool || null
+
+  const type = pool ? WORKER_TYPES.MINERPOOL + '-' + pool : WORKER_TYPES.MINERPOOL
+  const query = { key: MINERPOOL_EXT_DATA_KEYS.TRANSACTIONS, start, end }
+
+  const transactionResults = await requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+    type,
+    query
+  })
+
+  const dailyRevenue = processTransactions(transactionResults, { trackFees: true })
+
+  const log = []
+  for (const dayTs of Object.keys(dailyRevenue).sort()) {
+    const ts = Number(dayTs)
+    const day = dailyRevenue[dayTs]
+    const revenueBTC = day.revenueBTC || 0
+    const feesBTC = day.feesBTC || 0
+    log.push({
+      ts,
+      revenueBTC,
+      feesBTC,
+      netRevenueBTC: revenueBTC - feesBTC
+    })
+  }
+
+  const aggregated = aggregateByPeriod(log, period)
+  const summary = calculateRevenueSummary(aggregated)
+
+  return { log: aggregated, summary }
+}
+
+function calculateRevenueSummary (log) {
+  if (!log.length) {
+    return {
+      totalRevenueBTC: 0,
+      totalFeesBTC: 0,
+      totalNetRevenueBTC: 0
+    }
+  }
+
+  const totals = log.reduce((acc, entry) => {
+    acc.revenueBTC += entry.revenueBTC || 0
+    acc.feesBTC += entry.feesBTC || 0
+    acc.netRevenueBTC += entry.netRevenueBTC || 0
+    return acc
+  }, { revenueBTC: 0, feesBTC: 0, netRevenueBTC: 0 })
+
+  return {
+    totalRevenueBTC: totals.revenueBTC,
+    totalFeesBTC: totals.feesBTC,
+    totalNetRevenueBTC: totals.netRevenueBTC
+  }
+}
+
 // ==================== Shared ====================
 
 async function getProductionCosts (ctx, site, start, end) {
@@ -753,19 +711,23 @@ module.exports = {
   getEnergyBalance,
   getEbitda,
   getCostSummary,
+  getRevenue,
   getProductionCosts,
   processConsumptionData,
-  processTransactionData,
   processPriceData,
-  extractCurrentPrice,
   processEnergyData,
   extractNominalPower,
   processCostsData,
   calculateSummary,
   processTailLogData,
-  processEbitdaTransactions,
   processEbitdaPrices,
-  extractEbitdaCurrentPrice,
   calculateEbitdaSummary,
-  calculateCostSummary
+  calculateCostSummary,
+  calculateRevenueSummary,
+  // Re-export from finance.utils
+  validateStartEnd,
+  normalizeTimestampMs,
+  processTransactions,
+  extractCurrentPrice,
+  processBlockData
 }

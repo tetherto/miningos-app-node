@@ -18,6 +18,7 @@ test('finance routes - route definitions', (t) => {
   t.ok(routeUrls.includes('/auth/finance/energy-balance'), 'should have energy-balance route')
   t.ok(routeUrls.includes('/auth/finance/ebitda'), 'should have ebitda route')
   t.ok(routeUrls.includes('/auth/finance/cost-summary'), 'should have cost-summary route')
+  t.ok(routeUrls.includes('/auth/finance/revenue'), 'should have revenue route')
 
   t.pass()
 })

@@ -4,19 +4,17 @@ const test = require('brittle')
 const {
   getEnergyBalance,
   processConsumptionData,
-  processTransactionData,
   processPriceData,
-  extractCurrentPrice,
   processCostsData,
   calculateSummary,
   getEbitda,
   processTailLogData,
-  processEbitdaTransactions,
   processEbitdaPrices,
-  extractEbitdaCurrentPrice,
   calculateEbitdaSummary,
   getCostSummary,
-  calculateCostSummary
+  calculateCostSummary,
+  getRevenue,
+  calculateRevenueSummary
 } = require('../../../workers/lib/server/handlers/finance.handlers')
 
 // ==================== Energy Balance Tests ====================
@@ -181,40 +179,6 @@ test('processConsumptionData - handles error results', (t) => {
   t.pass()
 })
 
-test('processTransactionData - processes F2Pool data', (t) => {
-  const results = [
-    [{ ts: 1700006400000, transactions: [{ created_at: 1700006400, changed_balance: 0.001 }] }]
-  ]
-
-  const daily = processTransactionData(results)
-  t.ok(typeof daily === 'object', 'should return object')
-  t.ok(Object.keys(daily).length > 0, 'should have entries')
-  const key = Object.keys(daily)[0]
-  t.is(daily[key].revenueBTC, 0.001, 'should use changed_balance directly as BTC')
-  t.pass()
-})
-
-test('processTransactionData - processes Ocean data', (t) => {
-  const results = [
-    [{ ts: 1700006400000, transactions: [{ ts: 1700006400, satoshis_net_earned: 50000000 }] }]
-  ]
-
-  const daily = processTransactionData(results)
-  t.ok(typeof daily === 'object', 'should return object')
-  t.ok(Object.keys(daily).length > 0, 'should have entries')
-  const key = Object.keys(daily)[0]
-  t.is(daily[key].revenueBTC, 0.5, 'should convert sats to BTC')
-  t.pass()
-})
-
-test('processTransactionData - handles error results', (t) => {
-  const results = [{ error: 'timeout' }]
-  const daily = processTransactionData(results)
-  t.ok(typeof daily === 'object', 'should return object')
-  t.is(Object.keys(daily).length, 0, 'should be empty for error results')
-  t.pass()
-})
-
 test('processPriceData - processes mempool price data', (t) => {
   const results = [
     [{ ts: 1700006400000, priceUSD: 40000 }]
@@ -225,31 +189,6 @@ test('processPriceData - processes mempool price data', (t) => {
   t.ok(Object.keys(daily).length > 0, 'should have entries')
   const key = Object.keys(daily)[0]
   t.is(daily[key], 40000, 'should extract priceUSD')
-  t.pass()
-})
-
-test('extractCurrentPrice - extracts currentPrice from mempool data', (t) => {
-  const results = [
-    [{ currentPrice: 42000, blockHeight: 900000 }]
-  ]
-  const price = extractCurrentPrice(results)
-  t.is(price, 42000, 'should extract currentPrice')
-  t.pass()
-})
-
-test('extractCurrentPrice - extracts priceUSD', (t) => {
-  const results = [
-    [{ ts: 1700006400000, priceUSD: 42000 }]
-  ]
-  const price = extractCurrentPrice(results)
-  t.is(price, 42000, 'should extract priceUSD')
-  t.pass()
-})
-
-test('extractCurrentPrice - handles error results', (t) => {
-  const results = [{ error: 'timeout' }]
-  const price = extractCurrentPrice(results)
-  t.is(price, 0, 'should return 0 for error results')
   t.pass()
 })
 
@@ -414,33 +353,12 @@ test('processTailLogData - handles error results', (t) => {
   t.pass()
 })
 
-test('processEbitdaTransactions - processes valid data', (t) => {
-  const results = [
-    [{ transactions: [{ ts: 1700006400000, changed_balance: 100000000 }] }]
-  ]
-  const daily = processEbitdaTransactions(results)
-  t.ok(typeof daily === 'object', 'should return object')
-  t.pass()
-})
-
 test('processEbitdaPrices - processes valid data', (t) => {
   const results = [
     [{ prices: [{ ts: 1700006400000, price: 40000 }] }]
   ]
   const daily = processEbitdaPrices(results)
   t.ok(typeof daily === 'object', 'should return object')
-  t.pass()
-})
-
-test('extractEbitdaCurrentPrice - extracts numeric price', (t) => {
-  const results = [{ data: 42000 }]
-  t.is(extractEbitdaCurrentPrice(results), 42000, 'should extract numeric price')
-  t.pass()
-})
-
-test('extractEbitdaCurrentPrice - extracts object price', (t) => {
-  const results = [{ data: { USD: 42000 } }]
-  t.is(extractEbitdaCurrentPrice(results), 42000, 'should extract USD')
   t.pass()
 })
 
@@ -567,5 +485,119 @@ test('calculateCostSummary - handles empty log', (t) => {
   const summary = calculateCostSummary([])
   t.is(summary.totalCostsUSD, 0, 'should be zero')
   t.is(summary.avgAllInCostPerMWh, null, 'should be null')
+  t.pass()
+})
+
+// ==================== Revenue Tests ====================
+
+test('getRevenue - happy path', async (t) => {
+  const mockCtx = {
+    conf: {
+      orks: [{ rpcPublicKey: 'key1' }]
+    },
+    net_r0: {
+      jRequest: async (key, method, payload) => {
+        if (method === 'getWrkExtData') {
+          return [{ transactions: [{ ts: 1700006400000, changed_balance: 0.5, mining_extra: { tx_fee: 0.001 } }] }]
+        }
+        return {}
+      }
+    }
+  }
+
+  const mockReq = {
+    query: { start: 1700000000000, end: 1700100000000, period: 'daily' }
+  }
+
+  const result = await getRevenue(mockCtx, mockReq, {})
+  t.ok(result.log, 'should return log array')
+  t.ok(result.summary, 'should return summary')
+  t.ok(Array.isArray(result.log), 'log should be array')
+  t.pass()
+})
+
+test('getRevenue - missing start throws', async (t) => {
+  const mockCtx = {
+    conf: { orks: [] },
+    net_r0: { jRequest: async () => ({}) }
+  }
+
+  try {
+    await getRevenue(mockCtx, { query: { end: 1700100000000 } }, {})
+    t.fail('should have thrown')
+  } catch (err) {
+    t.is(err.message, 'ERR_MISSING_START_END', 'should throw missing start/end error')
+  }
+  t.pass()
+})
+
+test('getRevenue - invalid range throws', async (t) => {
+  const mockCtx = {
+    conf: { orks: [] },
+    net_r0: { jRequest: async () => ({}) }
+  }
+
+  try {
+    await getRevenue(mockCtx, { query: { start: 1700100000000, end: 1700000000000 } }, {})
+    t.fail('should have thrown')
+  } catch (err) {
+    t.is(err.message, 'ERR_INVALID_DATE_RANGE', 'should throw invalid range error')
+  }
+  t.pass()
+})
+
+test('getRevenue - empty ork results', async (t) => {
+  const mockCtx = {
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: { jRequest: async () => ({}) }
+  }
+
+  const result = await getRevenue(mockCtx, { query: { start: 1700000000000, end: 1700100000000 } }, {})
+  t.ok(result.log, 'should return log array')
+  t.is(result.log.length, 0, 'log should be empty')
+  t.pass()
+})
+
+test('getRevenue - pool filter', async (t) => {
+  let capturedPayload = null
+  const mockCtx = {
+    conf: {
+      orks: [{ rpcPublicKey: 'key1' }]
+    },
+    net_r0: {
+      jRequest: async (key, method, payload) => {
+        capturedPayload = payload
+        return [{ transactions: [{ ts: 1700006400000, changed_balance: 0.5 }] }]
+      }
+    }
+  }
+
+  const mockReq = {
+    query: { start: 1700000000000, end: 1700100000000, pool: 'f2pool' }
+  }
+
+  await getRevenue(mockCtx, mockReq, {})
+  t.is(capturedPayload.type, 'minerpool-f2pool', 'should include pool in worker type')
+  t.pass()
+})
+
+test('calculateRevenueSummary - calculates from log entries', (t) => {
+  const log = [
+    { revenueBTC: 0.5, feesBTC: 0.01, netRevenueBTC: 0.49 },
+    { revenueBTC: 0.3, feesBTC: 0.005, netRevenueBTC: 0.295 }
+  ]
+
+  const summary = calculateRevenueSummary(log)
+  t.is(summary.totalRevenueBTC, 0.8, 'should sum revenue')
+  t.is(summary.totalFeesBTC, 0.015, 'should sum fees')
+  t.ok(Math.abs(summary.totalNetRevenueBTC - 0.785) < 1e-10, 'should sum net revenue')
+  t.pass()
+})
+
+test('calculateRevenueSummary - handles empty log', (t) => {
+  const summary = calculateRevenueSummary([])
+  t.is(summary.totalRevenueBTC, 0, 'should be zero')
+  t.is(summary.totalFeesBTC, 0, 'should be zero')
+  t.is(summary.totalNetRevenueBTC, 0, 'should be zero')
   t.pass()
 })
