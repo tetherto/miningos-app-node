@@ -26,7 +26,8 @@ const {
   processPowerModeTimelineData,
   getTemperature,
   processTemperatureData,
-  calculateTemperatureSummary
+  calculateTemperatureSummary,
+  forEachRangeAggrItem
 } = require('../../../workers/lib/server/handlers/metrics.handlers')
 
 // ==================== Hashrate Tests ====================
@@ -690,6 +691,17 @@ test('getIntervalConfig - returns correct configs', (t) => {
   t.pass()
 })
 
+// ==================== forEachRangeAggrItem Tests ====================
+
+test('forEachRangeAggrItem - handles null entry without crashing', (t) => {
+  let called = false
+  forEachRangeAggrItem(null, () => { called = true })
+  t.is(called, false, 'callback should not be called for null entry')
+  forEachRangeAggrItem(undefined, () => { called = true })
+  t.is(called, false, 'callback should not be called for undefined entry')
+  t.pass()
+})
+
 // ==================== parseEntryTs Tests ====================
 
 test('parseEntryTs - handles numeric ts', (t) => {
@@ -835,6 +847,19 @@ test('categorizeMiner - power mode categories', (t) => {
   t.is(categorizeMiner('sleep', 'mining'), 'sleep', 'sleep mode with mining status')
   t.is(categorizeMiner('normal', 'mining'), 'normal', 'normal mode with mining status')
   t.is(categorizeMiner('normal', ''), 'normal', 'normal mode with empty status')
+  t.pass()
+})
+
+test('categorizeMiner - unknown power mode passes through raw value', (t) => {
+  t.is(categorizeMiner('turbo', 'mining'), 'turbo', 'unknown mode should pass through')
+  t.is(categorizeMiner('eco', ''), 'eco', 'unknown mode with empty status should pass through')
+  t.pass()
+})
+
+test('categorizeMiner - null/undefined power mode defaults to normal', (t) => {
+  t.is(categorizeMiner(null, 'mining'), 'normal', 'null mode should default to normal')
+  t.is(categorizeMiner(undefined, 'mining'), 'normal', 'undefined mode should default to normal')
+  t.is(categorizeMiner('', 'mining'), 'normal', 'empty string mode should default to normal')
   t.pass()
 })
 

@@ -3,121 +3,28 @@
 const {
   WORKER_TYPES,
   AGGR_FIELDS,
-  RPC_METHODS
+  RPC_METHODS,
+  METRICS_TIME,
+  METRICS_DEFAULTS,
+  MINER_CATEGORIES,
+  LOG_KEYS,
+  WORKER_TAGS
 } = require('../../constants')
 const {
   requestRpcEachLimit,
   getStartOfDay,
   safeDiv
 } = require('../../utils')
-
-const TWO_DAYS_MS = 2 * 24 * 60 * 60 * 1000
-const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000
-const THREE_HOURS_MS = 3 * 60 * 60 * 1000
-const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000
-const DEFAULT_TIMELINE_LIMIT = 10080
-
-// ==================== Shared Utilities ====================
-
-/**
- * Parse timestamp from RPC entry.
- * With groupRange, ts may be a range string like "1770854400000-1771459199999".
- * Extracts the start of the range in that case.
- */
-function parseEntryTs (ts) {
-  if (typeof ts === 'number') return ts
-  if (typeof ts === 'string') {
-    const dashIdx = ts.indexOf('-')
-    if (dashIdx > 0) return Number(ts.slice(0, dashIdx))
-    return Number(ts)
-  }
-  return null
-}
-
-function validateStartEnd (req) {
-  const start = Number(req.query.start)
-  const end = Number(req.query.end)
-
-  if (!start || !end) {
-    throw new Error('ERR_MISSING_START_END')
-  }
-
-  if (start >= end) {
-    throw new Error('ERR_INVALID_DATE_RANGE')
-  }
-
-  return { start, end }
-}
-
-function * iterateRpcEntries (results) {
-  for (const res of results) {
-    if (!res || res.error) continue
-    const data = Array.isArray(res) ? res : (res.data || res.result || [])
-    if (!Array.isArray(data)) continue
-    for (const entry of data) {
-      if (!entry || entry.error) continue
-      yield entry
-    }
-  }
-}
-
-function forEachRangeAggrItem (entry, callback) {
-  const items = entry.data || entry.items || entry
-  if (Array.isArray(items)) {
-    for (const item of items) {
-      const ts = getStartOfDay(parseEntryTs(item.ts || item.timestamp))
-      if (!ts) continue
-      callback(ts, item.val || item)
-    }
-  } else if (typeof items === 'object') {
-    for (const [key, val] of Object.entries(items)) {
-      const ts = getStartOfDay(parseEntryTs(Number(key)))
-      if (!ts) continue
-      callback(ts, val)
-    }
-  }
-}
-
-function sumObjectValues (obj) {
-  if (!obj || typeof obj !== 'object') return 0
-  return Object.values(obj).reduce((sum, val) => sum + (Number(val) || 0), 0)
-}
-
-/**
- * Extract container name from miner ID.
- * Strips the last dash-separated segment (assumed to be position/index).
- * e.g. "bitdeer-9a-miner1" -> "bitdeer-9a"
- * NOTE: Unverified against real power_mode_group_aggr data.
- */
-function extractContainerFromMinerId (minerId) {
-  const lastDash = minerId.lastIndexOf('-')
-  return lastDash > 0 ? minerId.slice(0, lastDash) : minerId
-}
-
-// ==================== Shared Interval Utils ====================
-
-function resolveInterval (start, end, requested) {
-  if (requested) return requested
-  const range = end - start
-  if (range <= TWO_DAYS_MS) return '1h'
-  if (range <= NINETY_DAYS_MS) return '1d'
-  return '1w'
-}
-
-function getIntervalConfig (interval) {
-  switch (interval) {
-    case '1h':
-      return { key: 'stat-3h', groupRange: null, divisorMs: THREE_HOURS_MS }
-    case '1d':
-      return { key: 'stat-3h', groupRange: '1D', divisorMs: 24 * 60 * 60 * 1000 }
-    case '1w':
-      return { key: 'stat-3h', groupRange: '1W', divisorMs: 7 * 24 * 60 * 60 * 1000 }
-    default:
-      return { key: 'stat-3h', groupRange: '1D', divisorMs: 24 * 60 * 60 * 1000 }
-  }
-}
-
-// ==================== Hashrate ====================
+const {
+  parseEntryTs,
+  validateStartEnd,
+  iterateRpcEntries,
+  forEachRangeAggrItem,
+  sumObjectValues,
+  extractContainerFromMinerKey,
+  resolveInterval,
+  getIntervalConfig
+} = require('../../metrics.utils')
 
 async function getHashrate (ctx, req) {
   const { start, end } = validateStartEnd(req)
@@ -173,8 +80,6 @@ function calculateHashrateSummary (log) {
   }
 }
 
-// ==================== Consumption ====================
-
 async function getConsumption (ctx, req) {
   const { start, end } = validateStartEnd(req)
 
@@ -197,6 +102,7 @@ async function getConsumption (ctx, req) {
     return {
       ts: Number(dayTs),
       powerW,
+      // powerW is avg watts for the day; W * 24h / 1,000,000 converts to daily MWh
       consumptionMWh: (powerW * 24) / 1000000
     }
   })
@@ -233,8 +139,6 @@ function calculateConsumptionSummary (log) {
     totalConsumptionMWh: totalConsumption
   }
 }
-
-// ==================== Efficiency ====================
 
 async function getEfficiency (ctx, req) {
   const { start, end } = validateStartEnd(req)
@@ -291,17 +195,15 @@ function calculateEfficiencySummary (log) {
   }
 }
 
-// ==================== Miner Status ====================
-
 async function getMinerStatus (ctx, req) {
   const { start, end } = validateStartEnd(req)
 
-  const limit = Math.ceil((end - start) / THREE_HOURS_MS)
+  const limit = Math.ceil((end - start) / METRICS_TIME.THREE_HOURS_MS)
 
   const results = await requestRpcEachLimit(ctx, RPC_METHODS.TAIL_LOG, {
-    key: 'stat-3h',
+    key: LOG_KEYS.STAT_3H,
     type: WORKER_TYPES.MINER,
-    tag: 't-miner',
+    tag: WORKER_TAGS.MINER,
     aggrFields: {
       [AGGR_FIELDS.TYPE_CNT]: 1,
       [AGGR_FIELDS.OFFLINE_CNT]: 1,
@@ -376,8 +278,6 @@ function calculateMinerStatusSummary (log) {
   }
 }
 
-// ==================== Power Mode ====================
-
 async function getPowerMode (ctx, req) {
   const { start, end } = validateStartEnd(req)
 
@@ -388,12 +288,11 @@ async function getPowerMode (ctx, req) {
   const rpcPayload = {
     key: config.key,
     type: WORKER_TYPES.MINER,
-    tag: 't-miner',
+    tag: WORKER_TAGS.MINER,
     aggrFields: {
       [AGGR_FIELDS.POWER_MODE_GROUP]: 1,
       [AGGR_FIELDS.STATUS_GROUP]: 1
     },
-    shouldCalculateAvg: true,
     limit
   }
 
@@ -415,13 +314,14 @@ async function getPowerMode (ctx, req) {
 }
 
 function categorizeMiner (powerMode, status) {
-  if (status === 'offline' || status === 'error') return status
-  if (status === 'maintenance') return 'maintenance'
-  if (status === 'idle' || status === 'stopped') return 'notMining'
-  if (powerMode === 'low') return 'low'
-  if (powerMode === 'high') return 'high'
-  if (powerMode === 'sleep') return 'sleep'
-  return 'normal'
+  if (status === 'offline') return MINER_CATEGORIES.OFFLINE
+  if (status === 'error') return MINER_CATEGORIES.ERROR
+  if (status === 'maintenance') return MINER_CATEGORIES.MAINTENANCE
+  if (status === 'idle' || status === 'stopped') return MINER_CATEGORIES.NOT_MINING
+  if (powerMode === 'low') return MINER_CATEGORIES.LOW
+  if (powerMode === 'high') return MINER_CATEGORIES.HIGH
+  if (powerMode === 'sleep') return MINER_CATEGORIES.SLEEP
+  return powerMode || MINER_CATEGORIES.NORMAL
 }
 
 function processPowerModeData (results, groupRange) {
@@ -474,13 +374,11 @@ function calculatePowerModeSummary (log) {
   return summary
 }
 
-// ==================== Power Mode Timeline ====================
-
 async function getPowerModeTimeline (ctx, req) {
   const now = Date.now()
-  const start = Number(req.query.start) || (now - ONE_MONTH_MS)
+  const start = Number(req.query.start) || (now - METRICS_TIME.ONE_MONTH_MS)
   const end = Number(req.query.end) || now
-  const limit = Number(req.query.limit) || DEFAULT_TIMELINE_LIMIT
+  const limit = Number(req.query.limit) || METRICS_DEFAULTS.TIMELINE_LIMIT
   const container = req.query.container || null
 
   if (start >= end) {
@@ -488,9 +386,9 @@ async function getPowerModeTimeline (ctx, req) {
   }
 
   const rpcPayload = {
-    key: 'stat-3h',
+    key: LOG_KEYS.STAT_3H,
     type: WORKER_TYPES.MINER,
-    tag: 't-miner',
+    tag: WORKER_TAGS.MINER,
     aggrFields: {
       [AGGR_FIELDS.POWER_MODE_GROUP]: 1,
       [AGGR_FIELDS.STATUS_GROUP]: 1
@@ -531,7 +429,7 @@ function processPowerModeTimelineData (results, containerFilter) {
   for (const [minerId, entries] of Object.entries(minerTimelines)) {
     entries.sort((a, b) => a.ts - b.ts)
 
-    const container = extractContainerFromMinerId(minerId)
+    const container = extractContainerFromMinerKey(minerId)
 
     if (containerFilter && container !== containerFilter) continue
 
@@ -557,8 +455,6 @@ function processPowerModeTimelineData (results, containerFilter) {
   return log
 }
 
-// ==================== Temperature ====================
-
 async function getTemperature (ctx, req) {
   const { start, end } = validateStartEnd(req)
 
@@ -570,7 +466,7 @@ async function getTemperature (ctx, req) {
   const rpcPayload = {
     key: config.key,
     type: WORKER_TYPES.MINER,
-    tag: 't-miner',
+    tag: WORKER_TAGS.MINER,
     aggrFields: {
       [AGGR_FIELDS.TEMP_MAX]: 1,
       [AGGR_FIELDS.TEMP_AVG]: 1
@@ -663,6 +559,7 @@ function calculateTemperatureSummary (log) {
 }
 
 module.exports = {
+  ...require('../../metrics.utils'),
   getHashrate,
   processHashrateData,
   calculateHashrateSummary,
@@ -675,10 +572,6 @@ module.exports = {
   getMinerStatus,
   processMinerStatusData,
   calculateMinerStatusSummary,
-  sumObjectValues,
-  parseEntryTs,
-  resolveInterval,
-  getIntervalConfig,
   getPowerMode,
   processPowerModeData,
   calculatePowerModeSummary,

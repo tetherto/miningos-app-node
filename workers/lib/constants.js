@@ -236,6 +236,36 @@ const POWER_MODES = {
   SLEEP: 'sleep'
 }
 
+const METRICS_TIME = {
+  TWO_DAYS_MS: 2 * 24 * 60 * 60 * 1000,
+  NINETY_DAYS_MS: 90 * 24 * 60 * 60 * 1000,
+  THREE_HOURS_MS: 3 * 60 * 60 * 1000,
+  ONE_MONTH_MS: 30 * 24 * 60 * 60 * 1000
+}
+
+const METRICS_DEFAULTS = {
+  TIMELINE_LIMIT: 10080
+}
+
+const MINER_CATEGORIES = {
+  LOW: 'low',
+  NORMAL: 'normal',
+  HIGH: 'high',
+  SLEEP: 'sleep',
+  OFFLINE: 'offline',
+  ERROR: 'error',
+  NOT_MINING: 'notMining',
+  MAINTENANCE: 'maintenance'
+}
+
+const LOG_KEYS = {
+  STAT_3H: 'stat-3h'
+}
+
+const WORKER_TAGS = {
+  MINER: 't-miner'
+}
+
 const AGGR_FIELDS = {
   HASHRATE_SUM: 'hashrate_mhs_5m_sum_aggr',
   SITE_POWER: 'site_power_w',
@@ -318,5 +348,10 @@ module.exports = {
   MINERPOOL_EXT_DATA_KEYS,
   NON_METRIC_KEYS,
   BTC_SATS,
-  RANGE_BUCKETS
+  RANGE_BUCKETS,
+  METRICS_TIME,
+  METRICS_DEFAULTS,
+  MINER_CATEGORIES,
+  LOG_KEYS,
+  WORKER_TAGS
 }
