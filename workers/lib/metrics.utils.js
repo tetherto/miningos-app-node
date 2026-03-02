@@ -91,12 +91,12 @@ function resolveInterval (start, end, requested) {
 function getIntervalConfig (interval) {
   switch (interval) {
     case '1h':
-      return { key: LOG_KEYS.STAT_3H, groupRange: null, divisorMs: METRICS_TIME.THREE_HOURS_MS }
+      return { key: LOG_KEYS.STAT_3H, groupRange: null }
     case '1w':
-      return { key: LOG_KEYS.STAT_3H, groupRange: '1W', divisorMs: 7 * 24 * 60 * 60 * 1000 }
+      return { key: LOG_KEYS.STAT_3H, groupRange: '1W' }
     case '1d':
     default:
-      return { key: LOG_KEYS.STAT_3H, groupRange: '1D', divisorMs: 24 * 60 * 60 * 1000 }
+      return { key: LOG_KEYS.STAT_3H, groupRange: '1D' }
   }
 }
 

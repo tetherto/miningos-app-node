@@ -5,7 +5,6 @@ const {
   AGGR_FIELDS,
   RPC_METHODS,
   METRICS_TIME,
-  METRICS_DEFAULTS,
   MINER_CATEGORIES,
   LOG_KEYS,
   WORKER_TAGS
@@ -198,8 +197,6 @@ function calculateEfficiencySummary (log) {
 async function getMinerStatus (ctx, req) {
   const { start, end } = validateStartEnd(req)
 
-  const limit = Math.ceil((end - start) / METRICS_TIME.THREE_HOURS_MS)
-
   const results = await requestRpcEachLimit(ctx, RPC_METHODS.TAIL_LOG, {
     key: LOG_KEYS.STAT_3H,
     type: WORKER_TYPES.MINER,
@@ -212,7 +209,8 @@ async function getMinerStatus (ctx, req) {
     },
     groupRange: '1D',
     shouldCalculateAvg: true,
-    limit
+    start,
+    end
   })
 
   const daily = processMinerStatusData(results)
@@ -283,7 +281,6 @@ async function getPowerMode (ctx, req) {
 
   const interval = resolveInterval(start, end, req.query.interval)
   const config = getIntervalConfig(interval)
-  const limit = Math.ceil((end - start) / config.divisorMs)
 
   const rpcPayload = {
     key: config.key,
@@ -293,7 +290,8 @@ async function getPowerMode (ctx, req) {
       [AGGR_FIELDS.POWER_MODE_GROUP]: 1,
       [AGGR_FIELDS.STATUS_GROUP]: 1
     },
-    limit
+    start,
+    end
   }
 
   if (config.groupRange) {
@@ -378,7 +376,6 @@ async function getPowerModeTimeline (ctx, req) {
   const now = Date.now()
   const start = Number(req.query.start) || (now - METRICS_TIME.ONE_MONTH_MS)
   const end = Number(req.query.end) || now
-  const limit = Number(req.query.limit) || METRICS_DEFAULTS.TIMELINE_LIMIT
   const container = req.query.container || null
 
   if (start >= end) {
@@ -393,7 +390,8 @@ async function getPowerModeTimeline (ctx, req) {
       [AGGR_FIELDS.POWER_MODE_GROUP]: 1,
       [AGGR_FIELDS.STATUS_GROUP]: 1
     },
-    limit
+    start,
+    end
   }
 
   const results = await requestRpcEachLimit(ctx, RPC_METHODS.TAIL_LOG, rpcPayload)
@@ -460,7 +458,6 @@ async function getTemperature (ctx, req) {
 
   const interval = resolveInterval(start, end, req.query.interval)
   const config = getIntervalConfig(interval)
-  const limit = Math.ceil((end - start) / config.divisorMs)
   const container = req.query.container || null
 
   const rpcPayload = {
@@ -472,7 +469,8 @@ async function getTemperature (ctx, req) {
       [AGGR_FIELDS.TEMP_AVG]: 1
     },
     shouldCalculateAvg: true,
-    limit
+    start,
+    end
   }
 
   if (config.groupRange) {
