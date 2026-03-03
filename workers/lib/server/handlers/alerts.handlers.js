@@ -1,17 +1,17 @@
 'use strict'
 
-const { RPC_METHODS, SEVERITY_LEVELS } = require('../../constants')
+const {
+  RPC_METHODS,
+  SEVERITY_LEVELS,
+  ALERTS_DEFAULT_LIMIT,
+  ALERTS_MAX_SITE_LIMIT,
+  ALERTS_MAX_HISTORY_LIMIT,
+  SITE_ALERTS_FILTER_FIELDS,
+  SITE_ALERTS_SEARCH_FIELDS,
+  HISTORY_FILTER_FIELDS,
+  HISTORY_SEARCH_FIELDS
+} = require('../../constants')
 const { requestRpcMapLimit, parseJsonQueryParam } = require('../../utils')
-
-const SITE_ALERTS_FILTER_FIELDS = ['severity', 'type', 'container', 'deviceId']
-const SITE_ALERTS_SEARCH_FIELDS = ['id', 'code', 'container']
-
-const HISTORY_FILTER_FIELDS = ['severity', 'code', 'deviceType', 'container', 'deviceId', 'tags']
-const HISTORY_SEARCH_FIELDS = ['name', 'description', 'position', 'code']
-
-const DEFAULT_LIMIT = 100
-const MAX_SITE_LIMIT = 200
-const MAX_HISTORY_LIMIT = 1000
 
 function extractAlertsFromThings (things) {
   const alerts = []
@@ -122,7 +122,7 @@ async function getSiteAlerts (ctx, req) {
   const sort = parseJsonQueryParam(req.query.sort, 'ERR_INVALID_SORT')
   const search = req.query.search || ''
   const offset = Number(req.query.offset) || 0
-  const limit = Math.min(Number(req.query.limit) || DEFAULT_LIMIT, MAX_SITE_LIMIT)
+  const limit = Math.min(Number(req.query.limit) || ALERTS_DEFAULT_LIMIT, ALERTS_MAX_SITE_LIMIT)
 
   const results = await requestRpcMapLimit(ctx, RPC_METHODS.LIST_THINGS, {
     status: 1,
@@ -165,7 +165,7 @@ async function getAlertsHistory (ctx, req) {
   const sort = parseJsonQueryParam(req.query.sort, 'ERR_INVALID_SORT') || { createdAt: -1 }
   const search = req.query.search || ''
   const offset = Number(req.query.offset) || 0
-  const limit = Math.min(Number(req.query.limit) || DEFAULT_LIMIT, MAX_HISTORY_LIMIT)
+  const limit = Math.min(Number(req.query.limit) || ALERTS_DEFAULT_LIMIT, ALERTS_MAX_HISTORY_LIMIT)
 
   const results = await requestRpcMapLimit(ctx, RPC_METHODS.GET_HISTORICAL_LOGS, {
     start,

@@ -137,16 +137,7 @@ const ENDPOINTS = {
 
   // Alerts endpoints
   ALERTS_SITE: '/auth/alerts/site',
-  ALERTS_HISTORY: '/auth/alerts/history',
-
-  // Metrics endpoints
-  METRICS_HASHRATE: '/auth/metrics/hashrate',
-  METRICS_CONSUMPTION: '/auth/metrics/consumption',
-  METRICS_EFFICIENCY: '/auth/metrics/efficiency',
-  METRICS_MINER_STATUS: '/auth/metrics/miner-status',
-  METRICS_POWER_MODE: '/auth/metrics/power-mode',
-  METRICS_POWER_MODE_TIMELINE: '/auth/metrics/power-mode/timeline',
-  METRICS_TEMPERATURE: '/auth/metrics/temperature'
+  ALERTS_HISTORY: '/auth/alerts/history'
 }
 
 const HTTP_METHODS = {
@@ -222,6 +213,16 @@ const CACHE_KEYS = {
 }
 
 const SEVERITY_LEVELS = new Set(['critical', 'high', 'medium', 'low'])
+
+const ALERTS_DEFAULT_LIMIT = 100
+const ALERTS_MAX_SITE_LIMIT = 200
+const ALERTS_MAX_HISTORY_LIMIT = 1000
+
+const SITE_ALERTS_FILTER_FIELDS = ['severity', 'type', 'container', 'deviceId']
+const SITE_ALERTS_SEARCH_FIELDS = ['id', 'code', 'container']
+
+const HISTORY_FILTER_FIELDS = ['severity', 'code', 'deviceType', 'container', 'deviceId', 'tags']
+const HISTORY_SEARCH_FIELDS = ['name', 'description', 'position', 'code']
 
 const POOL_ALERT_TYPES = [
   'all_pools_dead',
@@ -318,5 +319,12 @@ module.exports = {
   NON_METRIC_KEYS,
   BTC_SATS,
   RANGE_BUCKETS,
-  SEVERITY_LEVELS
+  SEVERITY_LEVELS,
+  ALERTS_DEFAULT_LIMIT,
+  ALERTS_MAX_SITE_LIMIT,
+  ALERTS_MAX_HISTORY_LIMIT,
+  SITE_ALERTS_FILTER_FIELDS,
+  SITE_ALERTS_SEARCH_FIELDS,
+  HISTORY_FILTER_FIELDS,
+  HISTORY_SEARCH_FIELDS
 }
