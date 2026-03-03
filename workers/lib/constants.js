@@ -133,7 +133,20 @@ const ENDPOINTS = {
   POOL_MANAGER_ASSIGN: '/auth/pool-manager/miners/assign',
   POOL_MANAGER_POWER_MODE: '/auth/pool-manager/miners/power-mode',
 
-  SITE_STATUS_LIVE: '/auth/site/status/live'
+  SITE_STATUS_LIVE: '/auth/site/status/live',
+
+  // Alerts endpoints
+  ALERTS_SITE: '/auth/alerts/site',
+  ALERTS_HISTORY: '/auth/alerts/history',
+
+  // Metrics endpoints
+  METRICS_HASHRATE: '/auth/metrics/hashrate',
+  METRICS_CONSUMPTION: '/auth/metrics/consumption',
+  METRICS_EFFICIENCY: '/auth/metrics/efficiency',
+  METRICS_MINER_STATUS: '/auth/metrics/miner-status',
+  METRICS_POWER_MODE: '/auth/metrics/power-mode',
+  METRICS_POWER_MODE_TIMELINE: '/auth/metrics/power-mode/timeline',
+  METRICS_TEMPERATURE: '/auth/metrics/temperature'
 }
 
 const HTTP_METHODS = {
