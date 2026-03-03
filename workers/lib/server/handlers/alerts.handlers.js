@@ -1,6 +1,6 @@
 'use strict'
 
-const { LIST_THINGS, GET_HISTORICAL_LOGS } = require('../../constants')
+const { RPC_METHODS, SEVERITY_LEVELS } = require('../../constants')
 const { requestRpcMapLimit, parseJsonQueryParam } = require('../../utils')
 
 const SITE_ALERTS_FILTER_FIELDS = ['severity', 'type', 'container', 'deviceId']
@@ -79,9 +79,8 @@ function applySort (items, sort) {
 function buildSeveritySummary (alerts) {
   const summary = { critical: 0, high: 0, medium: 0, low: 0, total: alerts.length }
   for (const alert of alerts) {
-    const sev = alert.severity
-    if (sev && summary[sev] !== undefined) {
-      summary[sev]++
+    if (SEVERITY_LEVELS.has(alert.severity)) {
+      summary[alert.severity]++
     }
   }
   return summary
@@ -105,15 +104,17 @@ function flattenHistoryAlert (entry) {
 }
 
 function deduplicateAlerts (alerts) {
-  const seen = new Map()
+  const seen = new Set()
+  const result = []
   for (const alert of alerts) {
-    if (alert.uuid && !seen.has(alert.uuid)) {
-      seen.set(alert.uuid, alert)
-    } else if (!alert.uuid) {
-      seen.set(Symbol('no-uuid'), alert)
+    if (!alert.uuid) {
+      result.push(alert)
+    } else if (!seen.has(alert.uuid)) {
+      seen.add(alert.uuid)
+      result.push(alert)
     }
   }
-  return Array.from(seen.values())
+  return result
 }
 
 async function getSiteAlerts (ctx, req) {
@@ -123,7 +124,7 @@ async function getSiteAlerts (ctx, req) {
   const offset = Number(req.query.offset) || 0
   const limit = Math.min(Number(req.query.limit) || DEFAULT_LIMIT, MAX_SITE_LIMIT)
 
-  const results = await requestRpcMapLimit(ctx, LIST_THINGS, {
+  const results = await requestRpcMapLimit(ctx, RPC_METHODS.LIST_THINGS, {
     status: 1,
     query: { 'last.alerts': { $ne: null } },
     fields: {
@@ -166,7 +167,7 @@ async function getAlertsHistory (ctx, req) {
   const offset = Number(req.query.offset) || 0
   const limit = Math.min(Number(req.query.limit) || DEFAULT_LIMIT, MAX_HISTORY_LIMIT)
 
-  const results = await requestRpcMapLimit(ctx, GET_HISTORICAL_LOGS, {
+  const results = await requestRpcMapLimit(ctx, RPC_METHODS.GET_HISTORICAL_LOGS, {
     start,
     end,
     logType

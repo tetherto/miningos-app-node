@@ -199,6 +199,7 @@ const RPC_METHODS = {
   TAIL_LOG_RANGE_AGGR: 'tailLogCustomRangeAggr',
   GET_WRK_EXT_DATA: 'getWrkExtData',
   LIST_THINGS: 'listThings',
+  GET_HISTORICAL_LOGS: 'getHistoricalLogs',
   TAIL_LOG: 'tailLog',
   GLOBAL_CONFIG: 'getGlobalConfig'
 }
@@ -219,6 +220,8 @@ const CACHE_KEYS = {
   POOL_MANAGER_UNITS: 'pool-manager/units',
   POOL_MANAGER_ALERTS: 'pool-manager/alerts'
 }
+
+const SEVERITY_LEVELS = new Set(['critical', 'high', 'medium', 'low'])
 
 const POOL_ALERT_TYPES = [
   'all_pools_dead',
@@ -314,5 +317,6 @@ module.exports = {
   MINERPOOL_EXT_DATA_KEYS,
   NON_METRIC_KEYS,
   BTC_SATS,
-  RANGE_BUCKETS
+  RANGE_BUCKETS,
+  SEVERITY_LEVELS
 }
