@@ -1,5 +1,6 @@
 'use strict'
 
+const { LIST_THINGS, GET_HISTORICAL_LOGS } = require('../../constants')
 const { requestRpcMapLimit, parseJsonQueryParam } = require('../../utils')
 
 const SITE_ALERTS_FILTER_FIELDS = ['severity', 'type', 'container', 'deviceId']
@@ -86,11 +87,14 @@ function buildSeveritySummary (alerts) {
   return summary
 }
 
-function flattenHistoryAlert (alert) {
-  const thing = alert.thing || {}
-  const { thing: _, ...rest } = alert
+function flattenHistoryAlert (entry) {
+  const thing = entry.thing || {}
   return {
-    ...rest,
+    name: entry.name,
+    description: entry.description,
+    severity: entry.severity,
+    createdAt: entry.createdAt,
+    uuid: entry.uuid,
     deviceId: thing.id,
     deviceType: thing.type,
     code: thing.code,
@@ -119,7 +123,7 @@ async function getSiteAlerts (ctx, req) {
   const offset = Number(req.query.offset) || 0
   const limit = Math.min(Number(req.query.limit) || DEFAULT_LIMIT, MAX_SITE_LIMIT)
 
-  const results = await requestRpcMapLimit(ctx, 'listThings', {
+  const results = await requestRpcMapLimit(ctx, LIST_THINGS, {
     status: 1,
     query: { 'last.alerts': { $ne: null } },
     fields: {
@@ -162,7 +166,7 @@ async function getAlertsHistory (ctx, req) {
   const offset = Number(req.query.offset) || 0
   const limit = Math.min(Number(req.query.limit) || DEFAULT_LIMIT, MAX_HISTORY_LIMIT)
 
-  const results = await requestRpcMapLimit(ctx, 'getHistoricalLogs', {
+  const results = await requestRpcMapLimit(ctx, GET_HISTORICAL_LOGS, {
     start,
     end,
     logType
