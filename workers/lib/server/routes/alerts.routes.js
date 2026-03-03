@@ -48,7 +48,6 @@ module.exports = (ctx) => {
           'alerts/history',
           req.query.start,
           req.query.end,
-          req.query.logType,
           req.query.filter,
           req.query.search,
           req.query.sort,

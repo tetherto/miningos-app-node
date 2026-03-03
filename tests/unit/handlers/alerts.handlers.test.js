@@ -5,13 +5,12 @@ const {
   getSiteAlerts,
   getAlertsHistory,
   extractAlertsFromThings,
-  matchesFilter,
   matchesSearch,
   applySort,
   buildSeveritySummary,
-  deduplicateAlerts,
   flattenHistoryAlert
 } = require('../../../workers/lib/server/handlers/alerts.handlers')
+const { matchesFilter, deduplicateAlerts } = require('../../../workers/lib/utils')
 const { createMockCtxWithOrks } = require('../helpers/mockHelpers')
 
 // ==================== extractAlertsFromThings Tests ====================
@@ -397,7 +396,7 @@ test('getAlertsHistory - happy path', async (t) => {
   )
 
   const mockReq = {
-    query: { start: 1, end: 3000, logType: 'alerts' }
+    query: { start: 1, end: 3000 }
   }
 
   const result = await getAlertsHistory(mockCtx, mockReq)
@@ -421,7 +420,7 @@ test('getAlertsHistory - deduplicates by uuid', async (t) => {
   )
 
   const mockReq = {
-    query: { start: 1, end: 5000, logType: 'alerts' }
+    query: { start: 1, end: 5000 }
   }
 
   const result = await getAlertsHistory(mockCtx, mockReq)
@@ -440,7 +439,7 @@ test('getAlertsHistory - default sort newest first', async (t) => {
   )
 
   const mockReq = {
-    query: { start: 1, end: 5000, logType: 'alerts' }
+    query: { start: 1, end: 5000 }
   }
 
   const result = await getAlertsHistory(mockCtx, mockReq)
@@ -462,7 +461,6 @@ test('getAlertsHistory - applies filter on flattened fields', async (t) => {
     query: {
       start: 1,
       end: 5000,
-      logType: 'alerts',
       filter: JSON.stringify({ severity: 'high' })
     }
   }
@@ -485,7 +483,7 @@ test('getAlertsHistory - applies pagination', async (t) => {
   )
 
   const mockReq = {
-    query: { start: 1, end: 10000, logType: 'alerts', offset: '1', limit: '2' }
+    query: { start: 1, end: 10000, offset: '1', limit: '2' }
   }
 
   const result = await getAlertsHistory(mockCtx, mockReq)
@@ -501,7 +499,7 @@ test('getAlertsHistory - empty results', async (t) => {
   )
 
   const mockReq = {
-    query: { start: 1, end: 5000, logType: 'alerts' }
+    query: { start: 1, end: 5000 }
   }
 
   const result = await getAlertsHistory(mockCtx, mockReq)
@@ -513,7 +511,7 @@ test('getAlertsHistory - empty results', async (t) => {
 test('getAlertsHistory - throws on invalid date range', async (t) => {
   const mockCtx = createMockCtxWithOrks()
   const mockReq = {
-    query: { start: 5000, end: 1000, logType: 'alerts' }
+    query: { start: 5000, end: 1000 }
   }
 
   try {

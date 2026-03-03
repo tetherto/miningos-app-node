@@ -18,7 +18,6 @@ const schemas = {
       properties: {
         start: { type: 'integer' },
         end: { type: 'integer' },
-        logType: { type: 'string', enum: ['alerts', 'info'] },
         filter: { type: 'string' },
         search: { type: 'string' },
         sort: { type: 'string' },
@@ -26,7 +25,7 @@ const schemas = {
         limit: { type: 'integer' },
         overwriteCache: { type: 'boolean' }
       },
-      required: ['start', 'end', 'logType']
+      required: ['start', 'end']
     }
   }
 }

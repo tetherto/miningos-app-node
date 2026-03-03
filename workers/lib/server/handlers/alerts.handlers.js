@@ -11,7 +11,7 @@ const {
   HISTORY_FILTER_FIELDS,
   HISTORY_SEARCH_FIELDS
 } = require('../../constants')
-const { requestRpcMapLimit, parseJsonQueryParam } = require('../../utils')
+const { requestRpcMapLimit, parseJsonQueryParam, matchesFilter, deduplicateAlerts } = require('../../utils')
 
 function extractAlertsFromThings (things) {
   const alerts = []
@@ -31,21 +31,6 @@ function extractAlertsFromThings (things) {
     }
   }
   return alerts
-}
-
-function matchesFilter (item, filter, allowedFields) {
-  if (!filter) return true
-  for (const key of allowedFields) {
-    if (filter[key] === undefined) continue
-    const filterVal = filter[key]
-    const itemVal = item[key]
-    if (Array.isArray(filterVal)) {
-      if (!filterVal.includes(itemVal)) return false
-    } else if (itemVal !== filterVal) {
-      return false
-    }
-  }
-  return true
 }
 
 function matchesSearch (item, search, fields) {
@@ -103,20 +88,6 @@ function flattenHistoryAlert (entry) {
   }
 }
 
-function deduplicateAlerts (alerts) {
-  const seen = new Set()
-  const result = []
-  for (const alert of alerts) {
-    if (!alert.uuid) {
-      result.push(alert)
-    } else if (!seen.has(alert.uuid)) {
-      seen.add(alert.uuid)
-      result.push(alert)
-    }
-  }
-  return result
-}
-
 async function getSiteAlerts (ctx, req) {
   const filter = parseJsonQueryParam(req.query.filter, 'ERR_INVALID_FILTER')
   const sort = parseJsonQueryParam(req.query.sort, 'ERR_INVALID_SORT')
@@ -155,7 +126,6 @@ async function getSiteAlerts (ctx, req) {
 async function getAlertsHistory (ctx, req) {
   const start = Number(req.query.start)
   const end = Number(req.query.end)
-  const logType = req.query.logType
 
   if (start >= end) {
     throw new Error('ERR_INVALID_DATE_RANGE')
@@ -170,7 +140,7 @@ async function getAlertsHistory (ctx, req) {
   const results = await requestRpcMapLimit(ctx, RPC_METHODS.GET_HISTORICAL_LOGS, {
     start,
     end,
-    logType
+    logType: 'alerts'
   })
 
   let alerts = results.flat().map(flattenHistoryAlert)
@@ -192,10 +162,8 @@ module.exports = {
   getSiteAlerts,
   getAlertsHistory,
   extractAlertsFromThings,
-  matchesFilter,
   matchesSearch,
   applySort,
   buildSeveritySummary,
-  deduplicateAlerts,
   flattenHistoryAlert
 }
