@@ -596,8 +596,15 @@ test('Api security', { timeout: 90000 }, async (main) => {
     })
 
     await n.test('api should succeed for valid permissions', async (t) => {
+      const headers = await createAuthHeaders(superadminUser)
+      const { body: list } = await httpClient.get(api, { headers, encoding })
+      const target = list.users.find(u => u.email === 'dev@test.test')
+      if (!target) {
+        t.fail('test user dev@test.test not found')
+        return
+      }
       await testEndpointWithAuth(t, httpClient, 'put', api, superadminUser, {
-        body: { data: { id: 2, email: readonlyUser, role: 'admin' } },
+        body: { data: { id: target.id, email: 'dev@test.test', role: 'admin' } },
         encoding
       })
     })
@@ -612,24 +619,29 @@ test('Api security', { timeout: 90000 }, async (main) => {
 
   await main.test('Api: post users/delete', async (n) => {
     const api = `${appNodeBaseUrl}${ENDPOINTS.USERS_DELETE}`
+    const usersApi = `${appNodeBaseUrl}${ENDPOINTS.USERS}`
+    const headers = await createAuthHeaders(superadminUser)
+    const { body: list } = await httpClient.get(usersApi, { headers, encoding })
+    const deleteTarget = list.users.find(u => u.email === 'dev@test.test')
+    const permTarget = list.users.find(u => u.email !== 'dev@test.test')
 
     await n.test('api should fail due to invalid permissions', async (t) => {
       await testEndpointWithAuthAndError(t, httpClient, 'post', api, readonlyUser, 'ERR_AUTH_FAIL_NO_PERMS', {
-        body: { data: { id: 5 } },
+        body: { data: { id: deleteTarget.id } },
         encoding
       })
     })
 
     await n.test('api should succeed for valid permissions', async (t) => {
       await testEndpointWithAuth(t, httpClient, 'post', api, superadminUser, {
-        body: { data: { id: 5 } },
+        body: { data: { id: deleteTarget.id } },
         encoding
       })
     })
 
     await n.test('api should fail for missing permissions', async (t) => {
       await testEndpointWithAuthAndError(t, httpClient, 'post', api, siteOperatorUser, 'ERR_AUTH_FAIL_NO_PERMS', {
-        body: { data: { id: 2 } },
+        body: { data: { id: permTarget.id } },
         encoding
       })
     })

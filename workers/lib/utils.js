@@ -199,6 +199,35 @@ const safeDiv = (numerator, denominator) =>
     ? numerator / denominator
     : null
 
+function deduplicateAlerts (alerts) {
+  const seen = new Set()
+  const result = []
+  for (const alert of alerts) {
+    if (!alert.uuid) {
+      result.push(alert)
+    } else if (!seen.has(alert.uuid)) {
+      seen.add(alert.uuid)
+      result.push(alert)
+    }
+  }
+  return result
+}
+
+function matchesFilter (item, filter, allowedFields) {
+  if (!filter) return true
+  for (const key of allowedFields) {
+    if (filter[key] === undefined) continue
+    const filterVal = filter[key]
+    const itemVal = item[key]
+    if (Array.isArray(filterVal)) {
+      if (!filterVal.includes(itemVal)) return false
+    } else if (itemVal !== filterVal) {
+      return false
+    }
+  }
+  return true
+}
+
 module.exports = {
   dateNowSec,
   extractIps,
@@ -213,5 +242,7 @@ module.exports = {
   getStartOfDay,
   flattenRpcResults,
   safeDiv,
-  runParallel
+  runParallel,
+  deduplicateAlerts,
+  matchesFilter
 }
