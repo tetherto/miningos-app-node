@@ -290,6 +290,10 @@ const WORKER_TAGS = {
   CONTAINER: 't-container'
 }
 
+const DEVICE_LIST_FIELDS = {
+  id: 1, type: 1, code: 1, ip: 1, tags: 1, info: 1, rack: 1
+}
+
 const AGGR_FIELDS = {
   HASHRATE_SUM: 'hashrate_mhs_5m_sum_aggr',
   SITE_POWER: 'site_power_w',
@@ -386,5 +390,6 @@ module.exports = {
   SITE_ALERTS_FILTER_FIELDS,
   SITE_ALERTS_SEARCH_FIELDS,
   HISTORY_FILTER_FIELDS,
-  HISTORY_SEARCH_FIELDS
+  HISTORY_SEARCH_FIELDS,
+  DEVICE_LIST_FIELDS
 }

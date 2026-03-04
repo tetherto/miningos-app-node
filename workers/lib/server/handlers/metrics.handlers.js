@@ -8,7 +8,8 @@ const {
   METRICS_DEFAULTS,
   MINER_CATEGORIES,
   LOG_KEYS,
-  WORKER_TAGS
+  WORKER_TAGS,
+  DEVICE_LIST_FIELDS
 } = require('../../constants')
 const {
   requestRpcEachLimit,
@@ -570,7 +571,7 @@ async function getContainerTelemetry (ctx, req) {
     requestRpcEachLimit(ctx, RPC_METHODS.LIST_THINGS, {
       query: { tags: { $in: [containerTag] } },
       status: 1,
-      fields: { tags: 1 }
+      fields: DEVICE_LIST_FIELDS
     }),
     requestRpcEachLimit(ctx, RPC_METHODS.TAIL_LOG, {
       key: LOG_KEYS.STAT_5M,
