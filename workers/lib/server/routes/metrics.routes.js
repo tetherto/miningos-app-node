@@ -11,7 +11,9 @@ const {
   getMinerStatus,
   getPowerMode,
   getPowerModeTimeline,
-  getTemperature
+  getTemperature,
+  getContainerTelemetry,
+  getContainerHistory
 } = require('../handlers/metrics.handlers')
 const { createCachedAuthRoute } = require('../lib/routeHelpers')
 
@@ -141,6 +143,41 @@ module.exports = (ctx) => {
         ],
         ENDPOINTS.METRICS_TEMPERATURE,
         getTemperature
+      )
+    },
+    {
+      method: HTTP_METHODS.GET,
+      url: ENDPOINTS.METRICS_CONTAINER_HISTORY,
+      schema: {
+        querystring: schemas.query.containerHistory
+      },
+      ...createCachedAuthRoute(
+        ctx,
+        (req) => [
+          'metrics/containers/history',
+          req.params.id,
+          req.query.start,
+          req.query.end,
+          req.query.limit
+        ],
+        ENDPOINTS.METRICS_CONTAINER_HISTORY,
+        getContainerHistory
+      )
+    },
+    {
+      method: HTTP_METHODS.GET,
+      url: ENDPOINTS.METRICS_CONTAINER_TELEMETRY,
+      schema: {
+        querystring: schemas.query.containerTelemetry
+      },
+      ...createCachedAuthRoute(
+        ctx,
+        (req) => [
+          'metrics/containers/telemetry',
+          req.params.id
+        ],
+        ENDPOINTS.METRICS_CONTAINER_TELEMETRY,
+        getContainerTelemetry
       )
     }
   ]

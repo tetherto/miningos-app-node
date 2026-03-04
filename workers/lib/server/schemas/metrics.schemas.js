@@ -67,6 +67,21 @@ const schemas = {
         overwriteCache: { type: 'boolean' }
       },
       required: ['start', 'end']
+    },
+    containerTelemetry: {
+      type: 'object',
+      properties: {
+        overwriteCache: { type: 'boolean' }
+      }
+    },
+    containerHistory: {
+      type: 'object',
+      properties: {
+        start: { type: 'integer' },
+        end: { type: 'integer' },
+        limit: { type: 'integer' },
+        overwriteCache: { type: 'boolean' }
+      }
     }
   }
 }

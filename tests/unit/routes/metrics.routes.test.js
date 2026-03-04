@@ -22,6 +22,8 @@ test('metrics routes - route definitions', (t) => {
   t.ok(routeUrls.includes('/auth/metrics/power-mode'), 'should have power-mode route')
   t.ok(routeUrls.includes('/auth/metrics/power-mode/timeline'), 'should have power-mode/timeline route')
   t.ok(routeUrls.includes('/auth/metrics/temperature'), 'should have temperature route')
+  t.ok(routeUrls.includes('/auth/metrics/containers/:id'), 'should have container telemetry route')
+  t.ok(routeUrls.includes('/auth/metrics/containers/:id/history'), 'should have container history route')
 
   t.pass()
 })

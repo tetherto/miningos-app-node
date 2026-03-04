@@ -143,6 +143,8 @@ const ENDPOINTS = {
   METRICS_POWER_MODE: '/auth/metrics/power-mode',
   METRICS_POWER_MODE_TIMELINE: '/auth/metrics/power-mode/timeline',
   METRICS_TEMPERATURE: '/auth/metrics/temperature',
+  METRICS_CONTAINER_TELEMETRY: '/auth/metrics/containers/:id',
+  METRICS_CONTAINER_HISTORY: '/auth/metrics/containers/:id/history',
 
   // Alerts endpoints
   ALERTS_SITE: '/auth/alerts/site',
@@ -255,6 +257,7 @@ const POWER_MODES = {
 }
 
 const METRICS_TIME = {
+  ONE_DAY_MS: 24 * 60 * 60 * 1000,
   TWO_DAYS_MS: 2 * 24 * 60 * 60 * 1000,
   NINETY_DAYS_MS: 90 * 24 * 60 * 60 * 1000,
   THREE_HOURS_MS: 3 * 60 * 60 * 1000,
@@ -262,7 +265,8 @@ const METRICS_TIME = {
 }
 
 const METRICS_DEFAULTS = {
-  TIMELINE_LIMIT: 10080
+  TIMELINE_LIMIT: 10080,
+  CONTAINER_HISTORY_LIMIT: 10080
 }
 
 const MINER_CATEGORIES = {
@@ -277,11 +281,13 @@ const MINER_CATEGORIES = {
 }
 
 const LOG_KEYS = {
-  STAT_3H: 'stat-3h'
+  STAT_3H: 'stat-3h',
+  STAT_5M: 'stat-5m'
 }
 
 const WORKER_TAGS = {
-  MINER: 't-miner'
+  MINER: 't-miner',
+  CONTAINER: 't-container'
 }
 
 const AGGR_FIELDS = {
@@ -298,7 +304,8 @@ const AGGR_FIELDS = {
   TYPE_CNT: 'type_cnt',
   OFFLINE_CNT: 'offline_cnt',
   SLEEP_CNT: 'power_mode_sleep_cnt',
-  MAINTENANCE_CNT: 'maintenance_type_cnt'
+  MAINTENANCE_CNT: 'maintenance_type_cnt',
+  CONTAINER_SPECIFIC_STATS: 'container_specific_stats_group_aggr'
 }
 
 const PERIOD_TYPES = {

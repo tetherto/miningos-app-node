@@ -27,7 +27,12 @@ const {
   getTemperature,
   processTemperatureData,
   calculateTemperatureSummary,
-  forEachRangeAggrItem
+  forEachRangeAggrItem,
+  getContainerTelemetry,
+  processContainerMiners,
+  processContainerSensorSnapshot,
+  getContainerHistory,
+  processContainerHistoryData
 } = require('../../../workers/lib/server/handlers/metrics.handlers')
 
 // ==================== Hashrate Tests ====================
@@ -1310,5 +1315,285 @@ test('getTemperature - always uses t-miner tag with container post-filter', asyn
   })
 
   t.is(capturedPayload.tag, 't-miner', 'should always use t-miner tag for RPC')
+  t.pass()
+})
+
+// ==================== Container Telemetry Tests ====================
+
+test('getContainerTelemetry - happy path', async (t) => {
+  const mockCtx = {
+    conf: {
+      orks: [{ rpcPublicKey: 'key1' }]
+    },
+    net_r0: {
+      jRequest: async (key, method, payload) => {
+        if (method === 'listThings') {
+          return [{ id: 'miner-1', tags: ['container-bitdeer-9a'] }]
+        }
+        if (method === 'tailLog') {
+          return [{
+            ts: 1700006400000,
+            container_specific_stats_group_aggr: {
+              'bitdeer-9a': { hot_temp_c_w_1_group: 35, tank1_bar_group: 1.2 }
+            }
+          }]
+        }
+        return {}
+      }
+    }
+  }
+
+  const mockReq = {
+    params: { id: 'bitdeer-9a' },
+    query: {}
+  }
+
+  const result = await getContainerTelemetry(mockCtx, mockReq)
+  t.is(result.id, 'bitdeer-9a', 'should return container id')
+  t.ok(Array.isArray(result.miners), 'should return miners array')
+  t.is(result.miners.length, 1, 'should have one miner')
+  t.ok(result.telemetry, 'should return telemetry data')
+  t.is(result.telemetry.hot_temp_c_w_1_group, 35, 'should have sensor values')
+  t.pass()
+})
+
+test('getContainerTelemetry - missing id throws', async (t) => {
+  const mockCtx = {
+    conf: { orks: [] },
+    net_r0: { jRequest: async () => ({}) }
+  }
+
+  try {
+    await getContainerTelemetry(mockCtx, { params: {}, query: {} })
+    t.fail('should have thrown')
+  } catch (err) {
+    t.is(err.message, 'ERR_MISSING_CONTAINER_ID', 'should throw missing id error')
+  }
+  t.pass()
+})
+
+test('getContainerTelemetry - no sensor data returns null telemetry', async (t) => {
+  const mockCtx = {
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: { jRequest: async () => [] }
+  }
+
+  const result = await getContainerTelemetry(mockCtx, {
+    params: { id: 'bitdeer-9a' },
+    query: {}
+  })
+  t.is(result.telemetry, null, 'telemetry should be null when no data')
+  t.ok(Array.isArray(result.miners), 'miners should be array')
+  t.is(result.miners.length, 0, 'miners array should be empty')
+  t.pass()
+})
+
+test('processContainerMiners - extracts miners from results', (t) => {
+  const results = [
+    [{ id: 'miner-1', tags: ['container-bitdeer-9a'] }],
+    [{ id: 'miner-2', tags: ['container-bitdeer-9a'] }]
+  ]
+  const miners = processContainerMiners(results)
+  t.is(miners.length, 2, 'should extract miners from all orks')
+  t.pass()
+})
+
+test('processContainerMiners - handles error results', (t) => {
+  const results = [{ error: 'timeout' }]
+  const miners = processContainerMiners(results)
+  t.is(miners.length, 0, 'should return empty array for errors')
+  t.pass()
+})
+
+test('processContainerSensorSnapshot - extracts matching container', (t) => {
+  const results = [[{
+    ts: 1700006400000,
+    container_specific_stats_group_aggr: {
+      'bitdeer-9a': { hot_temp_c_w_1_group: 35 },
+      'antspace-2b': { supply_liquid_temp_group: 40 }
+    }
+  }]]
+  const telemetry = processContainerSensorSnapshot(results, 'bitdeer-9a')
+  t.ok(telemetry, 'should find matching container')
+  t.is(telemetry.hot_temp_c_w_1_group, 35, 'should return correct container data')
+  t.pass()
+})
+
+test('processContainerSensorSnapshot - returns null when no match', (t) => {
+  const results = [[{
+    ts: 1700006400000,
+    container_specific_stats_group_aggr: {
+      'antspace-2b': { supply_liquid_temp_group: 40 }
+    }
+  }]]
+  const telemetry = processContainerSensorSnapshot(results, 'bitdeer-9a')
+  t.is(telemetry, null, 'should return null when no matching container')
+  t.pass()
+})
+
+test('processContainerSensorSnapshot - prefix match fallback', (t) => {
+  const results = [[{
+    ts: 1700006400000,
+    container_specific_stats_group_aggr: {
+      'bitdeer-9a-combo': { hot_temp_c_w_1_group: 35 }
+    }
+  }]]
+  const telemetry = processContainerSensorSnapshot(results, 'bitdeer-9a')
+  t.ok(telemetry, 'should find via prefix match')
+  t.is(telemetry.hot_temp_c_w_1_group, 35, 'should return correct data')
+  t.pass()
+})
+
+// ==================== Container History Tests ====================
+
+test('getContainerHistory - happy path', async (t) => {
+  const mockCtx = {
+    conf: {
+      orks: [{ rpcPublicKey: 'key1' }]
+    },
+    net_r0: {
+      jRequest: async () => {
+        return [{
+          ts: 1700006400000,
+          container_specific_stats_group_aggr: {
+            'bitdeer-9a': { hot_temp_c_w_1_group: 35, tank1_bar_group: 1.2 }
+          }
+        }, {
+          ts: 1700006700000,
+          container_specific_stats_group_aggr: {
+            'bitdeer-9a': { hot_temp_c_w_1_group: 36, tank1_bar_group: 1.3 }
+          }
+        }]
+      }
+    }
+  }
+
+  const mockReq = {
+    params: { id: 'bitdeer-9a' },
+    query: { start: 1700000000000, end: 1700100000000 }
+  }
+
+  const result = await getContainerHistory(mockCtx, mockReq)
+  t.ok(result.log, 'should return log array')
+  t.ok(Array.isArray(result.log), 'log should be array')
+  t.is(result.log.length, 2, 'should have 2 entries')
+  t.is(result.log[0].hot_temp_c_w_1_group, 35, 'should have sensor values')
+  t.ok(result.log[0].ts < result.log[1].ts, 'should be sorted by ts')
+  t.pass()
+})
+
+test('getContainerHistory - missing id throws', async (t) => {
+  const mockCtx = {
+    conf: { orks: [] },
+    net_r0: { jRequest: async () => ({}) }
+  }
+
+  try {
+    await getContainerHistory(mockCtx, { params: {}, query: {} })
+    t.fail('should have thrown')
+  } catch (err) {
+    t.is(err.message, 'ERR_MISSING_CONTAINER_ID', 'should throw missing id error')
+  }
+  t.pass()
+})
+
+test('getContainerHistory - invalid range throws', async (t) => {
+  const mockCtx = {
+    conf: { orks: [] },
+    net_r0: { jRequest: async () => ({}) }
+  }
+
+  try {
+    await getContainerHistory(mockCtx, {
+      params: { id: 'bitdeer-9a' },
+      query: { start: 1700100000000, end: 1700000000000 }
+    })
+    t.fail('should have thrown')
+  } catch (err) {
+    t.is(err.message, 'ERR_INVALID_DATE_RANGE', 'should throw invalid range error')
+  }
+  t.pass()
+})
+
+test('getContainerHistory - uses defaults when no start/end', async (t) => {
+  let capturedPayload = null
+  const mockCtx = {
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: {
+      jRequest: async (key, method, payload) => {
+        capturedPayload = payload
+        return []
+      }
+    }
+  }
+
+  const result = await getContainerHistory(mockCtx, {
+    params: { id: 'bitdeer-9a' },
+    query: {}
+  })
+  t.ok(capturedPayload.start > 0, 'should have default start')
+  t.ok(capturedPayload.end > capturedPayload.start, 'end should be after start')
+  t.is(capturedPayload.limit, 10080, 'should use default limit')
+  t.ok(result.log, 'should return log array')
+  t.is(result.log.length, 0, 'log should be empty with no data')
+  t.pass()
+})
+
+test('getContainerHistory - empty results', async (t) => {
+  const mockCtx = {
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: { jRequest: async () => [] }
+  }
+
+  const result = await getContainerHistory(mockCtx, {
+    params: { id: 'bitdeer-9a' },
+    query: { start: 1700000000000, end: 1700100000000 }
+  })
+  t.ok(result.log, 'should return log array')
+  t.is(result.log.length, 0, 'log should be empty')
+  t.pass()
+})
+
+test('processContainerHistoryData - filters by container id', (t) => {
+  const results = [[
+    {
+      ts: 1700006400000,
+      container_specific_stats_group_aggr: {
+        'bitdeer-9a': { hot_temp_c_w_1_group: 35 },
+        'antspace-2b': { supply_liquid_temp_group: 40 }
+      }
+    }
+  ]]
+  const log = processContainerHistoryData(results, 'bitdeer-9a')
+  t.is(log.length, 1, 'should have one entry')
+  t.is(log[0].hot_temp_c_w_1_group, 35, 'should have correct container data')
+  t.ok(!log[0].supply_liquid_temp_group, 'should not include other container data')
+  t.pass()
+})
+
+test('processContainerHistoryData - handles error results', (t) => {
+  const results = [{ error: 'timeout' }]
+  const log = processContainerHistoryData(results, 'bitdeer-9a')
+  t.is(log.length, 0, 'should be empty for error results')
+  t.pass()
+})
+
+test('processContainerHistoryData - sorts by timestamp', (t) => {
+  const results = [[
+    {
+      ts: 1700006700000,
+      container_specific_stats_group_aggr: {
+        'bitdeer-9a': { hot_temp_c_w_1_group: 36 }
+      }
+    },
+    {
+      ts: 1700006400000,
+      container_specific_stats_group_aggr: {
+        'bitdeer-9a': { hot_temp_c_w_1_group: 35 }
+      }
+    }
+  ]]
+  const log = processContainerHistoryData(results, 'bitdeer-9a')
+  t.ok(log[0].ts < log[1].ts, 'entries should be sorted ascending')
   t.pass()
 })
