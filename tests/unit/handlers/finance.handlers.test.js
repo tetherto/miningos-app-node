@@ -16,7 +16,10 @@ const {
   extractEbitdaCurrentPrice,
   calculateEbitdaSummary,
   getCostSummary,
-  calculateCostSummary
+  calculateCostSummary,
+  getSubsidyFees,
+  processBlockData,
+  calculateSubsidyFeesSummary
 } = require('../../../workers/lib/server/handlers/finance.handlers')
 
 // ==================== Energy Balance Tests ====================
@@ -567,5 +570,142 @@ test('calculateCostSummary - handles empty log', (t) => {
   const summary = calculateCostSummary([])
   t.is(summary.totalCostsUSD, 0, 'should be zero')
   t.is(summary.avgAllInCostPerMWh, null, 'should be null')
+  t.pass()
+})
+
+// ==================== Subsidy Fees Tests ====================
+
+test('getSubsidyFees - happy path', async (t) => {
+  const mockCtx = {
+    conf: {
+      orks: [{ rpcPublicKey: 'key1' }]
+    },
+    net_r0: {
+      jRequest: async (key, method, payload) => {
+        if (method === 'getWrkExtData') {
+          return [{ data: [{ ts: 1700006400000, blockReward: 6.25, blockTotalFees: 0.5 }] }]
+        }
+        return {}
+      }
+    }
+  }
+
+  const mockReq = {
+    query: { start: 1700000000000, end: 1700100000000, period: 'daily' }
+  }
+
+  const result = await getSubsidyFees(mockCtx, mockReq, {})
+  t.ok(result.log, 'should return log array')
+  t.ok(result.summary, 'should return summary')
+  t.ok(Array.isArray(result.log), 'log should be array')
+  t.pass()
+})
+
+test('getSubsidyFees - missing start throws', async (t) => {
+  const mockCtx = {
+    conf: { orks: [] },
+    net_r0: { jRequest: async () => ({}) }
+  }
+
+  try {
+    await getSubsidyFees(mockCtx, { query: { end: 1700100000000 } }, {})
+    t.fail('should have thrown')
+  } catch (err) {
+    t.is(err.message, 'ERR_MISSING_START_END', 'should throw missing start/end error')
+  }
+  t.pass()
+})
+
+test('getSubsidyFees - invalid range throws', async (t) => {
+  const mockCtx = {
+    conf: { orks: [] },
+    net_r0: { jRequest: async () => ({}) }
+  }
+
+  try {
+    await getSubsidyFees(mockCtx, { query: { start: 1700100000000, end: 1700000000000 } }, {})
+    t.fail('should have thrown')
+  } catch (err) {
+    t.is(err.message, 'ERR_INVALID_DATE_RANGE', 'should throw invalid range error')
+  }
+  t.pass()
+})
+
+test('getSubsidyFees - empty ork results', async (t) => {
+  const mockCtx = {
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: { jRequest: async () => ({}) }
+  }
+
+  const result = await getSubsidyFees(mockCtx, { query: { start: 1700000000000, end: 1700100000000 } }, {})
+  t.ok(result.log, 'should return log array')
+  t.is(result.log.length, 0, 'log should be empty')
+  t.pass()
+})
+
+test('processBlockData - processes valid block data', (t) => {
+  const results = [
+    [{ data: [{ ts: 1700006400000, blockReward: 6.25, blockTotalFees: 0.5 }] }]
+  ]
+
+  const daily = processBlockData(results)
+  t.ok(typeof daily === 'object', 'should return object')
+  t.ok(Object.keys(daily).length > 0, 'should have entries')
+  const key = Object.keys(daily)[0]
+  t.is(daily[key].blockReward, 6.25, 'should extract blockReward')
+  t.is(daily[key].blockTotalFees, 0.5, 'should extract blockTotalFees')
+  t.pass()
+})
+
+test('processBlockData - processes object-keyed data', (t) => {
+  const results = [
+    [{ data: { 1700006400000: { blockReward: 6.25, blockTotalFees: 0.5 } } }]
+  ]
+
+  const daily = processBlockData(results)
+  t.ok(typeof daily === 'object', 'should return object')
+  t.ok(Object.keys(daily).length > 0, 'should have entries')
+  const key = Object.keys(daily)[0]
+  t.is(daily[key].blockReward, 6.25, 'should extract blockReward')
+  t.pass()
+})
+
+test('processBlockData - handles error results', (t) => {
+  const results = [{ error: 'timeout' }]
+  const daily = processBlockData(results)
+  t.ok(typeof daily === 'object', 'should return object')
+  t.is(Object.keys(daily).length, 0, 'should be empty for error results')
+  t.pass()
+})
+
+test('processBlockData - handles empty results', (t) => {
+  const results = []
+  const daily = processBlockData(results)
+  t.ok(typeof daily === 'object', 'should return object')
+  t.is(Object.keys(daily).length, 0, 'should be empty')
+  t.pass()
+})
+
+test('calculateSubsidyFeesSummary - calculates from log entries', (t) => {
+  const log = [
+    { blockReward: 6.25, blockTotalFees: 0.5 },
+    { blockReward: 6.25, blockTotalFees: 0.3 }
+  ]
+
+  const summary = calculateSubsidyFeesSummary(log)
+  t.is(summary.totalBlockReward, 12.5, 'should sum block rewards')
+  t.is(summary.totalBlockTotalFees, 0.8, 'should sum block fees')
+  t.ok(summary.avgBlockReward !== null, 'should calculate avg block reward')
+  t.is(summary.avgBlockReward, 6.25, 'should calculate correct avg block reward')
+  t.ok(summary.avgBlockTotalFees !== null, 'should calculate avg block fees')
+  t.pass()
+})
+
+test('calculateSubsidyFeesSummary - handles empty log', (t) => {
+  const summary = calculateSubsidyFeesSummary([])
+  t.is(summary.totalBlockReward, 0, 'should be zero')
+  t.is(summary.totalBlockTotalFees, 0, 'should be zero')
+  t.is(summary.avgBlockReward, null, 'should be null')
+  t.is(summary.avgBlockTotalFees, null, 'should be null')
   t.pass()
 })

@@ -31,6 +31,16 @@ const schemas = {
         overwriteCache: { type: 'boolean' }
       },
       required: ['start', 'end']
+    },
+    subsidyFees: {
+      type: 'object',
+      properties: {
+        start: { type: 'integer' },
+        end: { type: 'integer' },
+        period: { type: 'string', enum: ['daily', 'weekly', 'monthly'] },
+        overwriteCache: { type: 'boolean' }
+      },
+      required: ['start', 'end']
     }
   }
 }

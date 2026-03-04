@@ -13,6 +13,7 @@ const poolsRoutes = require('./routes/pools.routes')
 const poolManagerRoutes = require('./routes/poolManager.routes')
 const siteRoutes = require('./routes/site.routes')
 const metricsRoutes = require('./routes/metrics.routes')
+const alertsRoutes = require('./routes/alerts.routes')
 
 /**
  * Collect all routes into a flat array for server injection.
@@ -32,7 +33,8 @@ function routes (ctx) {
     ...poolsRoutes(ctx),
     ...poolManagerRoutes(ctx),
     ...siteRoutes(ctx),
-    ...metricsRoutes(ctx)
+    ...metricsRoutes(ctx),
+    ...alertsRoutes(ctx)
   ]
 }
 
