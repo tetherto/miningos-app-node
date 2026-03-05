@@ -9,6 +9,7 @@ const {
 } = require('../../constants')
 const {
   requestRpcMapAllPages,
+  requestRpcMapLimit,
   parseJsonQueryParam,
   flattenRpcResults
 } = require('../../utils')
@@ -61,14 +62,19 @@ function queryAndPaginate (items, { filter, fields, sort, search, offset, limit 
 async function getMiners (ctx, req) {
   const params = parseListQuery(req)
 
-  const results = await requestRpcMapAllPages(ctx, RPC_METHODS.LIST_THINGS, {
+  const results = await requestRpcMapLimit(ctx, RPC_METHODS.LIST_THINGS, {
     query: { tags: { $in: [WORKER_TAGS.MINER] } },
-    status: 1,
-    fields: DEVICE_LIST_FIELDS
+    fields: DEVICE_LIST_FIELDS,
+    ...(params.limit && { limit: params.limit }),
+    ...(params.offset && { offset: params.offset })
   })
 
   const items = flattenRpcResults(results)
-  const { page: miners, total } = queryAndPaginate(items, params)
+  const { page: miners, total } = queryAndPaginate(items, {
+    ...params,
+    offset: 0,
+    limit: 0
+  })
 
   return { miners, total }
 }
@@ -76,14 +82,19 @@ async function getMiners (ctx, req) {
 async function getContainers (ctx, req) {
   const params = parseListQuery(req)
 
-  const results = await requestRpcMapAllPages(ctx, RPC_METHODS.LIST_THINGS, {
+  const results = await requestRpcMapLimit(ctx, RPC_METHODS.LIST_THINGS, {
     query: { tags: { $in: [WORKER_TAGS.CONTAINER] } },
-    status: 1,
-    fields: DEVICE_LIST_FIELDS
+    fields: DEVICE_LIST_FIELDS,
+    ...(params.limit && { limit: params.limit }),
+    ...(params.offset && { offset: params.offset })
   })
 
   const items = flattenRpcResults(results)
-  const { page: containers, total } = queryAndPaginate(items, params)
+  const { page: containers, total } = queryAndPaginate(items, {
+    ...params,
+    offset: 0,
+    limit: 0
+  })
 
   return { containers, total }
 }
@@ -93,7 +104,6 @@ async function getCabinets (ctx, req) {
 
   const results = await requestRpcMapAllPages(ctx, RPC_METHODS.LIST_THINGS, {
     query: CABINET_TAGS_QUERY,
-    status: 1,
     fields: DEVICE_LIST_FIELDS
   })
 
@@ -120,7 +130,6 @@ async function getCabinetById (ctx, req) {
 
   const results = await requestRpcMapAllPages(ctx, RPC_METHODS.LIST_THINGS, {
     query: CABINET_TAGS_QUERY,
-    status: 1,
     fields: DEVICE_LIST_FIELDS
   })
 

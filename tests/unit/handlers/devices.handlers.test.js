@@ -184,20 +184,23 @@ test('getMiners - filter with $or and search combined correctly', async (t) => {
   t.pass()
 })
 
-test('getMiners - with pagination', async (t) => {
+test('getMiners - passes limit and offset to RPC', async (t) => {
+  let rpcPayload = null
   const mockCtx = {
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
     net_r0: {
-      jRequest: async () => [
-        { id: 'm1' }, { id: 'm2' }, { id: 'm3' }, { id: 'm4' }, { id: 'm5' }
-      ]
+      jRequest: async (key, method, payload) => {
+        rpcPayload = payload
+        return [{ id: 'm1' }, { id: 'm2' }]
+      }
     }
   }
 
   const result = await getMiners(mockCtx, { query: { offset: '1', limit: '2' } })
-  t.is(result.total, 5, 'total should reflect all miners')
-  t.is(result.miners.length, 2, 'should return limited results')
-  t.is(result.miners[0].id, 'm2', 'should start at offset')
+  t.is(rpcPayload.limit, 2, 'should pass limit to RPC')
+  t.is(rpcPayload.offset, 1, 'should pass offset to RPC')
+  t.ok(!rpcPayload.status, 'should not include status')
+  t.is(result.miners.length, 2, 'should return results')
   t.pass()
 })
 
