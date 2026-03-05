@@ -3,6 +3,7 @@
 const test = require('brittle')
 const { testModuleStructure, testHandlerFunctions, testOnRequestFunctions } = require('../helpers/routeTestHelpers')
 const { createRoutesForTest } = require('../helpers/mockHelpers')
+const schemas = require('../../../workers/lib/server/schemas/devices.schemas.js')
 
 const ROUTES_PATH = '../../../workers/lib/server/routes/devices.routes.js'
 
@@ -38,5 +39,28 @@ test('devices routes - handler functions', (t) => {
 test('devices routes - onRequest functions', (t) => {
   const routes = createRoutesForTest(ROUTES_PATH)
   testOnRequestFunctions(t, routes, 'devices')
+  t.pass()
+})
+
+test('devices routes - schemas enforce limit maximum of 100', (t) => {
+  const schemaNames = ['miners', 'containers', 'cabinets']
+  for (const name of schemaNames) {
+    const schema = schemas.query[name]
+    t.ok(schema.properties.limit, `${name} schema should have limit property`)
+    t.is(schema.properties.limit.maximum, 100, `${name} limit maximum should be 100`)
+    t.is(schema.properties.limit.minimum, 1, `${name} limit minimum should be 1`)
+  }
+  t.pass()
+})
+
+test('devices routes - schemas have querystring on routes', (t) => {
+  const routes = createRoutesForTest(ROUTES_PATH)
+  const minersRoute = routes.find(r => r.url === '/auth/miners')
+  const containersRoute = routes.find(r => r.url === '/auth/containers')
+  const cabinetsRoute = routes.find(r => r.url === '/auth/cabinets')
+
+  t.ok(minersRoute.schema.querystring, 'miners route should have querystring schema')
+  t.ok(containersRoute.schema.querystring, 'containers route should have querystring schema')
+  t.ok(cabinetsRoute.schema.querystring, 'cabinets route should have querystring schema')
   t.pass()
 })

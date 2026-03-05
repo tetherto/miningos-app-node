@@ -10,7 +10,7 @@ const schemas = {
         fields: { type: 'string' },
         search: { type: 'string' },
         offset: { type: 'integer', minimum: 0 },
-        limit: { type: 'integer', minimum: 1 },
+        limit: { type: 'integer', minimum: 1, maximum: 100 },
         overwriteCache: { type: 'boolean' }
       }
     },
@@ -22,7 +22,7 @@ const schemas = {
         fields: { type: 'string' },
         search: { type: 'string' },
         offset: { type: 'integer', minimum: 0 },
-        limit: { type: 'integer', minimum: 1 },
+        limit: { type: 'integer', minimum: 1, maximum: 100 },
         overwriteCache: { type: 'boolean' }
       }
     },
@@ -32,7 +32,7 @@ const schemas = {
         filter: { type: 'string' },
         sort: { type: 'string' },
         offset: { type: 'integer', minimum: 0 },
-        limit: { type: 'integer', minimum: 1 },
+        limit: { type: 'integer', minimum: 1, maximum: 100 },
         overwriteCache: { type: 'boolean' }
       }
     }
