@@ -13,6 +13,7 @@ const {
 } = require('../../constants')
 const {
   requestRpcEachLimit,
+  requestRpcMapAllPages,
   getStartOfDay,
   safeDiv
 } = require('../../utils')
@@ -568,9 +569,8 @@ async function getContainerTelemetry (ctx, req) {
   const containerTag = `container-${containerId}`
 
   const [minersResults, sensorResults] = await Promise.all([
-    requestRpcEachLimit(ctx, RPC_METHODS.LIST_THINGS, {
+    requestRpcMapAllPages(ctx, RPC_METHODS.LIST_THINGS, {
       query: { tags: { $in: [containerTag] } },
-      status: 1,
       fields: DEVICE_LIST_FIELDS
     }),
     requestRpcEachLimit(ctx, RPC_METHODS.TAIL_LOG, {
