@@ -2,7 +2,6 @@
 
 const test = require('brittle')
 const {
-  getMiners,
   getContainers,
   getCabinets,
   getCabinetById,
@@ -106,113 +105,6 @@ test('queryAndPaginate - filters and paginates', (t) => {
   })
   t.is(result.total, 2, 'total should be filtered count')
   t.is(result.page.length, 1, 'page should respect limit')
-  t.pass()
-})
-
-test('getMiners - happy path', async (t) => {
-  const mockCtx = {
-    conf: { orks: [{ rpcPublicKey: 'key1' }] },
-    net_r0: {
-      jRequest: async () => [
-        { id: 'm1', ip: '10.0.0.1', tags: ['t-miner'] },
-        { id: 'm2', ip: '10.0.0.2', tags: ['t-miner'] }
-      ]
-    }
-  }
-
-  const result = await getMiners(mockCtx, { query: {} })
-  t.ok(result.miners, 'should return miners array')
-  t.is(result.miners.length, 2, 'should have 2 miners')
-  t.is(result.total, 2, 'should report total')
-  t.pass()
-})
-
-test('getMiners - with filter', async (t) => {
-  const mockCtx = {
-    conf: { orks: [{ rpcPublicKey: 'key1' }] },
-    net_r0: {
-      jRequest: async () => [
-        { id: 'm1', ip: '10.0.0.1', type: 's19' },
-        { id: 'm2', ip: '10.0.0.2', type: 's21' }
-      ]
-    }
-  }
-
-  const result = await getMiners(mockCtx, { query: { filter: '{"type":"s19"}' } })
-  t.is(result.miners.length, 1, 'should filter to 1 miner')
-  t.is(result.miners[0].type, 's19', 'should match filter')
-  t.pass()
-})
-
-test('getMiners - with search', async (t) => {
-  const mockCtx = {
-    conf: { orks: [{ rpcPublicKey: 'key1' }] },
-    net_r0: {
-      jRequest: async () => [
-        { id: 'miner-alpha', ip: '10.0.0.1' },
-        { id: 'miner-beta', ip: '10.0.0.2' }
-      ]
-    }
-  }
-
-  const result = await getMiners(mockCtx, { query: { search: 'alpha' } })
-  t.is(result.miners.length, 1, 'should filter by search')
-  t.is(result.miners[0].id, 'miner-alpha', 'should match search term')
-  t.pass()
-})
-
-test('getMiners - filter with $or and search combined correctly', async (t) => {
-  const mockCtx = {
-    conf: { orks: [{ rpcPublicKey: 'key1' }] },
-    net_r0: {
-      jRequest: async () => [
-        { id: 'miner-alpha', ip: '10.0.0.1', type: 's19' },
-        { id: 'miner-beta', ip: '10.0.0.2', type: 's21' },
-        { id: 'miner-alpha2', ip: '10.0.0.3', type: 's21' }
-      ]
-    }
-  }
-
-  const result = await getMiners(mockCtx, {
-    query: {
-      filter: '{"$or":[{"type":"s19"},{"type":"s21"}]}',
-      search: 'alpha'
-    }
-  })
-  t.is(result.miners.length, 2, 'should match both $or types AND search')
-  t.ok(result.miners.every(m => m.id.includes('alpha')), 'all results should match search')
-  t.pass()
-})
-
-test('getMiners - passes limit and offset to RPC', async (t) => {
-  let rpcPayload = null
-  const mockCtx = {
-    conf: { orks: [{ rpcPublicKey: 'key1' }] },
-    net_r0: {
-      jRequest: async (key, method, payload) => {
-        rpcPayload = payload
-        return [{ id: 'm1' }, { id: 'm2' }]
-      }
-    }
-  }
-
-  const result = await getMiners(mockCtx, { query: { offset: '1', limit: '2' } })
-  t.is(rpcPayload.limit, 2, 'should pass limit to RPC')
-  t.is(rpcPayload.offset, 1, 'should pass offset to RPC')
-  t.ok(!rpcPayload.status, 'should not include status')
-  t.is(result.miners.length, 2, 'should return results')
-  t.pass()
-})
-
-test('getMiners - empty results', async (t) => {
-  const mockCtx = {
-    conf: { orks: [{ rpcPublicKey: 'key1' }] },
-    net_r0: { jRequest: async () => [] }
-  }
-
-  const result = await getMiners(mockCtx, { query: {} })
-  t.is(result.miners.length, 0, 'should return empty array')
-  t.is(result.total, 0, 'total should be 0')
   t.pass()
 })
 

@@ -136,7 +136,6 @@ const ENDPOINTS = {
   SITE_STATUS_LIVE: '/auth/site/status/live',
 
   // Device listing endpoints
-  MINERS: '/auth/miners',
   CONTAINERS: '/auth/containers',
   CABINETS: '/auth/cabinets',
   CABINET_BY_ID: '/auth/cabinets/:id',

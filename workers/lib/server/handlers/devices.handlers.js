@@ -59,26 +59,6 @@ function queryAndPaginate (items, { filter, fields, sort, search, offset, limit 
   return { page, total }
 }
 
-async function getMiners (ctx, req) {
-  const params = parseListQuery(req)
-
-  const results = await requestRpcMapLimit(ctx, RPC_METHODS.LIST_THINGS, {
-    query: { tags: { $in: [WORKER_TAGS.MINER] } },
-    fields: DEVICE_LIST_FIELDS,
-    ...(params.limit && { limit: params.limit }),
-    ...(params.offset && { offset: params.offset })
-  })
-
-  const items = flattenRpcResults(results)
-  const { page: miners, total } = queryAndPaginate(items, {
-    ...params,
-    offset: 0,
-    limit: 0
-  })
-
-  return { miners, total }
-}
-
 async function getContainers (ctx, req) {
   const params = parseListQuery(req)
 
@@ -163,7 +143,6 @@ function groupIntoCabinets (devices) {
 }
 
 module.exports = {
-  getMiners,
   getContainers,
   getCabinets,
   getCabinetById,

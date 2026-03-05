@@ -15,7 +15,6 @@ test('devices routes - module structure', (t) => {
 test('devices routes - route definitions', (t) => {
   const routes = createRoutesForTest(ROUTES_PATH)
   const routeUrls = routes.map(route => route.url)
-  t.ok(routeUrls.includes('/auth/miners'), 'should have miners route')
   t.ok(routeUrls.includes('/auth/containers'), 'should have containers route')
   t.ok(routeUrls.includes('/auth/cabinets'), 'should have cabinets route')
   t.ok(routeUrls.includes('/auth/cabinets/:id'), 'should have cabinet by id route')
@@ -43,7 +42,7 @@ test('devices routes - onRequest functions', (t) => {
 })
 
 test('devices routes - schemas enforce limit maximum of 100', (t) => {
-  const schemaNames = ['miners', 'containers', 'cabinets']
+  const schemaNames = ['containers', 'cabinets']
   for (const name of schemaNames) {
     const schema = schemas.query[name]
     t.ok(schema.properties.limit, `${name} schema should have limit property`)
@@ -55,11 +54,9 @@ test('devices routes - schemas enforce limit maximum of 100', (t) => {
 
 test('devices routes - schemas have querystring on routes', (t) => {
   const routes = createRoutesForTest(ROUTES_PATH)
-  const minersRoute = routes.find(r => r.url === '/auth/miners')
   const containersRoute = routes.find(r => r.url === '/auth/containers')
   const cabinetsRoute = routes.find(r => r.url === '/auth/cabinets')
 
-  t.ok(minersRoute.schema.querystring, 'miners route should have querystring schema')
   t.ok(containersRoute.schema.querystring, 'containers route should have querystring schema')
   t.ok(cabinetsRoute.schema.querystring, 'cabinets route should have querystring schema')
   t.pass()

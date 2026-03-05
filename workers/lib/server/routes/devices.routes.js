@@ -5,7 +5,6 @@ const {
   HTTP_METHODS
 } = require('../../constants')
 const {
-  getMiners,
   getContainers,
   getCabinets,
   getCabinetById
@@ -16,27 +15,6 @@ module.exports = (ctx) => {
   const schemas = require('../schemas/devices.schemas.js')
 
   return [
-    {
-      method: HTTP_METHODS.GET,
-      url: ENDPOINTS.MINERS,
-      schema: {
-        querystring: schemas.query.miners
-      },
-      ...createCachedAuthRoute(
-        ctx,
-        (req) => [
-          'miners',
-          req.query.filter,
-          req.query.sort,
-          req.query.fields,
-          req.query.search,
-          req.query.offset,
-          req.query.limit
-        ],
-        ENDPOINTS.MINERS,
-        getMiners
-      )
-    },
     {
       method: HTTP_METHODS.GET,
       url: ENDPOINTS.CONTAINERS,
