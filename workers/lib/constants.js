@@ -142,7 +142,7 @@ const ENDPOINTS = {
   // Generic Config endpoints (type passed as parameter)
   // Note: Config mutations (register, update, delete) go through pushAction endpoint
   CONFIGS: '/auth/configs/:type',
-  
+
   // Metrics endpoints
   METRICS_HASHRATE: '/auth/metrics/hashrate',
   METRICS_CONSUMPTION: '/auth/metrics/consumption',
