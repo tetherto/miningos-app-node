@@ -10,7 +10,8 @@ const {
   getCostSummary,
   getSubsidyFees,
   getRevenue,
-  getRevenueSummary
+  getRevenueSummary,
+  getHashRevenue
 } = require('../handlers/finance.handlers')
 const { createCachedAuthRoute } = require('../lib/routeHelpers')
 
@@ -125,6 +126,24 @@ module.exports = (ctx) => {
         ],
         ENDPOINTS.FINANCE_REVENUE_SUMMARY,
         getRevenueSummary
+      )
+    },
+    {
+      method: HTTP_METHODS.GET,
+      url: ENDPOINTS.FINANCE_HASH_REVENUE,
+      schema: {
+        querystring: schemas.query.hashRevenue
+      },
+      ...createCachedAuthRoute(
+        ctx,
+        (req) => [
+          'finance/hash-revenue',
+          req.query.start,
+          req.query.end,
+          req.query.period
+        ],
+        ENDPOINTS.FINANCE_HASH_REVENUE,
+        getHashRevenue
       )
     }
   ]
