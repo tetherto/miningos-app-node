@@ -37,7 +37,9 @@ const AUTH_PERMISSIONS = {
   REPORTING: 'reporting',
   SETTINGS: 'settings',
   TICKETS: 'tickets',
-  POWER_SPOT_FORECAST: 'power_spot_forecast'
+  POWER_SPOT_FORECAST: 'power_spot_forecast',
+  POOL_CONFIG: 'pool_config',
+  POOL_CONFIG_APPROVE: 'pool_config_approve'
 }
 
 const AUTH_LEVELS = {
@@ -133,7 +135,11 @@ const ENDPOINTS = {
   POOL_MANAGER_ASSIGN: '/auth/pool-manager/miners/assign',
   POOL_MANAGER_POWER_MODE: '/auth/pool-manager/miners/power-mode',
 
-  SITE_STATUS_LIVE: '/auth/site/status/live'
+  SITE_STATUS_LIVE: '/auth/site/status/live',
+
+  // Generic Config endpoints (type passed as parameter)
+  // Note: Config mutations (register, update, delete) go through pushAction endpoint
+  CONFIGS: '/auth/configs/:type'
 }
 
 const HTTP_METHODS = {
@@ -187,7 +193,8 @@ const RPC_METHODS = {
   GET_WRK_EXT_DATA: 'getWrkExtData',
   LIST_THINGS: 'listThings',
   TAIL_LOG: 'tailLog',
-  GLOBAL_CONFIG: 'getGlobalConfig'
+  GLOBAL_CONFIG: 'getGlobalConfig',
+  GET_CONFIGS: 'getConfigs'
 }
 
 const WORKER_TYPES = {
@@ -269,6 +276,11 @@ const RPC_TIMEOUT = 15000
 const RPC_CONCURRENCY_LIMIT = 2
 const RPC_PAGE_LIMIT = 100
 
+// Allowed config types for generic config CRUD
+const CONFIG_TYPES = {
+  POOL: 'pool'
+}
+
 module.exports = {
   SUPER_ADMIN_ROLE,
   GLOBAL_DATA_TYPES,
@@ -301,5 +313,6 @@ module.exports = {
   MINERPOOL_EXT_DATA_KEYS,
   NON_METRIC_KEYS,
   BTC_SATS,
-  RANGE_BUCKETS
+  RANGE_BUCKETS,
+  CONFIG_TYPES
 }
