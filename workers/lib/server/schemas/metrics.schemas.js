@@ -2,66 +2,86 @@
 
 const schemas = {
   query: {
-    energyBalance: {
+    hashrate: {
       type: 'object',
       properties: {
         start: { type: 'integer' },
         end: { type: 'integer' },
-        period: { type: 'string', enum: ['daily', 'monthly', 'yearly'] },
         overwriteCache: { type: 'boolean' }
       },
       required: ['start', 'end']
     },
-    ebitda: {
+    consumption: {
       type: 'object',
       properties: {
         start: { type: 'integer' },
         end: { type: 'integer' },
-        period: { type: 'string', enum: ['daily', 'monthly', 'yearly'] },
         overwriteCache: { type: 'boolean' }
       },
       required: ['start', 'end']
     },
-    costSummary: {
+    efficiency: {
       type: 'object',
       properties: {
         start: { type: 'integer' },
         end: { type: 'integer' },
-        period: { type: 'string', enum: ['daily', 'monthly', 'yearly'] },
         overwriteCache: { type: 'boolean' }
       },
       required: ['start', 'end']
     },
-    subsidyFees: {
+    minerStatus: {
       type: 'object',
       properties: {
         start: { type: 'integer' },
         end: { type: 'integer' },
-        period: { type: 'string', enum: ['daily', 'weekly', 'monthly'] },
         overwriteCache: { type: 'boolean' }
       },
       required: ['start', 'end']
     },
-    revenue: {
+    powerMode: {
       type: 'object',
       properties: {
         start: { type: 'integer' },
         end: { type: 'integer' },
-        period: { type: 'string', enum: ['daily', 'weekly', 'monthly', 'yearly'] },
-        pool: { type: 'string' },
+        interval: { type: 'string', enum: ['1h', '1d', '1w'] },
         overwriteCache: { type: 'boolean' }
       },
       required: ['start', 'end']
     },
-    revenueSummary: {
+    powerModeTimeline: {
       type: 'object',
       properties: {
         start: { type: 'integer' },
         end: { type: 'integer' },
-        period: { type: 'string', enum: ['daily', 'monthly', 'yearly'] },
+        container: { type: 'string' },
+        overwriteCache: { type: 'boolean' }
+      }
+    },
+    temperature: {
+      type: 'object',
+      properties: {
+        start: { type: 'integer' },
+        end: { type: 'integer' },
+        interval: { type: 'string', enum: ['1h', '1d', '1w'] },
+        container: { type: 'string' },
         overwriteCache: { type: 'boolean' }
       },
       required: ['start', 'end']
+    },
+    containerTelemetry: {
+      type: 'object',
+      properties: {
+        overwriteCache: { type: 'boolean' }
+      }
+    },
+    containerHistory: {
+      type: 'object',
+      properties: {
+        start: { type: 'integer' },
+        end: { type: 'integer' },
+        limit: { type: 'integer' },
+        overwriteCache: { type: 'boolean' }
+      }
     }
   }
 }

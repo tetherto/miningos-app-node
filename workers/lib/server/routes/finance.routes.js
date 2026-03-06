@@ -8,7 +8,9 @@ const {
   getEnergyBalance,
   getEbitda,
   getCostSummary,
-  getSubsidyFees
+  getSubsidyFees,
+  getRevenue,
+  getRevenueSummary
 } = require('../handlers/finance.handlers')
 const { createCachedAuthRoute } = require('../lib/routeHelpers')
 
@@ -86,6 +88,43 @@ module.exports = (ctx) => {
         ],
         ENDPOINTS.FINANCE_SUBSIDY_FEES,
         getSubsidyFees
+      )
+    },
+    {
+      method: HTTP_METHODS.GET,
+      url: ENDPOINTS.FINANCE_REVENUE,
+      schema: {
+        querystring: schemas.query.revenue
+      },
+      ...createCachedAuthRoute(
+        ctx,
+        (req) => [
+          'finance/revenue',
+          req.query.start,
+          req.query.end,
+          req.query.period,
+          req.query.pool
+        ],
+        ENDPOINTS.FINANCE_REVENUE,
+        getRevenue
+      )
+    },
+    {
+      method: HTTP_METHODS.GET,
+      url: ENDPOINTS.FINANCE_REVENUE_SUMMARY,
+      schema: {
+        querystring: schemas.query.revenueSummary
+      },
+      ...createCachedAuthRoute(
+        ctx,
+        (req) => [
+          'finance/revenue-summary',
+          req.query.start,
+          req.query.end,
+          req.query.period
+        ],
+        ENDPOINTS.FINANCE_REVENUE_SUMMARY,
+        getRevenueSummary
       )
     }
   ]
