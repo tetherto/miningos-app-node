@@ -11,9 +11,10 @@ const {
   assignPoolToMiners,
   setPowerMode
 } = require('../../workers/lib/server/services/poolManager')
+const { withDataProxy } = require('./helpers/mockHelpers')
 
 function createMockCtx (responseData) {
-  return {
+  return withDataProxy({
     conf: {
       orks: [{ rpcPublicKey: 'key1' }]
     },
@@ -27,7 +28,7 @@ function createMockCtx (responseData) {
         return Promise.resolve(responseData)
       }
     }
-  }
+  })
 }
 
 function createMockPoolStatsResponse (pools) {

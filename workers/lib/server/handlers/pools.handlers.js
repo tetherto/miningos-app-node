@@ -9,8 +9,6 @@ const {
   RANGE_BUCKETS
 } = require('../../constants')
 const {
-  requestRpcMapLimit,
-  requestRpcEachLimit,
   parseJsonQueryParam,
   getStartOfDay
 } = require('../../utils')
@@ -21,7 +19,7 @@ async function getPools (ctx, req) {
   const sort = req.query.sort ? parseJsonQueryParam(req.query.sort, 'ERR_SORT_INVALID_JSON') : null
   const fields = req.query.fields ? parseJsonQueryParam(req.query.fields, 'ERR_FIELDS_INVALID_JSON') : null
 
-  const statsResults = await requestRpcMapLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+  const statsResults = await ctx.dataProxy.requestDataMap(RPC_METHODS.GET_WRK_EXT_DATA, {
     type: 'minerpool',
     query: { key: MINERPOOL_EXT_DATA_KEYS.STATS }
   })
@@ -111,7 +109,7 @@ async function getPoolBalanceHistory (ctx, req) {
     throw new Error('ERR_INVALID_DATE_RANGE')
   }
 
-  const results = await requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+  const results = await ctx.dataProxy.requestData(RPC_METHODS.GET_WRK_EXT_DATA, {
     type: 'minerpool',
     query: { key: MINERPOOL_EXT_DATA_KEYS.TRANSACTIONS, start, end, pool: poolFilter }
   })
@@ -208,7 +206,7 @@ async function getPoolStatsAggregate (ctx, req) {
     throw new Error('ERR_INVALID_DATE_RANGE')
   }
 
-  const transactionResults = await requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+  const transactionResults = await ctx.dataProxy.requestData(RPC_METHODS.GET_WRK_EXT_DATA, {
     type: WORKER_TYPES.MINERPOOL,
     query: { key: MINERPOOL_EXT_DATA_KEYS.TRANSACTIONS, start, end, pool: poolFilter }
   })

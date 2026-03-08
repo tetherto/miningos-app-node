@@ -34,12 +34,13 @@ const {
   getContainerHistory,
   processContainerHistoryData
 } = require('../../../workers/lib/server/handlers/metrics.handlers')
+const { withDataProxy } = require('../helpers/mockHelpers')
 
 // ==================== Hashrate Tests ====================
 
 test('getHashrate - happy path', async (t) => {
   const dayTs = 1700006400000
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: {
       orks: [{ rpcPublicKey: 'key1' }]
     },
@@ -48,7 +49,7 @@ test('getHashrate - happy path', async (t) => {
         return [{ type: 'miner', data: [{ ts: dayTs, val: { hashrate_mhs_5m_sum_aggr: 100000 } }], error: null }]
       }
     }
-  }
+  })
 
   const mockReq = {
     query: { start: 1700000000000, end: 1700100000000 }
@@ -66,10 +67,10 @@ test('getHashrate - happy path', async (t) => {
 })
 
 test('getHashrate - missing start throws', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [] },
     net_r0: { jRequest: async () => ({}) }
-  }
+  })
 
   try {
     await getHashrate(mockCtx, { query: { end: 1700100000000 } })
@@ -81,10 +82,10 @@ test('getHashrate - missing start throws', async (t) => {
 })
 
 test('getHashrate - missing end throws', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [] },
     net_r0: { jRequest: async () => ({}) }
-  }
+  })
 
   try {
     await getHashrate(mockCtx, { query: { start: 1700000000000 } })
@@ -96,10 +97,10 @@ test('getHashrate - missing end throws', async (t) => {
 })
 
 test('getHashrate - invalid range throws', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [] },
     net_r0: { jRequest: async () => ({}) }
-  }
+  })
 
   try {
     await getHashrate(mockCtx, { query: { start: 1700100000000, end: 1700000000000 } })
@@ -111,10 +112,10 @@ test('getHashrate - invalid range throws', async (t) => {
 })
 
 test('getHashrate - empty ork results', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
     net_r0: { jRequest: async () => ({}) }
-  }
+  })
 
   const result = await getHashrate(mockCtx, { query: { start: 1700000000000, end: 1700100000000 } })
   t.ok(result.log, 'should return log array')
@@ -192,7 +193,7 @@ test('calculateHashrateSummary - handles empty log', (t) => {
 
 test('getConsumption - happy path', async (t) => {
   const dayTs = 1700006400000
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: {
       orks: [{ rpcPublicKey: 'key1' }]
     },
@@ -201,7 +202,7 @@ test('getConsumption - happy path', async (t) => {
         return [{ type: 'powermeter', data: [{ ts: dayTs, val: { site_power_w: 5000000 } }], error: null }]
       }
     }
-  }
+  })
 
   const mockReq = {
     query: { start: 1700000000000, end: 1700100000000 }
@@ -220,10 +221,10 @@ test('getConsumption - happy path', async (t) => {
 })
 
 test('getConsumption - missing start throws', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [] },
     net_r0: { jRequest: async () => ({}) }
-  }
+  })
 
   try {
     await getConsumption(mockCtx, { query: { end: 1700100000000 } })
@@ -235,10 +236,10 @@ test('getConsumption - missing start throws', async (t) => {
 })
 
 test('getConsumption - invalid range throws', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [] },
     net_r0: { jRequest: async () => ({}) }
-  }
+  })
 
   try {
     await getConsumption(mockCtx, { query: { start: 1700100000000, end: 1700000000000 } })
@@ -250,10 +251,10 @@ test('getConsumption - invalid range throws', async (t) => {
 })
 
 test('getConsumption - empty ork results', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
     net_r0: { jRequest: async () => ({}) }
-  }
+  })
 
   const result = await getConsumption(mockCtx, { query: { start: 1700000000000, end: 1700100000000 } })
   t.ok(result.log, 'should return log array')
@@ -330,7 +331,7 @@ test('calculateConsumptionSummary - handles empty log', (t) => {
 
 test('getEfficiency - happy path', async (t) => {
   const dayTs = 1700006400000
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: {
       orks: [{ rpcPublicKey: 'key1' }]
     },
@@ -339,7 +340,7 @@ test('getEfficiency - happy path', async (t) => {
         return [{ type: 'miner', data: [{ ts: dayTs, val: { efficiency_w_ths_avg_aggr: 25.5 } }], error: null }]
       }
     }
-  }
+  })
 
   const mockReq = {
     query: { start: 1700000000000, end: 1700100000000 }
@@ -356,10 +357,10 @@ test('getEfficiency - happy path', async (t) => {
 })
 
 test('getEfficiency - missing start throws', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [] },
     net_r0: { jRequest: async () => ({}) }
-  }
+  })
 
   try {
     await getEfficiency(mockCtx, { query: { end: 1700100000000 } })
@@ -371,10 +372,10 @@ test('getEfficiency - missing start throws', async (t) => {
 })
 
 test('getEfficiency - invalid range throws', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [] },
     net_r0: { jRequest: async () => ({}) }
-  }
+  })
 
   try {
     await getEfficiency(mockCtx, { query: { start: 1700100000000, end: 1700000000000 } })
@@ -386,10 +387,10 @@ test('getEfficiency - invalid range throws', async (t) => {
 })
 
 test('getEfficiency - empty ork results', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
     net_r0: { jRequest: async () => ({}) }
-  }
+  })
 
   const result = await getEfficiency(mockCtx, { query: { start: 1700000000000, end: 1700100000000 } })
   t.ok(result.log, 'should return log array')
@@ -474,7 +475,7 @@ test('sumObjectValues - sums keyed object values', (t) => {
 
 test('getMinerStatus - happy path', async (t) => {
   const dayTs = 1700006400000
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: {
       orks: [{ rpcPublicKey: 'key1' }]
     },
@@ -489,7 +490,7 @@ test('getMinerStatus - happy path', async (t) => {
         }]
       }
     }
-  }
+  })
 
   const mockReq = {
     query: { start: 1700000000000, end: 1700100000000 }
@@ -508,10 +509,10 @@ test('getMinerStatus - happy path', async (t) => {
 })
 
 test('getMinerStatus - missing start throws', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [] },
     net_r0: { jRequest: async () => ({}) }
-  }
+  })
 
   try {
     await getMinerStatus(mockCtx, { query: { end: 1700100000000 } })
@@ -523,10 +524,10 @@ test('getMinerStatus - missing start throws', async (t) => {
 })
 
 test('getMinerStatus - invalid range throws', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [] },
     net_r0: { jRequest: async () => ({}) }
-  }
+  })
 
   try {
     await getMinerStatus(mockCtx, { query: { start: 1700100000000, end: 1700000000000 } })
@@ -538,10 +539,10 @@ test('getMinerStatus - invalid range throws', async (t) => {
 })
 
 test('getMinerStatus - empty ork results', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
     net_r0: { jRequest: async () => ({}) }
-  }
+  })
 
   const result = await getMinerStatus(mockCtx, { query: { start: 1700000000000, end: 1700100000000 } })
   t.ok(result.log, 'should return log array')
@@ -763,7 +764,7 @@ test('processTemperatureData - handles range string ts with groupRange', (t) => 
 
 test('getPowerMode - happy path', async (t) => {
   const ts = 1700006400000
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: {
       orks: [{ rpcPublicKey: 'key1' }]
     },
@@ -776,7 +777,7 @@ test('getPowerMode - happy path', async (t) => {
         }]
       }
     }
-  }
+  })
 
   const result = await getPowerMode(mockCtx, {
     query: { start: 1700000000000, end: 1700100000000 }
@@ -792,10 +793,10 @@ test('getPowerMode - happy path', async (t) => {
 })
 
 test('getPowerMode - missing start/end throws', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [] },
     net_r0: { jRequest: async () => ({}) }
-  }
+  })
 
   try {
     await getPowerMode(mockCtx, { query: { end: 1700100000000 } })
@@ -807,10 +808,10 @@ test('getPowerMode - missing start/end throws', async (t) => {
 })
 
 test('getPowerMode - invalid range throws', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [] },
     net_r0: { jRequest: async () => ({}) }
-  }
+  })
 
   try {
     await getPowerMode(mockCtx, { query: { start: 1700100000000, end: 1700000000000 } })
@@ -822,10 +823,10 @@ test('getPowerMode - invalid range throws', async (t) => {
 })
 
 test('getPowerMode - empty ork results', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
     net_r0: { jRequest: async () => ({}) }
-  }
+  })
 
   const result = await getPowerMode(mockCtx, {
     query: { start: 1700000000000, end: 1700100000000 }
@@ -943,7 +944,7 @@ test('calculatePowerModeSummary - handles empty log', (t) => {
 // ==================== Power Mode Timeline Tests ====================
 
 test('getPowerModeTimeline - happy path', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: {
       orks: [{ rpcPublicKey: 'key1' }]
     },
@@ -963,7 +964,7 @@ test('getPowerModeTimeline - happy path', async (t) => {
         ]
       }
     }
-  }
+  })
 
   const result = await getPowerModeTimeline(mockCtx, {
     query: { start: 1700000000000, end: 1700100000000 }
@@ -978,10 +979,10 @@ test('getPowerModeTimeline - happy path', async (t) => {
 })
 
 test('getPowerModeTimeline - default start/end', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
     net_r0: { jRequest: async () => ([]) }
-  }
+  })
 
   const result = await getPowerModeTimeline(mockCtx, { query: {} })
   t.ok(result.log, 'should return log with defaults')
@@ -990,10 +991,10 @@ test('getPowerModeTimeline - default start/end', async (t) => {
 })
 
 test('getPowerModeTimeline - invalid range throws', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [] },
     net_r0: { jRequest: async () => ({}) }
-  }
+  })
 
   try {
     await getPowerModeTimeline(mockCtx, { query: { start: 1700100000000, end: 1700000000000 } })
@@ -1005,10 +1006,10 @@ test('getPowerModeTimeline - invalid range throws', async (t) => {
 })
 
 test('getPowerModeTimeline - empty results', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
     net_r0: { jRequest: async () => ({}) }
-  }
+  })
 
   const result = await getPowerModeTimeline(mockCtx, {
     query: { start: 1700000000000, end: 1700100000000 }
@@ -1109,7 +1110,7 @@ test('processPowerModeTimelineData - extracts container from miner id', (t) => {
 
 test('getPowerModeTimeline - always uses t-miner tag', async (t) => {
   let capturedPayload = null
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
     net_r0: {
       jRequest: async (key, method, payload) => {
@@ -1117,7 +1118,7 @@ test('getPowerModeTimeline - always uses t-miner tag', async (t) => {
         return []
       }
     }
-  }
+  })
 
   await getPowerModeTimeline(mockCtx, {
     query: { start: 1700000000000, end: 1700100000000, container: 'my-container' }
@@ -1146,7 +1147,7 @@ test('processPowerModeTimelineData - filters by container post-RPC', (t) => {
 
 test('getTemperature - happy path', async (t) => {
   const ts = 1700006400000
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: {
       orks: [{ rpcPublicKey: 'key1' }]
     },
@@ -1159,7 +1160,7 @@ test('getTemperature - happy path', async (t) => {
         }]
       }
     }
-  }
+  })
 
   const result = await getTemperature(mockCtx, {
     query: { start: 1700000000000, end: 1700100000000 }
@@ -1178,10 +1179,10 @@ test('getTemperature - happy path', async (t) => {
 })
 
 test('getTemperature - missing start/end throws', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [] },
     net_r0: { jRequest: async () => ({}) }
-  }
+  })
 
   try {
     await getTemperature(mockCtx, { query: { end: 1700100000000 } })
@@ -1193,10 +1194,10 @@ test('getTemperature - missing start/end throws', async (t) => {
 })
 
 test('getTemperature - invalid range throws', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [] },
     net_r0: { jRequest: async () => ({}) }
-  }
+  })
 
   try {
     await getTemperature(mockCtx, { query: { start: 1700100000000, end: 1700000000000 } })
@@ -1208,10 +1209,10 @@ test('getTemperature - invalid range throws', async (t) => {
 })
 
 test('getTemperature - empty ork results', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
     net_r0: { jRequest: async () => ({}) }
-  }
+  })
 
   const result = await getTemperature(mockCtx, {
     query: { start: 1700000000000, end: 1700100000000 }
@@ -1300,7 +1301,7 @@ test('calculateTemperatureSummary - handles empty log', (t) => {
 
 test('getTemperature - always uses t-miner tag with container post-filter', async (t) => {
   let capturedPayload = null
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
     net_r0: {
       jRequest: async (key, method, payload) => {
@@ -1308,7 +1309,7 @@ test('getTemperature - always uses t-miner tag with container post-filter', asyn
         return []
       }
     }
-  }
+  })
 
   await getTemperature(mockCtx, {
     query: { start: 1700000000000, end: 1700100000000, container: 'my-container' }
@@ -1321,7 +1322,7 @@ test('getTemperature - always uses t-miner tag with container post-filter', asyn
 // ==================== Container Telemetry Tests ====================
 
 test('getContainerTelemetry - happy path', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: {
       orks: [{ rpcPublicKey: 'key1' }]
     },
@@ -1341,7 +1342,7 @@ test('getContainerTelemetry - happy path', async (t) => {
         return {}
       }
     }
-  }
+  })
 
   const mockReq = {
     params: { id: 'bitdeer-9a' },
@@ -1358,10 +1359,10 @@ test('getContainerTelemetry - happy path', async (t) => {
 })
 
 test('getContainerTelemetry - missing id throws', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [] },
     net_r0: { jRequest: async () => ({}) }
-  }
+  })
 
   try {
     await getContainerTelemetry(mockCtx, { params: {}, query: {} })
@@ -1373,10 +1374,10 @@ test('getContainerTelemetry - missing id throws', async (t) => {
 })
 
 test('getContainerTelemetry - no sensor data returns null telemetry', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
     net_r0: { jRequest: async () => [] }
-  }
+  })
 
   const result = await getContainerTelemetry(mockCtx, {
     params: { id: 'bitdeer-9a' },
@@ -1447,7 +1448,7 @@ test('processContainerSensorSnapshot - prefix match fallback', (t) => {
 // ==================== Container History Tests ====================
 
 test('getContainerHistory - happy path', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: {
       orks: [{ rpcPublicKey: 'key1' }]
     },
@@ -1466,7 +1467,7 @@ test('getContainerHistory - happy path', async (t) => {
         }]
       }
     }
-  }
+  })
 
   const mockReq = {
     params: { id: 'bitdeer-9a' },
@@ -1483,10 +1484,10 @@ test('getContainerHistory - happy path', async (t) => {
 })
 
 test('getContainerHistory - missing id throws', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [] },
     net_r0: { jRequest: async () => ({}) }
-  }
+  })
 
   try {
     await getContainerHistory(mockCtx, { params: {}, query: {} })
@@ -1498,10 +1499,10 @@ test('getContainerHistory - missing id throws', async (t) => {
 })
 
 test('getContainerHistory - invalid range throws', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [] },
     net_r0: { jRequest: async () => ({}) }
-  }
+  })
 
   try {
     await getContainerHistory(mockCtx, {
@@ -1517,7 +1518,7 @@ test('getContainerHistory - invalid range throws', async (t) => {
 
 test('getContainerHistory - uses defaults when no start/end', async (t) => {
   let capturedPayload = null
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
     net_r0: {
       jRequest: async (key, method, payload) => {
@@ -1525,7 +1526,7 @@ test('getContainerHistory - uses defaults when no start/end', async (t) => {
         return []
       }
     }
-  }
+  })
 
   const result = await getContainerHistory(mockCtx, {
     params: { id: 'bitdeer-9a' },
@@ -1540,10 +1541,10 @@ test('getContainerHistory - uses defaults when no start/end', async (t) => {
 })
 
 test('getContainerHistory - empty results', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
     net_r0: { jRequest: async () => [] }
-  }
+  })
 
   const result = await getContainerHistory(mockCtx, {
     params: { id: 'bitdeer-9a' },

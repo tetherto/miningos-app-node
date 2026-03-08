@@ -10,8 +10,6 @@
     "startRedirectPath": "/oauth/google",
     "callbackUri": "http://localhost:3000/oauth/google/callback",
     "callbackUriUI": "http://localhost:3030",
-    "users": [
-      {"email": "", "write": false}
-    ]
+    "users": []
   }
 }

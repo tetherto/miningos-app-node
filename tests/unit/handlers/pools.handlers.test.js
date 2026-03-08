@@ -12,9 +12,10 @@ const {
   processTransactionData,
   calculateAggregateSummary
 } = require('../../../workers/lib/server/handlers/pools.handlers')
+const { withDataProxy } = require('../helpers/mockHelpers')
 
 test('getPools - happy path', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: {
       orks: [{ rpcPublicKey: 'key1' }]
     },
@@ -32,7 +33,7 @@ test('getPools - happy path', async (t) => {
         return []
       }
     }
-  }
+  })
 
   const mockReq = { query: {} }
   const result = await getPools(mockCtx, mockReq, {})
@@ -45,7 +46,7 @@ test('getPools - happy path', async (t) => {
 })
 
 test('getPools - with filter', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
     net_r0: {
       jRequest: async () => [{
@@ -56,7 +57,7 @@ test('getPools - with filter', async (t) => {
         ]
       }]
     }
-  }
+  })
 
   const mockReq = { query: { query: '{"pool":"f2pool"}' } }
   const result = await getPools(mockCtx, mockReq, {})
@@ -67,10 +68,10 @@ test('getPools - with filter', async (t) => {
 })
 
 test('getPools - empty ork results', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
     net_r0: { jRequest: async () => ([]) }
-  }
+  })
 
   const result = await getPools(mockCtx, { query: {} }, {})
   t.ok(result.pools, 'should return pools array')
@@ -143,7 +144,7 @@ test('calculatePoolsSummary - handles empty pools', (t) => {
 })
 
 test('getPoolBalanceHistory - happy path', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: {
       orks: [{ rpcPublicKey: 'key1' }]
     },
@@ -159,7 +160,7 @@ test('getPoolBalanceHistory - happy path', async (t) => {
         }]
       }
     }
-  }
+  })
 
   const mockReq = {
     query: { start: 1700000000000, end: 1700100000000, range: '1D' },
@@ -178,7 +179,7 @@ test('getPoolBalanceHistory - happy path', async (t) => {
 
 test('getPoolBalanceHistory - with pool filter', async (t) => {
   let capturedPayload = null
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
     net_r0: {
       jRequest: async (key, method, payload) => {
@@ -192,7 +193,7 @@ test('getPoolBalanceHistory - with pool filter', async (t) => {
         }]
       }
     }
-  }
+  })
 
   const mockReq = {
     query: { start: 1700000000000, end: 1700100000000 },
@@ -206,7 +207,7 @@ test('getPoolBalanceHistory - with pool filter', async (t) => {
 })
 
 test('getPoolBalanceHistory - "all" pool filter returns all pools', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
     net_r0: {
       jRequest: async () => {
@@ -219,7 +220,7 @@ test('getPoolBalanceHistory - "all" pool filter returns all pools', async (t) =>
         }]
       }
     }
-  }
+  })
 
   const mockReq = {
     query: { start: 1700000000000, end: 1700100000000 },
@@ -262,10 +263,10 @@ test('getPoolBalanceHistory - invalid range throws', async (t) => {
 })
 
 test('getPoolBalanceHistory - empty ork results', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
     net_r0: { jRequest: async () => ({}) }
-  }
+  })
 
   const result = await getPoolBalanceHistory(mockCtx, { query: { start: 1700000000000, end: 1700100000000 }, params: {} }, {})
   t.ok(result.log, 'should return log array')
@@ -327,7 +328,7 @@ test('groupByBucket - handles missing timestamps', (t) => {
 })
 
 test('getPoolStatsAggregate - happy path', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: {
       orks: [{ rpcPublicKey: 'key1' }]
     },
@@ -343,7 +344,7 @@ test('getPoolStatsAggregate - happy path', async (t) => {
         }]
       }
     }
-  }
+  })
 
   const mockReq = {
     query: { start: 1700000000000, end: 1700100000000, range: 'daily' }
@@ -360,7 +361,7 @@ test('getPoolStatsAggregate - happy path', async (t) => {
 
 test('getPoolStatsAggregate - with pool filter', async (t) => {
   let capturedPayload = null
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
     net_r0: {
       jRequest: async (key, method, payload) => {
@@ -374,7 +375,7 @@ test('getPoolStatsAggregate - with pool filter', async (t) => {
         }]
       }
     }
-  }
+  })
 
   const mockReq = {
     query: { start: 1700000000000, end: 1700100000000, pool: 'user1' }
@@ -417,10 +418,10 @@ test('getPoolStatsAggregate - invalid range throws', async (t) => {
 })
 
 test('getPoolStatsAggregate - empty ork results', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
     net_r0: { jRequest: async () => ({}) }
-  }
+  })
 
   const result = await getPoolStatsAggregate(mockCtx, { query: { start: 1700000000000, end: 1700100000000 } }, {})
   t.ok(result.log, 'should return log array')

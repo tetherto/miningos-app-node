@@ -12,8 +12,6 @@ const {
   DEVICE_LIST_FIELDS
 } = require('../../constants')
 const {
-  requestRpcEachLimit,
-  requestRpcMapAllPages,
   getStartOfDay,
   safeDiv
 } = require('../../utils')
@@ -34,7 +32,7 @@ async function getHashrate (ctx, req) {
   const startDate = new Date(start).toISOString()
   const endDate = new Date(end).toISOString()
 
-  const results = await requestRpcEachLimit(ctx, RPC_METHODS.TAIL_LOG_RANGE_AGGR, {
+  const results = await ctx.dataProxy.requestData(RPC_METHODS.TAIL_LOG_RANGE_AGGR, {
     keys: [{
       type: WORKER_TYPES.MINER,
       startDate,
@@ -88,7 +86,7 @@ async function getConsumption (ctx, req) {
   const startDate = new Date(start).toISOString()
   const endDate = new Date(end).toISOString()
 
-  const results = await requestRpcEachLimit(ctx, RPC_METHODS.TAIL_LOG_RANGE_AGGR, {
+  const results = await ctx.dataProxy.requestData(RPC_METHODS.TAIL_LOG_RANGE_AGGR, {
     keys: [{
       type: WORKER_TYPES.POWERMETER,
       startDate,
@@ -148,7 +146,7 @@ async function getEfficiency (ctx, req) {
   const startDate = new Date(start).toISOString()
   const endDate = new Date(end).toISOString()
 
-  const results = await requestRpcEachLimit(ctx, RPC_METHODS.TAIL_LOG_RANGE_AGGR, {
+  const results = await ctx.dataProxy.requestData(RPC_METHODS.TAIL_LOG_RANGE_AGGR, {
     keys: [{
       type: WORKER_TYPES.MINER,
       startDate,
@@ -200,7 +198,7 @@ function calculateEfficiencySummary (log) {
 async function getMinerStatus (ctx, req) {
   const { start, end } = validateStartEnd(req)
 
-  const results = await requestRpcEachLimit(ctx, RPC_METHODS.TAIL_LOG, {
+  const results = await ctx.dataProxy.requestData(RPC_METHODS.TAIL_LOG, {
     key: LOG_KEYS.STAT_3H,
     type: WORKER_TYPES.MINER,
     tag: WORKER_TAGS.MINER,
@@ -301,7 +299,7 @@ async function getPowerMode (ctx, req) {
     rpcPayload.groupRange = config.groupRange
   }
 
-  const results = await requestRpcEachLimit(ctx, RPC_METHODS.TAIL_LOG, rpcPayload)
+  const results = await ctx.dataProxy.requestData(RPC_METHODS.TAIL_LOG, rpcPayload)
 
   const timePoints = processPowerModeData(results, config.groupRange)
   const log = Object.keys(timePoints).sort().map(ts => ({
@@ -397,7 +395,7 @@ async function getPowerModeTimeline (ctx, req) {
     end
   }
 
-  const results = await requestRpcEachLimit(ctx, RPC_METHODS.TAIL_LOG, rpcPayload)
+  const results = await ctx.dataProxy.requestData(RPC_METHODS.TAIL_LOG, rpcPayload)
 
   const log = processPowerModeTimelineData(results, container)
 
@@ -480,7 +478,7 @@ async function getTemperature (ctx, req) {
     rpcPayload.groupRange = config.groupRange
   }
 
-  const results = await requestRpcEachLimit(ctx, RPC_METHODS.TAIL_LOG, rpcPayload)
+  const results = await ctx.dataProxy.requestData(RPC_METHODS.TAIL_LOG, rpcPayload)
 
   const timePoints = processTemperatureData(results, config.groupRange, container)
   const log = Object.keys(timePoints).sort().map(ts => ({
@@ -569,11 +567,11 @@ async function getContainerTelemetry (ctx, req) {
   const containerTag = `container-${containerId}`
 
   const [minersResults, sensorResults] = await Promise.all([
-    requestRpcMapAllPages(ctx, RPC_METHODS.LIST_THINGS, {
+    ctx.dataProxy.requestDataAllPages(RPC_METHODS.LIST_THINGS, {
       query: { tags: { $in: [containerTag] } },
       fields: DEVICE_LIST_FIELDS
     }),
-    requestRpcEachLimit(ctx, RPC_METHODS.TAIL_LOG, {
+    ctx.dataProxy.requestData(RPC_METHODS.TAIL_LOG, {
       key: LOG_KEYS.STAT_5M,
       type: WORKER_TYPES.CONTAINER,
       tag: WORKER_TAGS.CONTAINER,
@@ -644,7 +642,7 @@ async function getContainerHistory (ctx, req) {
     throw new Error('ERR_INVALID_DATE_RANGE')
   }
 
-  const results = await requestRpcEachLimit(ctx, RPC_METHODS.TAIL_LOG, {
+  const results = await ctx.dataProxy.requestData(RPC_METHODS.TAIL_LOG, {
     key: LOG_KEYS.STAT_5M,
     type: WORKER_TYPES.CONTAINER,
     tag: WORKER_TAGS.CONTAINER,

@@ -2,9 +2,10 @@
 
 const test = require('brittle')
 const { getSiteLiveStatus } = require('../../../workers/lib/server/handlers/site.handlers')
+const { withDataProxy } = require('../helpers/mockHelpers')
 
 function createMockCtx (tailLogMultiResponse, extDataResponse, globalConfigResponse) {
-  return {
+  return withDataProxy({
     conf: {
       orks: [{ rpcPublicKey: 'key1' }]
     },
@@ -16,7 +17,7 @@ function createMockCtx (tailLogMultiResponse, extDataResponse, globalConfigRespo
         return {}
       }
     }
-  }
+  })
 }
 
 test('getSiteLiveStatus - returns composed response with correct structure', async (t) => {

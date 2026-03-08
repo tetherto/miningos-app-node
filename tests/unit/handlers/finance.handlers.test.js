@@ -20,12 +20,13 @@ const {
   getRevenueSummary,
   calculateDetailedRevenueSummary
 } = require('../../../workers/lib/server/handlers/finance.handlers')
+const { withDataProxy } = require('../helpers/mockHelpers')
 
 // ==================== Energy Balance Tests ====================
 
 test('getEnergyBalance - happy path', async (t) => {
   const dayTs = 1700006400000
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: {
       orks: [{ rpcPublicKey: 'key1' }]
     },
@@ -57,7 +58,7 @@ test('getEnergyBalance - happy path', async (t) => {
     globalDataLib: {
       getGlobalData: async () => []
     }
-  }
+  })
 
   const mockReq = {
     query: { start: 1700000000000, end: 1700100000000, period: 'daily' }
@@ -71,11 +72,11 @@ test('getEnergyBalance - happy path', async (t) => {
 })
 
 test('getEnergyBalance - missing start throws', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [], site: 'test-site' },
     net_r0: { jRequest: async () => ({}) },
     globalDataLib: { getGlobalData: async () => [] }
-  }
+  })
 
   const mockReq = { query: { end: 1700100000000 } }
 
@@ -89,11 +90,11 @@ test('getEnergyBalance - missing start throws', async (t) => {
 })
 
 test('getEnergyBalance - missing end throws', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [], site: 'test-site' },
     net_r0: { jRequest: async () => ({}) },
     globalDataLib: { getGlobalData: async () => [] }
-  }
+  })
 
   const mockReq = { query: { start: 1700000000000 } }
 
@@ -107,11 +108,11 @@ test('getEnergyBalance - missing end throws', async (t) => {
 })
 
 test('getEnergyBalance - invalid range throws', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [], site: 'test-site' },
     net_r0: { jRequest: async () => ({}) },
     globalDataLib: { getGlobalData: async () => [] }
-  }
+  })
 
   const mockReq = { query: { start: 1700100000000, end: 1700000000000 } }
 
@@ -125,7 +126,7 @@ test('getEnergyBalance - invalid range throws', async (t) => {
 })
 
 test('getEnergyBalance - empty ork results', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: {
       orks: [{ rpcPublicKey: 'key1' }]
     },
@@ -139,7 +140,7 @@ test('getEnergyBalance - empty ork results', async (t) => {
         })
       })
     }
-  }
+  })
 
   const mockReq = {
     query: { start: 1700000000000, end: 1700100000000, period: 'daily' }
@@ -255,7 +256,7 @@ test('calculateSummary - handles empty log', (t) => {
 // ==================== EBITDA Tests ====================
 
 test('getEbitda - happy path', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: {
       orks: [{ rpcPublicKey: 'key1' }]
     },
@@ -281,7 +282,7 @@ test('getEbitda - happy path', async (t) => {
     globalDataLib: {
       getGlobalData: async () => []
     }
-  }
+  })
 
   const mockReq = {
     query: { start: 1700000000000, end: 1700100000000, period: 'daily' }
@@ -296,11 +297,11 @@ test('getEbitda - happy path', async (t) => {
 })
 
 test('getEbitda - missing start throws', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [] },
     net_r0: { jRequest: async () => ({}) },
     globalDataLib: { getGlobalData: async () => [] }
-  }
+  })
 
   try {
     await getEbitda(mockCtx, { query: { end: 1700100000000 } }, {})
@@ -312,11 +313,11 @@ test('getEbitda - missing start throws', async (t) => {
 })
 
 test('getEbitda - invalid range throws', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [] },
     net_r0: { jRequest: async () => ({}) },
     globalDataLib: { getGlobalData: async () => [] }
-  }
+  })
 
   try {
     await getEbitda(mockCtx, { query: { start: 1700100000000, end: 1700000000000 } }, {})
@@ -328,11 +329,11 @@ test('getEbitda - invalid range throws', async (t) => {
 })
 
 test('getEbitda - empty ork results', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
     net_r0: { jRequest: async () => ({}) },
     globalDataLib: { getGlobalData: async () => [] }
-  }
+  })
 
   const result = await getEbitda(mockCtx, { query: { start: 1700000000000, end: 1700100000000 } }, {})
   t.ok(result.log, 'should return log array')
@@ -393,7 +394,7 @@ test('calculateEbitdaSummary - handles empty log', (t) => {
 // ==================== Cost Summary Tests ====================
 
 test('getCostSummary - happy path', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: {
       orks: [{ rpcPublicKey: 'key1' }]
     },
@@ -411,7 +412,7 @@ test('getCostSummary - happy path', async (t) => {
     globalDataLib: {
       getGlobalData: async () => []
     }
-  }
+  })
 
   const mockReq = {
     query: { start: 1700000000000, end: 1700100000000, period: 'daily' }
@@ -425,11 +426,11 @@ test('getCostSummary - happy path', async (t) => {
 })
 
 test('getCostSummary - missing start throws', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [] },
     net_r0: { jRequest: async () => ({}) },
     globalDataLib: { getGlobalData: async () => [] }
-  }
+  })
 
   try {
     await getCostSummary(mockCtx, { query: { end: 1700100000000 } }, {})
@@ -441,11 +442,11 @@ test('getCostSummary - missing start throws', async (t) => {
 })
 
 test('getCostSummary - invalid range throws', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [] },
     net_r0: { jRequest: async () => ({}) },
     globalDataLib: { getGlobalData: async () => [] }
-  }
+  })
 
   try {
     await getCostSummary(mockCtx, { query: { start: 1700100000000, end: 1700000000000 } }, {})
@@ -457,11 +458,11 @@ test('getCostSummary - invalid range throws', async (t) => {
 })
 
 test('getCostSummary - empty ork results', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
     net_r0: { jRequest: async () => ({}) },
     globalDataLib: { getGlobalData: async () => [] }
-  }
+  })
 
   const result = await getCostSummary(mockCtx, { query: { start: 1700000000000, end: 1700100000000 } }, {})
   t.ok(result.log, 'should return log array')
@@ -495,7 +496,7 @@ test('calculateCostSummary - handles empty log', (t) => {
 // ==================== Subsidy Fees Tests ====================
 
 test('getSubsidyFees - happy path', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: {
       orks: [{ rpcPublicKey: 'key1' }]
     },
@@ -507,7 +508,7 @@ test('getSubsidyFees - happy path', async (t) => {
         return {}
       }
     }
-  }
+  })
 
   const mockReq = {
     query: { start: 1700000000000, end: 1700100000000, period: 'daily' }
@@ -521,10 +522,10 @@ test('getSubsidyFees - happy path', async (t) => {
 })
 
 test('getSubsidyFees - missing start throws', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [] },
     net_r0: { jRequest: async () => ({}) }
-  }
+  })
 
   try {
     await getSubsidyFees(mockCtx, { query: { end: 1700100000000 } }, {})
@@ -536,10 +537,10 @@ test('getSubsidyFees - missing start throws', async (t) => {
 })
 
 test('getSubsidyFees - invalid range throws', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [] },
     net_r0: { jRequest: async () => ({}) }
-  }
+  })
 
   try {
     await getSubsidyFees(mockCtx, { query: { start: 1700100000000, end: 1700000000000 } }, {})
@@ -551,10 +552,10 @@ test('getSubsidyFees - invalid range throws', async (t) => {
 })
 
 test('getSubsidyFees - empty ork results', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
     net_r0: { jRequest: async () => ({}) }
-  }
+  })
 
   const result = await getSubsidyFees(mockCtx, { query: { start: 1700000000000, end: 1700100000000 } }, {})
   t.ok(result.log, 'should return log array')
@@ -589,7 +590,7 @@ test('calculateSubsidyFeesSummary - handles empty log', (t) => {
 // ==================== Revenue Tests ====================
 
 test('getRevenue - happy path', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: {
       orks: [{ rpcPublicKey: 'key1' }]
     },
@@ -601,7 +602,7 @@ test('getRevenue - happy path', async (t) => {
         return {}
       }
     }
-  }
+  })
 
   const mockReq = {
     query: { start: 1700000000000, end: 1700100000000, period: 'daily' }
@@ -615,10 +616,10 @@ test('getRevenue - happy path', async (t) => {
 })
 
 test('getRevenue - missing start throws', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [] },
     net_r0: { jRequest: async () => ({}) }
-  }
+  })
 
   try {
     await getRevenue(mockCtx, { query: { end: 1700100000000 } }, {})
@@ -630,10 +631,10 @@ test('getRevenue - missing start throws', async (t) => {
 })
 
 test('getRevenue - invalid range throws', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [] },
     net_r0: { jRequest: async () => ({}) }
-  }
+  })
 
   try {
     await getRevenue(mockCtx, { query: { start: 1700100000000, end: 1700000000000 } }, {})
@@ -645,10 +646,10 @@ test('getRevenue - invalid range throws', async (t) => {
 })
 
 test('getRevenue - empty ork results', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
     net_r0: { jRequest: async () => ({}) }
-  }
+  })
 
   const result = await getRevenue(mockCtx, { query: { start: 1700000000000, end: 1700100000000 } }, {})
   t.ok(result.log, 'should return log array')
@@ -658,7 +659,7 @@ test('getRevenue - empty ork results', async (t) => {
 
 test('getRevenue - pool filter', async (t) => {
   let capturedPayload = null
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: {
       orks: [{ rpcPublicKey: 'key1' }]
     },
@@ -668,7 +669,7 @@ test('getRevenue - pool filter', async (t) => {
         return [{ transactions: [{ ts: 1700006400000, changed_balance: 0.5 }] }]
       }
     }
-  }
+  })
 
   const mockReq = {
     query: { start: 1700000000000, end: 1700100000000, pool: 'f2pool' }
@@ -704,7 +705,7 @@ test('calculateRevenueSummary - handles empty log', (t) => {
 
 test('getRevenueSummary - happy path', async (t) => {
   const dayTs = 1700006400000
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: {
       orks: [{ rpcPublicKey: 'key1' }]
     },
@@ -739,7 +740,7 @@ test('getRevenueSummary - happy path', async (t) => {
     globalDataLib: {
       getGlobalData: async () => []
     }
-  }
+  })
 
   const mockReq = {
     query: { start: 1700000000000, end: 1700100000000, period: 'daily' }
@@ -763,11 +764,11 @@ test('getRevenueSummary - happy path', async (t) => {
 })
 
 test('getRevenueSummary - missing start throws', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [] },
     net_r0: { jRequest: async () => ({}) },
     globalDataLib: { getGlobalData: async () => [] }
-  }
+  })
 
   try {
     await getRevenueSummary(mockCtx, { query: { end: 1700100000000 } }, {})
@@ -779,11 +780,11 @@ test('getRevenueSummary - missing start throws', async (t) => {
 })
 
 test('getRevenueSummary - invalid range throws', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [] },
     net_r0: { jRequest: async () => ({}) },
     globalDataLib: { getGlobalData: async () => [] }
-  }
+  })
 
   try {
     await getRevenueSummary(mockCtx, { query: { start: 1700100000000, end: 1700000000000 } }, {})
@@ -795,11 +796,11 @@ test('getRevenueSummary - invalid range throws', async (t) => {
 })
 
 test('getRevenueSummary - empty ork results', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
     net_r0: { jRequest: async () => ({}) },
     globalDataLib: { getGlobalData: async () => [] }
-  }
+  })
 
   const result = await getRevenueSummary(mockCtx, { query: { start: 1700000000000, end: 1700100000000 } }, {})
   t.ok(result.log, 'should return log array')

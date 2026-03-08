@@ -9,7 +9,6 @@ const {
   GLOBAL_DATA_TYPES
 } = require('../../constants')
 const {
-  requestRpcEachLimit,
   getStartOfDay,
   safeDiv,
   runParallel
@@ -42,7 +41,7 @@ async function getEnergyBalance (ctx, req) {
     uteEnergyResults,
     globalConfigResults
   ] = await runParallel([
-    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.TAIL_LOG_RANGE_AGGR, {
+    (cb) => ctx.dataProxy.requestData(RPC_METHODS.TAIL_LOG_RANGE_AGGR, {
       keys: [{
         type: WORKER_TYPES.POWERMETER,
         startDate,
@@ -52,17 +51,17 @@ async function getEnergyBalance (ctx, req) {
       }]
     }).then(r => cb(null, r)).catch(cb),
 
-    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+    (cb) => ctx.dataProxy.requestData(RPC_METHODS.GET_WRK_EXT_DATA, {
       type: WORKER_TYPES.MINERPOOL,
       query: { key: MINERPOOL_EXT_DATA_KEYS.TRANSACTIONS, start, end }
     }).then(r => cb(null, r)).catch(cb),
 
-    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+    (cb) => ctx.dataProxy.requestData(RPC_METHODS.GET_WRK_EXT_DATA, {
       type: WORKER_TYPES.MEMPOOL,
       query: { key: 'HISTORICAL_PRICES', start, end }
     }).then(r => cb(null, r)).catch(cb),
 
-    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+    (cb) => ctx.dataProxy.requestData(RPC_METHODS.GET_WRK_EXT_DATA, {
       type: WORKER_TYPES.MEMPOOL,
       query: { key: 'current_price' }
     }).then(r => cb(null, r)).catch(cb),
@@ -70,17 +69,17 @@ async function getEnergyBalance (ctx, req) {
     (cb) => getProductionCosts(ctx, start, end)
       .then(r => cb(null, r)).catch(cb),
 
-    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+    (cb) => ctx.dataProxy.requestData(RPC_METHODS.GET_WRK_EXT_DATA, {
       type: WORKER_TYPES.ELECTRICITY,
       query: { key: 'stats-history', start, end, groupRange: '1D' }
     }).then(r => cb(null, r)).catch(cb),
 
-    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+    (cb) => ctx.dataProxy.requestData(RPC_METHODS.GET_WRK_EXT_DATA, {
       type: WORKER_TYPES.ELECTRICITY,
       query: { key: 'stats-history', start, end, groupRange: '1D' }
     }).then(r => cb(null, r)).catch(cb),
 
-    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GLOBAL_CONFIG, {})
+    (cb) => ctx.dataProxy.requestData(RPC_METHODS.GLOBAL_CONFIG, {})
       .then(r => cb(null, r)).catch(cb)
   ])
 
@@ -320,12 +319,12 @@ async function getEbitda (ctx, req) {
   const endDate = new Date(end).toISOString()
 
   const [transactionResults, tailLogResults, priceResults, currentPriceResults, productionCosts] = await runParallel([
-    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+    (cb) => ctx.dataProxy.requestData(RPC_METHODS.GET_WRK_EXT_DATA, {
       type: WORKER_TYPES.MINERPOOL,
       query: { key: MINERPOOL_EXT_DATA_KEYS.TRANSACTIONS, start, end }
     }).then(r => cb(null, r)).catch(cb),
 
-    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.TAIL_LOG_RANGE_AGGR, {
+    (cb) => ctx.dataProxy.requestData(RPC_METHODS.TAIL_LOG_RANGE_AGGR, {
       keys: [
         {
           type: WORKER_TYPES.POWERMETER,
@@ -344,12 +343,12 @@ async function getEbitda (ctx, req) {
       ]
     }).then(r => cb(null, r)).catch(cb),
 
-    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+    (cb) => ctx.dataProxy.requestData(RPC_METHODS.GET_WRK_EXT_DATA, {
       type: WORKER_TYPES.MEMPOOL,
       query: { key: 'prices', start, end }
     }).then(r => cb(null, r)).catch(cb),
 
-    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+    (cb) => ctx.dataProxy.requestData(RPC_METHODS.GET_WRK_EXT_DATA, {
       type: WORKER_TYPES.MEMPOOL,
       query: { key: 'current_price' }
     }).then(r => cb(null, r)).catch(cb),
@@ -521,12 +520,12 @@ async function getCostSummary (ctx, req) {
     (cb) => getProductionCosts(ctx, start, end)
       .then(r => cb(null, r)).catch(cb),
 
-    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+    (cb) => ctx.dataProxy.requestData(RPC_METHODS.GET_WRK_EXT_DATA, {
       type: WORKER_TYPES.MEMPOOL,
       query: { key: 'prices', start, end }
     }).then(r => cb(null, r)).catch(cb),
 
-    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.TAIL_LOG_RANGE_AGGR, {
+    (cb) => ctx.dataProxy.requestData(RPC_METHODS.TAIL_LOG_RANGE_AGGR, {
       keys: [{
         type: WORKER_TYPES.POWERMETER,
         startDate,
@@ -619,7 +618,7 @@ async function getSubsidyFees (ctx, req) {
   const { start, end } = validateStartEnd(req)
   const period = req.query.period || PERIOD_TYPES.DAILY
 
-  const blockResults = await requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+  const blockResults = await ctx.dataProxy.requestData(RPC_METHODS.GET_WRK_EXT_DATA, {
     type: WORKER_TYPES.MEMPOOL,
     query: { key: 'HISTORICAL_BLOCKSIZES', start, end }
   })
@@ -677,7 +676,7 @@ async function getRevenue (ctx, req) {
   const type = pool ? WORKER_TYPES.MINERPOOL + '-' + pool : WORKER_TYPES.MINERPOOL
   const query = { key: MINERPOOL_EXT_DATA_KEYS.TRANSACTIONS, start, end }
 
-  const transactionResults = await requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+  const transactionResults = await ctx.dataProxy.requestData(RPC_METHODS.GET_WRK_EXT_DATA, {
     type,
     query
   })
@@ -747,22 +746,22 @@ async function getRevenueSummary (ctx, req) {
     uteEnergyResults,
     globalConfigResults
   ] = await runParallel([
-    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+    (cb) => ctx.dataProxy.requestData(RPC_METHODS.GET_WRK_EXT_DATA, {
       type: WORKER_TYPES.MINERPOOL,
       query: { key: MINERPOOL_EXT_DATA_KEYS.TRANSACTIONS, start, end }
     }).then(r => cb(null, r)).catch(cb),
 
-    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+    (cb) => ctx.dataProxy.requestData(RPC_METHODS.GET_WRK_EXT_DATA, {
       type: WORKER_TYPES.MEMPOOL,
       query: { key: 'HISTORICAL_PRICES', start, end }
     }).then(r => cb(null, r)).catch(cb),
 
-    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+    (cb) => ctx.dataProxy.requestData(RPC_METHODS.GET_WRK_EXT_DATA, {
       type: WORKER_TYPES.MEMPOOL,
       query: { key: 'current_price' }
     }).then(r => cb(null, r)).catch(cb),
 
-    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.TAIL_LOG_RANGE_AGGR, {
+    (cb) => ctx.dataProxy.requestData(RPC_METHODS.TAIL_LOG_RANGE_AGGR, {
       keys: [
         {
           type: WORKER_TYPES.POWERMETER,
@@ -784,22 +783,22 @@ async function getRevenueSummary (ctx, req) {
     (cb) => getProductionCosts(ctx, start, end)
       .then(r => cb(null, r)).catch(cb),
 
-    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+    (cb) => ctx.dataProxy.requestData(RPC_METHODS.GET_WRK_EXT_DATA, {
       type: WORKER_TYPES.MEMPOOL,
       query: { key: 'HISTORICAL_BLOCKSIZES', start, end }
     }).then(r => cb(null, r)).catch(cb),
 
-    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+    (cb) => ctx.dataProxy.requestData(RPC_METHODS.GET_WRK_EXT_DATA, {
       type: WORKER_TYPES.ELECTRICITY,
       query: { key: 'stats-history', start, end, groupRange: '1D' }
     }).then(r => cb(null, r)).catch(cb),
 
-    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+    (cb) => ctx.dataProxy.requestData(RPC_METHODS.GET_WRK_EXT_DATA, {
       type: WORKER_TYPES.ELECTRICITY,
       query: { key: 'stats-history', start, end, groupRange: '1D' }
     }).then(r => cb(null, r)).catch(cb),
 
-    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GLOBAL_CONFIG, {})
+    (cb) => ctx.dataProxy.requestData(RPC_METHODS.GLOBAL_CONFIG, {})
       .then(r => cb(null, r)).catch(cb)
   ])
 
