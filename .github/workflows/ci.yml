@@ -196,10 +196,14 @@ jobs:
             mkdir -p .nyc_output
             cp coverage/coverage-final.json .nyc_output/out.json
             set +e
+            echo "Running nyc check-coverage (threshold ${MIN}%)..."
             npx --yes nyc check-coverage --lines=$MIN --statements=$MIN --functions=$MIN --branches=$MIN
             EXIT=$?
             set -e
-            PCT=$(npx --yes nyc report --reporter=text-summary 2>/dev/null | sed -n 's/^Lines[^:]*: *\([0-9.]*\)%.*/\1/p')
+            echo "Running nyc report (text-summary)..."
+            NYC_REPORT=$(npx --yes nyc report --reporter=text-summary 2>&1)
+            echo "$NYC_REPORT"
+            PCT=$(echo "$NYC_REPORT" | sed -n 's/^Lines[^:]*: *\([0-9.]*\)%.*/\1/p')
             [ -z "$PCT" ] && PCT="—"
             [ $EXIT -eq 0 ] && ICON="✅" || ICON="❌"
             echo "coverage_result=$ICON Coverage ${PCT}% (min ${MIN}%)" >> "$GITHUB_OUTPUT"
