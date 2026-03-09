@@ -142,6 +142,10 @@ const ENDPOINTS = {
   // Generic Config endpoints (type passed as parameter)
   // Note: Config mutations (register, update, delete) go through pushAction endpoint
   CONFIGS: '/auth/configs/:type',
+  // Device listing endpoints
+  CONTAINERS: '/auth/containers',
+  CABINETS: '/auth/cabinets',
+  CABINET_BY_ID: '/auth/cabinets/:id',
 
   // Metrics endpoints
   METRICS_HASHRATE: '/auth/metrics/hashrate',
@@ -296,7 +300,9 @@ const LOG_KEYS = {
 
 const WORKER_TAGS = {
   MINER: 't-miner',
-  CONTAINER: 't-container'
+  CONTAINER: 't-container',
+  POWERMETER: 't-powermeter',
+  TEMP_SENSOR: 't-sensor-temp'
 }
 
 const DEVICE_LIST_FIELDS = {

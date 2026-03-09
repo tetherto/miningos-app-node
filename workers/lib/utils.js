@@ -170,6 +170,28 @@ const runParallel = (tasks) =>
     })
   })
 
+const flattenRpcResults = (results) => {
+  const items = []
+  const seen = new Set()
+  if (!Array.isArray(results)) return items
+
+  for (const orkResult of results) {
+    if (!orkResult || orkResult.error) continue
+    const data = Array.isArray(orkResult) ? orkResult : (orkResult.data || orkResult.result || [])
+    if (!Array.isArray(data)) continue
+
+    for (const item of data) {
+      if (!item) continue
+      const id = item.id || item._id
+      if (id && seen.has(id)) continue
+      if (id) seen.add(id)
+      items.push(item)
+    }
+  }
+
+  return items
+}
+
 const safeDiv = (numerator, denominator) =>
   typeof numerator === 'number' &&
     typeof denominator === 'number' &&
@@ -218,6 +240,7 @@ module.exports = {
   requestRpcMapLimit,
   requestRpcMapAllPages,
   getStartOfDay,
+  flattenRpcResults,
   safeDiv,
   runParallel,
   deduplicateAlerts,
