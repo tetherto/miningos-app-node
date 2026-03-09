@@ -4,8 +4,6 @@ const {
   LIST_THINGS,
   WORKER_TYPES,
   POOL_ALERT_TYPES,
-  APPLY_THINGS,
-  POWER_MODES,
   RPC_METHODS,
   MINERPOOL_EXT_DATA_KEYS
 } = require('../../constants')
@@ -169,143 +167,6 @@ const getPoolAlerts = async (ctx, filters = {}) => {
   return alerts.slice(0, limit)
 }
 
-const assignPoolToMiners = async (ctx, minerIds, auditInfo = {}) => {
-  if (!Array.isArray(minerIds) || minerIds.length === 0) {
-    throw new Error('ERR_MINER_IDS_REQUIRED')
-  }
-
-  if (ctx.logger && auditInfo.user) {
-    ctx.logger.info({
-      action: 'pool_assignment',
-      user: auditInfo.user,
-      timestamp: auditInfo.timestamp,
-      minerCount: minerIds.length
-    }, 'Pool setup initiated')
-  }
-
-  const params = {
-    type: WORKER_TYPES.MINER,
-    query: {
-      id: { $in: minerIds }
-    },
-    action: 'setupPools'
-  }
-
-  const results = await ctx.dataProxy.requestData(APPLY_THINGS, params)
-
-  let assigned = 0
-  let failed = 0
-  const details = []
-
-  results.forEach((clusterResult) => {
-    if (clusterResult?.success) {
-      assigned += clusterResult.affected || 0
-    } else {
-      failed++
-    }
-
-    if (clusterResult?.details) {
-      details.push(...clusterResult.details)
-    }
-  })
-
-  if (ctx.logger && auditInfo.user) {
-    ctx.logger.info({
-      action: 'pool_assignment_complete',
-      user: auditInfo.user,
-      timestamp: Date.now(),
-      assigned,
-      failed,
-      total: minerIds.length
-    }, 'Pool assignment completed')
-  }
-
-  return {
-    success: failed === 0,
-    assigned,
-    failed,
-    total: minerIds.length,
-    details,
-    audit: {
-      user: auditInfo.user,
-      timestamp: auditInfo.timestamp
-    }
-  }
-}
-
-const setPowerMode = async (ctx, minerIds, mode, auditInfo = {}) => {
-  if (!Array.isArray(minerIds) || minerIds.length === 0) {
-    throw new Error('ERR_MINER_IDS_REQUIRED')
-  }
-
-  const validModes = Object.values(POWER_MODES)
-  if (!mode || !validModes.includes(mode)) {
-    throw new Error('ERR_INVALID_POWER_MODE')
-  }
-
-  if (ctx.logger && auditInfo.user) {
-    ctx.logger.info({
-      action: 'set_power_mode',
-      user: auditInfo.user,
-      timestamp: auditInfo.timestamp,
-      minerCount: minerIds.length,
-      mode
-    }, 'Power mode change initiated')
-  }
-
-  const params = {
-    type: WORKER_TYPES.MINER,
-    query: {
-      id: { $in: minerIds }
-    },
-    action: 'setPowerMode',
-    params: { mode }
-  }
-
-  const results = await ctx.dataProxy.requestData(APPLY_THINGS, params)
-
-  let affected = 0
-  let failed = 0
-  const details = []
-
-  results.forEach((clusterResult) => {
-    if (clusterResult?.success) {
-      affected += clusterResult.affected || 0
-    } else {
-      failed++
-    }
-
-    if (clusterResult?.details) {
-      details.push(...clusterResult.details)
-    }
-  })
-
-  if (ctx.logger && auditInfo.user) {
-    ctx.logger.info({
-      action: 'set_power_mode_complete',
-      user: auditInfo.user,
-      timestamp: Date.now(),
-      affected,
-      failed,
-      total: minerIds.length,
-      mode
-    }, 'Power mode change completed')
-  }
-
-  return {
-    success: failed === 0,
-    affected,
-    failed,
-    total: minerIds.length,
-    mode,
-    details,
-    audit: {
-      user: auditInfo.user,
-      timestamp: auditInfo.timestamp
-    }
-  }
-}
-
 async function _fetchPoolStats (ctx) {
   const results = await ctx.dataProxy.requestDataMap(RPC_METHODS.GET_WRK_EXT_DATA, {
     type: 'minerpool',
@@ -398,7 +259,5 @@ module.exports = {
   getPoolConfigs,
   getMinersWithPools,
   getUnitsWithPoolData,
-  getPoolAlerts,
-  assignPoolToMiners,
-  setPowerMode
+  getPoolAlerts
 }

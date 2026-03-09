@@ -50,74 +50,10 @@ const getAlerts = async (ctx, req) => {
   }
 }
 
-const assignPool = async (ctx, req) => {
-  const { write } = await ctx.authLib.getTokenPerms(req._info.authToken)
-  if (!write) {
-    throw new Error('ERR_WRITE_PERM_REQUIRED')
-  }
-
-  const hasPoolManagerPerm = await ctx.authLib.tokenHasPerms(
-    req._info.authToken,
-    true,
-    ['pool_manager:rw']
-  )
-  if (!hasPoolManagerPerm) {
-    throw new Error('ERR_POOL_MANAGER_PERM_REQUIRED')
-  }
-
-  const { minerIds } = req.body
-
-  if (!minerIds || !Array.isArray(minerIds) || minerIds.length === 0) {
-    throw new Error('ERR_MINER_IDS_REQUIRED')
-  }
-
-  const auditInfo = {
-    user: req._info.user?.metadata?.email || 'unknown',
-    timestamp: Date.now()
-  }
-
-  return poolManagerService.assignPoolToMiners(ctx, minerIds, auditInfo)
-}
-
-const setPowerMode = async (ctx, req) => {
-  const { write } = await ctx.authLib.getTokenPerms(req._info.authToken)
-  if (!write) {
-    throw new Error('ERR_WRITE_PERM_REQUIRED')
-  }
-
-  const hasPoolManagerPerm = await ctx.authLib.tokenHasPerms(
-    req._info.authToken,
-    true,
-    ['pool_manager:rw']
-  )
-  if (!hasPoolManagerPerm) {
-    throw new Error('ERR_POOL_MANAGER_PERM_REQUIRED')
-  }
-
-  const { minerIds, mode } = req.body
-
-  if (!minerIds || !Array.isArray(minerIds) || minerIds.length === 0) {
-    throw new Error('ERR_MINER_IDS_REQUIRED')
-  }
-
-  if (!mode) {
-    throw new Error('ERR_POWER_MODE_REQUIRED')
-  }
-
-  const auditInfo = {
-    user: req._info.user?.metadata?.email || 'unknown',
-    timestamp: Date.now()
-  }
-
-  return poolManagerService.setPowerMode(ctx, minerIds, mode, auditInfo)
-}
-
 module.exports = {
   getStats,
   getPools,
   getMiners,
   getUnits,
-  getAlerts,
-  assignPool,
-  setPowerMode
+  getAlerts
 }

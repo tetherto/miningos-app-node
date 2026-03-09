@@ -37,7 +37,9 @@ const AUTH_PERMISSIONS = {
   REPORTING: 'reporting',
   SETTINGS: 'settings',
   TICKETS: 'tickets',
-  POWER_SPOT_FORECAST: 'power_spot_forecast'
+  POWER_SPOT_FORECAST: 'power_spot_forecast',
+  POOL_CONFIG: 'pool_config',
+  POOL_CONFIG_APPROVE: 'pool_config_approve'
 }
 
 const AUTH_LEVELS = {
@@ -132,11 +134,11 @@ const ENDPOINTS = {
   POOL_MANAGER_MINERS: '/auth/pool-manager/miners',
   POOL_MANAGER_UNITS: '/auth/pool-manager/units',
   POOL_MANAGER_ALERTS: '/auth/pool-manager/alerts',
-  POOL_MANAGER_ASSIGN: '/auth/pool-manager/miners/assign',
-  POOL_MANAGER_POWER_MODE: '/auth/pool-manager/miners/power-mode',
-
   SITE_STATUS_LIVE: '/auth/site/status/live',
 
+  // Generic Config endpoints (type passed as parameter)
+  // Note: Config mutations (register, update, delete) go through pushAction endpoint
+  CONFIGS: '/auth/configs/:type',
   // Device listing endpoints
   CONTAINERS: '/auth/containers',
   CABINETS: '/auth/cabinets',
@@ -201,7 +203,6 @@ const STATUS_CODES = {
 }
 
 const LIST_THINGS = 'listThings'
-const APPLY_THINGS = 'applyThings'
 const GET_HISTORICAL_LOGS = 'getHistoricalLogs'
 
 const RPC_METHODS = {
@@ -210,7 +211,8 @@ const RPC_METHODS = {
   LIST_THINGS: 'listThings',
   GET_HISTORICAL_LOGS: 'getHistoricalLogs',
   TAIL_LOG: 'tailLog',
-  GLOBAL_CONFIG: 'getGlobalConfig'
+  GLOBAL_CONFIG: 'getGlobalConfig',
+  GET_CONFIGS: 'getConfigs'
 }
 
 const WORKER_TYPES = {
@@ -254,13 +256,6 @@ const MINER_POOL_STATUS = {
   ONLINE: 'online',
   OFFLINE: 'offline',
   INACTIVE: 'inactive'
-}
-
-const POWER_MODES = {
-  LOW: 'low',
-  NORMAL: 'normal',
-  HIGH: 'high',
-  SLEEP: 'sleep'
 }
 
 const METRICS_TIME = {
@@ -354,6 +349,11 @@ const RPC_TIMEOUT = 15000
 const RPC_CONCURRENCY_LIMIT = 2
 const RPC_PAGE_LIMIT = 100
 
+// Allowed config types for generic config CRUD
+const CONFIG_TYPES = {
+  POOL: 'pool'
+}
+
 module.exports = {
   SUPER_ADMIN_ROLE,
   GLOBAL_DATA_TYPES,
@@ -373,20 +373,19 @@ module.exports = {
   RPC_PAGE_LIMIT,
   USER_SETTINGS_TYPE,
   LIST_THINGS,
-  APPLY_THINGS,
   GET_HISTORICAL_LOGS,
   RPC_METHODS,
   WORKER_TYPES,
   CACHE_KEYS,
   POOL_ALERT_TYPES,
   MINER_POOL_STATUS,
-  POWER_MODES,
   AGGR_FIELDS,
   PERIOD_TYPES,
   MINERPOOL_EXT_DATA_KEYS,
   NON_METRIC_KEYS,
   BTC_SATS,
   RANGE_BUCKETS,
+  CONFIG_TYPES,
   METRICS_TIME,
   METRICS_DEFAULTS,
   MINER_CATEGORIES,

@@ -133,9 +133,6 @@ test('Pool Manager API', { timeout: 90000 }, async (main) => {
       if (method === 'listThings') {
         return Promise.resolve(mockMiners)
       }
-      if (method === 'applyThings') {
-        return Promise.resolve({ success: true, affected: params.query?.id?.$in?.length || 0 })
-      }
       if (method === 'getWrkExtData') {
         return Promise.resolve([{
           stats: [
@@ -347,31 +344,4 @@ test('Pool Manager API', { timeout: 90000 }, async (main) => {
     })
   })
 
-  await main.test('Api: auth/pool-manager/miners/assign', async (n) => {
-    const api = `${appNodeBaseUrl}/auth/pool-manager/miners/assign?${baseParams}`
-    const body = {
-      minerIds: ['miner-001', 'miner-002']
-    }
-
-    await n.test('api should fail for missing auth token', async (t) => {
-      try {
-        await httpClient.post(api, { body, encoding })
-        t.fail()
-      } catch (e) {
-        t.is(e.response.message.includes('ERR_AUTH_FAIL'), true)
-      }
-    })
-
-    await n.test('api should fail without pool_manager permission', async (t) => {
-      const token = await getTestToken(testUser)
-      const headers = { Authorization: `Bearer ${token}` }
-      try {
-        await httpClient.post(api, { body, headers, encoding })
-        t.fail()
-      } catch (e) {
-        t.is(e.response.message.includes('ERR_POOL_MANAGER_PERM_REQUIRED'), true)
-        t.pass()
-      }
-    })
-  })
 })
