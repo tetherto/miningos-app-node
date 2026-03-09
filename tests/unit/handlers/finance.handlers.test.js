@@ -18,7 +18,11 @@ const {
   getRevenue,
   calculateRevenueSummary,
   getRevenueSummary,
-  calculateDetailedRevenueSummary
+  calculateDetailedRevenueSummary,
+  getHashRevenue,
+  processHashrateData,
+  processNetworkHashrateData,
+  calculateHashRevenueSummary
 } = require('../../../workers/lib/server/handlers/finance.handlers')
 
 // ==================== Energy Balance Tests ====================
@@ -860,5 +864,222 @@ test('calculateDetailedRevenueSummary - handles empty log', (t) => {
   t.is(summary.totalFeesBTC, 0, 'should be zero')
   t.is(summary.avgCostPerMWh, null, 'should be null')
   t.is(summary.currentBtcPrice, 42000, 'should include current price')
+  t.pass()
+})
+
+// ==================== Hash Revenue Tests ====================
+
+test('getHashRevenue - happy path', async (t) => {
+  const dayTs = 1700006400000
+  const mockCtx = {
+    conf: {
+      orks: [{ rpcPublicKey: 'key1' }]
+    },
+    net_r0: {
+      jRequest: async (key, method, payload) => {
+        if (method === 'tailLogCustomRangeAggr') {
+          return [{ data: { [dayTs]: { hashrate_mhs_5m_sum_aggr: 500000000 } } }]
+        }
+        if (method === 'getWrkExtData') {
+          if (payload.query && payload.query.key === 'transactions') {
+            return [{ transactions: [{ ts: dayTs, changed_balance: 0.5, mining_extra: { tx_fee: 0.001 } }] }]
+          }
+          if (payload.query && payload.query.key === 'prices') {
+            return [{ prices: [{ ts: dayTs, price: 40000 }] }]
+          }
+          if (payload.query && payload.query.key === 'current_price') {
+            return [{ currentPrice: 40000 }]
+          }
+          if (payload.query && payload.query.key === 'HISTORICAL_HASHRATE') {
+            return [{ data: [{ ts: dayTs, avgHashrateMHs: 500000000000000 }] }]
+          }
+        }
+        return {}
+      }
+    }
+  }
+
+  const mockReq = {
+    query: { start: 1700000000000, end: 1700100000000, period: 'daily' }
+  }
+
+  const result = await getHashRevenue(mockCtx, mockReq, {})
+  t.ok(result.log, 'should return log array')
+  t.ok(result.summary, 'should return summary')
+  t.ok(Array.isArray(result.log), 'log should be array')
+  if (result.log.length > 0) {
+    const entry = result.log[0]
+    t.ok(entry.revenueBTC !== undefined, 'entry should have revenueBTC')
+    t.ok(entry.feesBTC !== undefined, 'entry should have feesBTC')
+    t.ok(entry.revenueUSD !== undefined, 'entry should have revenueUSD')
+    t.ok(entry.hashRevenueBTCPerPHsPerDay !== undefined, 'entry should have hashRevenueBTCPerPHsPerDay')
+    t.ok(entry.hashRevenueUSDPerPHsPerDay !== undefined, 'entry should have hashRevenueUSDPerPHsPerDay')
+    t.ok(entry.hashCostBTCPerPHsPerDay !== undefined, 'entry should have hashCostBTCPerPHsPerDay')
+    t.ok(entry.hashCostUSDPerPHsPerDay !== undefined, 'entry should have hashCostUSDPerPHsPerDay')
+    t.ok(entry.networkHashPriceBTCPerPHsPerDay !== undefined, 'entry should have networkHashPriceBTCPerPHsPerDay')
+    t.ok(entry.networkHashPriceUSDPerPHsPerDay !== undefined, 'entry should have networkHashPriceUSDPerPHsPerDay')
+    t.ok(entry.networkHashrateMhs !== undefined, 'entry should have networkHashrateMhs')
+  }
+  t.pass()
+})
+
+test('getHashRevenue - missing start throws', async (t) => {
+  const mockCtx = {
+    conf: { orks: [] },
+    net_r0: { jRequest: async () => ({}) }
+  }
+
+  try {
+    await getHashRevenue(mockCtx, { query: { end: 1700100000000 } }, {})
+    t.fail('should have thrown')
+  } catch (err) {
+    t.is(err.message, 'ERR_MISSING_START_END', 'should throw missing start/end error')
+  }
+  t.pass()
+})
+
+test('getHashRevenue - invalid range throws', async (t) => {
+  const mockCtx = {
+    conf: { orks: [] },
+    net_r0: { jRequest: async () => ({}) }
+  }
+
+  try {
+    await getHashRevenue(mockCtx, { query: { start: 1700100000000, end: 1700000000000 } }, {})
+    t.fail('should have thrown')
+  } catch (err) {
+    t.is(err.message, 'ERR_INVALID_DATE_RANGE', 'should throw invalid range error')
+  }
+  t.pass()
+})
+
+test('getHashRevenue - empty ork results', async (t) => {
+  const mockCtx = {
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: { jRequest: async () => ({}) }
+  }
+
+  const result = await getHashRevenue(mockCtx, { query: { start: 1700000000000, end: 1700100000000 } }, {})
+  t.ok(result.log, 'should return log array')
+  t.is(result.log.length, 0, 'log should be empty')
+  t.pass()
+})
+
+test('processHashrateData - processes object-keyed data', (t) => {
+  const results = [
+    [{ data: { 1700006400000: { hashrate_mhs_5m_sum_aggr: 500000 } } }]
+  ]
+
+  const daily = processHashrateData(results)
+  t.ok(typeof daily === 'object', 'should return object')
+  t.ok(Object.keys(daily).length > 0, 'should have entries')
+  const key = Object.keys(daily)[0]
+  t.is(daily[key], 500000, 'should extract hashrate from val')
+  t.pass()
+})
+
+test('processHashrateData - processes array data', (t) => {
+  const results = [
+    [{ data: [{ ts: 1700006400000, hashrate_mhs_5m_sum_aggr: 500000 }] }]
+  ]
+
+  const daily = processHashrateData(results)
+  t.ok(typeof daily === 'object', 'should return object')
+  t.ok(Object.keys(daily).length > 0, 'should have entries')
+  t.pass()
+})
+
+test('processHashrateData - handles error results', (t) => {
+  const results = [{ error: 'timeout' }]
+  const daily = processHashrateData(results)
+  t.is(Object.keys(daily).length, 0, 'should be empty for errors')
+  t.pass()
+})
+
+test('processNetworkHashrateData - processes array data', (t) => {
+  const results = [
+    [{ data: [{ ts: 1700006400000, avgHashrateMHs: 500000000000000 }] }]
+  ]
+
+  const daily = processNetworkHashrateData(results)
+  t.ok(typeof daily === 'object', 'should return object')
+  t.ok(Object.keys(daily).length > 0, 'should have entries')
+  const key = Object.keys(daily)[0]
+  t.is(daily[key], 500000000000000, 'should extract avgHashrateMHs')
+  t.pass()
+})
+
+test('processNetworkHashrateData - processes object-keyed data', (t) => {
+  const results = [
+    [{ data: { 1700006400000: { avgHashrateMHs: 500000000000000 } } }]
+  ]
+
+  const daily = processNetworkHashrateData(results)
+  t.ok(typeof daily === 'object', 'should return object')
+  t.ok(Object.keys(daily).length > 0, 'should have entries')
+  t.pass()
+})
+
+test('processNetworkHashrateData - handles error results', (t) => {
+  const results = [{ error: 'timeout' }]
+  const daily = processNetworkHashrateData(results)
+  t.is(Object.keys(daily).length, 0, 'should be empty for errors')
+  t.pass()
+})
+
+test('calculateHashRevenueSummary - calculates from log entries', (t) => {
+  const log = [
+    {
+      revenueBTC: 0.5,
+      revenueUSD: 20000,
+      feesBTC: 0.01,
+      feesUSD: 400,
+      hashRevenueBTCPerPHsPerDay: 0.001,
+      hashRevenueUSDPerPHsPerDay: 40,
+      hashCostBTCPerPHsPerDay: 0.00002,
+      hashCostUSDPerPHsPerDay: 0.8,
+      networkHashPriceBTCPerPHsPerDay: 0.0005,
+      networkHashPriceUSDPerPHsPerDay: 20
+    },
+    {
+      revenueBTC: 0.3,
+      revenueUSD: 12600,
+      feesBTC: 0.005,
+      feesUSD: 210,
+      hashRevenueBTCPerPHsPerDay: 0.0008,
+      hashRevenueUSDPerPHsPerDay: 33.6,
+      hashCostBTCPerPHsPerDay: 0.00001,
+      hashCostUSDPerPHsPerDay: 0.42,
+      networkHashPriceBTCPerPHsPerDay: 0.0004,
+      networkHashPriceUSDPerPHsPerDay: 16.8
+    }
+  ]
+
+  const summary = calculateHashRevenueSummary(log)
+  t.is(summary.totalRevenueBTC, 0.8, 'should sum BTC revenue')
+  t.is(summary.totalRevenueUSD, 32600, 'should sum USD revenue')
+  t.is(summary.totalFeesBTC, 0.015, 'should sum fees BTC')
+  t.is(summary.totalFeesUSD, 610, 'should sum fees USD')
+  t.ok(summary.avgHashRevenueBTCPerPHsPerDay !== null, 'should calculate avg hash revenue BTC')
+  t.ok(summary.avgHashRevenueUSDPerPHsPerDay !== null, 'should calculate avg hash revenue USD')
+  t.ok(summary.avgHashCostBTCPerPHsPerDay !== null, 'should calculate avg hash cost BTC')
+  t.ok(summary.avgHashCostUSDPerPHsPerDay !== null, 'should calculate avg hash cost USD')
+  t.ok(summary.avgNetworkHashPriceBTCPerPHsPerDay !== null, 'should calculate avg network hash price BTC')
+  t.ok(summary.avgNetworkHashPriceUSDPerPHsPerDay !== null, 'should calculate avg network hash price USD')
+  t.pass()
+})
+
+test('calculateHashRevenueSummary - handles empty log', (t) => {
+  const summary = calculateHashRevenueSummary([])
+  t.is(summary.totalRevenueBTC, 0, 'should be zero')
+  t.is(summary.totalRevenueUSD, 0, 'should be zero')
+  t.is(summary.totalFeesBTC, 0, 'should be zero')
+  t.is(summary.totalFeesUSD, 0, 'should be zero')
+  t.is(summary.avgHashRevenueBTCPerPHsPerDay, null, 'should be null')
+  t.is(summary.avgHashRevenueUSDPerPHsPerDay, null, 'should be null')
+  t.is(summary.avgHashCostBTCPerPHsPerDay, null, 'should be null')
+  t.is(summary.avgHashCostUSDPerPHsPerDay, null, 'should be null')
+  t.is(summary.avgNetworkHashPriceBTCPerPHsPerDay, null, 'should be null')
+  t.is(summary.avgNetworkHashPriceUSDPerPHsPerDay, null, 'should be null')
   t.pass()
 })

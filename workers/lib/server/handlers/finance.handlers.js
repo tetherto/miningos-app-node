@@ -972,6 +972,248 @@ function calculateDetailedRevenueSummary (log, currentBtcPrice) {
   }
 }
 
+// ==================== Hash Revenue ====================
+
+async function getHashRevenue (ctx, req) {
+  const { start, end } = validateStartEnd(req)
+  const period = req.query.period || PERIOD_TYPES.DAILY
+
+  const startDate = new Date(start).toISOString()
+  const endDate = new Date(end).toISOString()
+
+  const [
+    transactionResults,
+    tailLogResults,
+    priceResults,
+    currentPriceResults,
+    networkHashrateResults
+  ] = await runParallel([
+    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+      type: WORKER_TYPES.MINERPOOL,
+      query: { key: MINERPOOL_EXT_DATA_KEYS.TRANSACTIONS, start, end }
+    }).then(r => cb(null, r)).catch(cb),
+
+    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.TAIL_LOG_RANGE_AGGR, {
+      keys: [{
+        type: WORKER_TYPES.MINER,
+        startDate,
+        endDate,
+        fields: { [AGGR_FIELDS.HASHRATE_SUM]: 1 },
+        shouldReturnDailyData: 1
+      }]
+    }).then(r => cb(null, r)).catch(cb),
+
+    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+      type: WORKER_TYPES.MEMPOOL,
+      query: { key: 'prices', start, end }
+    }).then(r => cb(null, r)).catch(cb),
+
+    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+      type: WORKER_TYPES.MEMPOOL,
+      query: { key: 'current_price' }
+    }).then(r => cb(null, r)).catch(cb),
+
+    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+      type: WORKER_TYPES.MEMPOOL,
+      query: { key: 'HISTORICAL_HASHRATE', start, end }
+    }).then(r => cb(null, r)).catch(cb)
+  ])
+
+  const dailyTransactions = processTransactions(transactionResults, { trackFees: true })
+  const dailyHashrate = processHashrateData(tailLogResults)
+  const dailyPrices = processEbitdaPrices(priceResults)
+  const currentBtcPrice = extractCurrentPrice(currentPriceResults)
+  const dailyNetworkHashrate = processNetworkHashrateData(networkHashrateResults)
+
+  const allDays = new Set([
+    ...Object.keys(dailyTransactions),
+    ...Object.keys(dailyHashrate)
+  ])
+
+  const log = []
+  for (const dayTs of [...allDays].sort()) {
+    const ts = Number(dayTs)
+    const transactions = dailyTransactions[dayTs] || {}
+    const btcPrice = dailyPrices[dayTs] || currentBtcPrice || 0
+
+    const revenueBTC = transactions.revenueBTC || 0
+    const feesBTC = transactions.feesBTC || 0
+    const revenueUSD = revenueBTC * btcPrice
+    const feesUSD = feesBTC * btcPrice
+    const hashrateMhs = dailyHashrate[dayTs] || 0
+    const hashratePhs = hashrateMhs / 1e9
+    const networkHashrateMhs = dailyNetworkHashrate[dayTs] || 0
+    const networkHashratePhs = networkHashrateMhs / 1e9
+
+    log.push({
+      ts,
+      revenueBTC,
+      feesBTC,
+      revenueUSD,
+      feesUSD,
+      btcPrice,
+      hashrateMhs,
+      hashRevenueBTCPerPHsPerDay: safeDiv(revenueBTC, hashratePhs),
+      hashRevenueUSDPerPHsPerDay: safeDiv(revenueUSD, hashratePhs),
+      hashCostBTCPerPHsPerDay: safeDiv(feesBTC, hashratePhs),
+      hashCostUSDPerPHsPerDay: safeDiv(feesUSD, hashratePhs),
+      networkHashPriceBTCPerPHsPerDay: safeDiv(revenueBTC, networkHashratePhs),
+      networkHashPriceUSDPerPHsPerDay: safeDiv(revenueUSD, networkHashratePhs),
+      networkHashrateMhs
+    })
+  }
+
+  const aggregated = aggregateByPeriod(log, period)
+  const summary = calculateHashRevenueSummary(aggregated)
+
+  return { log: aggregated, summary }
+}
+
+function processHashrateData (results) {
+  const daily = {}
+  for (const res of results) {
+    if (!res || res.error) continue
+    const data = Array.isArray(res) ? res : (res.data || res.result || [])
+    if (!Array.isArray(data)) continue
+    for (const entry of data) {
+      if (!entry) continue
+      const items = entry.data || entry.items || entry
+      if (typeof items === 'object' && !Array.isArray(items)) {
+        for (const [key, val] of Object.entries(items)) {
+          const ts = getStartOfDay(Number(key))
+          if (!ts) continue
+          if (!daily[ts]) daily[ts] = 0
+          if (typeof val === 'object') {
+            daily[ts] += (val[AGGR_FIELDS.HASHRATE_SUM] || 0)
+          }
+        }
+      } else if (Array.isArray(items)) {
+        for (const item of items) {
+          const ts = getStartOfDay(item.ts || item.timestamp)
+          if (!ts) continue
+          if (!daily[ts]) daily[ts] = 0
+          daily[ts] += (item[AGGR_FIELDS.HASHRATE_SUM] || 0)
+        }
+      }
+    }
+  }
+  return daily
+}
+
+function processNetworkHashrateData (results) {
+  const daily = {}
+  for (const res of results) {
+    if (!res || res.error) continue
+    const data = Array.isArray(res) ? res : (res.data || res.result || [])
+    if (!Array.isArray(data)) continue
+    for (const entry of data) {
+      if (!entry) continue
+      const items = entry.data || entry
+      if (Array.isArray(items)) {
+        for (const item of items) {
+          if (!item) continue
+          const rawTs = item.ts || item.timestamp || item.time
+          const ts = getStartOfDay(normalizeTimestampMs(rawTs))
+          if (!ts) continue
+          if (item.avgHashrateMHs) {
+            daily[ts] = item.avgHashrateMHs
+          }
+        }
+      } else if (typeof items === 'object' && !Array.isArray(items)) {
+        for (const [key, val] of Object.entries(items)) {
+          const ts = getStartOfDay(Number(key))
+          if (!ts) continue
+          if (typeof val === 'object' && val.avgHashrateMHs) {
+            daily[ts] = val.avgHashrateMHs
+          } else if (typeof val === 'number') {
+            daily[ts] = val
+          }
+        }
+      }
+    }
+  }
+  return daily
+}
+
+function calculateHashRevenueSummary (log) {
+  if (!log.length) {
+    return {
+      avgHashRevenueBTCPerPHsPerDay: null,
+      avgHashRevenueUSDPerPHsPerDay: null,
+      avgHashCostBTCPerPHsPerDay: null,
+      avgHashCostUSDPerPHsPerDay: null,
+      avgNetworkHashPriceBTCPerPHsPerDay: null,
+      avgNetworkHashPriceUSDPerPHsPerDay: null,
+      totalRevenueBTC: 0,
+      totalRevenueUSD: 0,
+      totalFeesBTC: 0,
+      totalFeesUSD: 0
+    }
+  }
+
+  const totals = log.reduce((acc, entry) => {
+    acc.revenueBTC += entry.revenueBTC || 0
+    acc.revenueUSD += entry.revenueUSD || 0
+    acc.feesBTC += entry.feesBTC || 0
+    acc.feesUSD += entry.feesUSD || 0
+    if (entry.hashRevenueBTCPerPHsPerDay !== null && entry.hashRevenueBTCPerPHsPerDay !== undefined) {
+      acc.hashRevBTCSum += entry.hashRevenueBTCPerPHsPerDay
+      acc.hashRevBTCCount++
+    }
+    if (entry.hashRevenueUSDPerPHsPerDay !== null && entry.hashRevenueUSDPerPHsPerDay !== undefined) {
+      acc.hashRevUSDSum += entry.hashRevenueUSDPerPHsPerDay
+      acc.hashRevUSDCount++
+    }
+    if (entry.hashCostBTCPerPHsPerDay !== null && entry.hashCostBTCPerPHsPerDay !== undefined) {
+      acc.hashCostBTCSum += entry.hashCostBTCPerPHsPerDay
+      acc.hashCostBTCCount++
+    }
+    if (entry.hashCostUSDPerPHsPerDay !== null && entry.hashCostUSDPerPHsPerDay !== undefined) {
+      acc.hashCostUSDSum += entry.hashCostUSDPerPHsPerDay
+      acc.hashCostUSDCount++
+    }
+    if (entry.networkHashPriceBTCPerPHsPerDay !== null && entry.networkHashPriceBTCPerPHsPerDay !== undefined) {
+      acc.netHashBTCSum += entry.networkHashPriceBTCPerPHsPerDay
+      acc.netHashBTCCount++
+    }
+    if (entry.networkHashPriceUSDPerPHsPerDay !== null && entry.networkHashPriceUSDPerPHsPerDay !== undefined) {
+      acc.netHashUSDSum += entry.networkHashPriceUSDPerPHsPerDay
+      acc.netHashUSDCount++
+    }
+    return acc
+  }, {
+    revenueBTC: 0,
+    revenueUSD: 0,
+    feesBTC: 0,
+    feesUSD: 0,
+    hashRevBTCSum: 0,
+    hashRevBTCCount: 0,
+    hashRevUSDSum: 0,
+    hashRevUSDCount: 0,
+    hashCostBTCSum: 0,
+    hashCostBTCCount: 0,
+    hashCostUSDSum: 0,
+    hashCostUSDCount: 0,
+    netHashBTCSum: 0,
+    netHashBTCCount: 0,
+    netHashUSDSum: 0,
+    netHashUSDCount: 0
+  })
+
+  return {
+    avgHashRevenueBTCPerPHsPerDay: safeDiv(totals.hashRevBTCSum, totals.hashRevBTCCount),
+    avgHashRevenueUSDPerPHsPerDay: safeDiv(totals.hashRevUSDSum, totals.hashRevUSDCount),
+    avgHashCostBTCPerPHsPerDay: safeDiv(totals.hashCostBTCSum, totals.hashCostBTCCount),
+    avgHashCostUSDPerPHsPerDay: safeDiv(totals.hashCostUSDSum, totals.hashCostUSDCount),
+    avgNetworkHashPriceBTCPerPHsPerDay: safeDiv(totals.netHashBTCSum, totals.netHashBTCCount),
+    avgNetworkHashPriceUSDPerPHsPerDay: safeDiv(totals.netHashUSDSum, totals.netHashUSDCount),
+    totalRevenueBTC: totals.revenueBTC,
+    totalRevenueUSD: totals.revenueUSD,
+    totalFeesBTC: totals.feesBTC,
+    totalFeesUSD: totals.feesUSD
+  }
+}
+
 // ==================== Shared ====================
 
 async function getProductionCosts (ctx, start, end) {
@@ -1012,6 +1254,7 @@ module.exports = {
   getSubsidyFees,
   getRevenue,
   getRevenueSummary,
+  getHashRevenue,
   getProductionCosts,
   processConsumptionData,
   processPriceData,
@@ -1026,6 +1269,9 @@ module.exports = {
   calculateSubsidyFeesSummary,
   calculateRevenueSummary,
   calculateDetailedRevenueSummary,
+  processHashrateData,
+  processNetworkHashrateData,
+  calculateHashRevenueSummary,
   // Re-export from finance.utils
   validateStartEnd,
   normalizeTimestampMs,

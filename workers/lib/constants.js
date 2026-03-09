@@ -120,6 +120,7 @@ const ENDPOINTS = {
   FINANCE_SUBSIDY_FEES: '/auth/finance/subsidy-fees',
   FINANCE_REVENUE: '/auth/finance/revenue',
   FINANCE_REVENUE_SUMMARY: '/auth/finance/revenue-summary',
+  FINANCE_HASH_REVENUE: '/auth/finance/hash-revenue',
 
   // Pools endpoints
   POOLS: '/auth/pools',
