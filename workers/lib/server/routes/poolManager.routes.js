@@ -5,12 +5,10 @@ const {
   getPools,
   getMiners,
   getUnits,
-  getAlerts,
-  assignPool,
-  setPowerMode
+  getAlerts
 } = require('../controllers/poolManager')
 const { ENDPOINTS, HTTP_METHODS } = require('../../constants')
-const { createCachedAuthRoute, createAuthRoute } = require('../lib/routeHelpers')
+const { createCachedAuthRoute } = require('../lib/routeHelpers')
 
 const POOL_MANAGER_MINERS_SCHEMA = {
   querystring: {
@@ -43,36 +41,6 @@ const POOL_MANAGER_CACHE_SCHEMA = {
     properties: {
       overwriteCache: { type: 'boolean' }
     }
-  }
-}
-
-const POOL_MANAGER_ASSIGN_SCHEMA = {
-  body: {
-    type: 'object',
-    properties: {
-      minerIds: {
-        type: 'array',
-        items: { type: 'string' }
-      }
-    },
-    required: ['minerIds']
-  }
-}
-
-const POOL_MANAGER_POWER_MODE_SCHEMA = {
-  body: {
-    type: 'object',
-    properties: {
-      minerIds: {
-        type: 'array',
-        items: { type: 'string' }
-      },
-      mode: {
-        type: 'string',
-        enum: ['low', 'normal', 'high', 'sleep']
-      }
-    },
-    required: ['minerIds', 'mode']
   }
 }
 
@@ -147,20 +115,6 @@ module.exports = (ctx) => {
         ENDPOINTS.POOL_MANAGER_ALERTS,
         getAlerts
       )
-    },
-
-    {
-      method: HTTP_METHODS.POST,
-      url: ENDPOINTS.POOL_MANAGER_ASSIGN,
-      schema: POOL_MANAGER_ASSIGN_SCHEMA,
-      ...createAuthRoute(ctx, assignPool)
-    },
-
-    {
-      method: HTTP_METHODS.POST,
-      url: ENDPOINTS.POOL_MANAGER_POWER_MODE,
-      schema: POOL_MANAGER_POWER_MODE_SCHEMA,
-      ...createAuthRoute(ctx, setPowerMode)
     }
   ]
 }

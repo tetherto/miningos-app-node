@@ -7,9 +7,7 @@ const {
   getPoolConfigs,
   getMinersWithPools,
   getUnitsWithPoolData,
-  getPoolAlerts,
-  assignPoolToMiners,
-  setPowerMode
+  getPoolAlerts
 } = require('../../workers/lib/server/services/poolManager')
 
 function createMockCtx (responseData) {
@@ -371,87 +369,3 @@ test('poolManager:getPoolAlerts includes severity', async function (t) {
   t.is(result[0].type, 'all_pools_dead')
 })
 
-test('poolManager:assignPoolToMiners validates miner IDs', async function (t) {
-  const mockCtx = createMockCtx({ success: true })
-
-  await t.exception(async () => {
-    await assignPoolToMiners(mockCtx, [])
-  }, /ERR_MINER_IDS_REQUIRED/)
-})
-
-test('poolManager:assignPoolToMiners calls RPC with correct params', async function (t) {
-  let capturedParams
-  const mockCtx = {
-    conf: { orks: [{ rpcPublicKey: 'key1' }] },
-    net_r0: {
-      jRequest: (pk, method, params) => {
-        capturedParams = params
-        return Promise.resolve({ success: true, affected: 2 })
-      }
-    }
-  }
-
-  const result = await assignPoolToMiners(mockCtx, ['miner-1', 'miner-2'])
-
-  t.ok(capturedParams)
-  t.is(capturedParams.action, 'setupPools')
-  t.alike(capturedParams.query, { id: { $in: ['miner-1', 'miner-2'] } })
-  t.is(capturedParams.params, undefined)
-  t.is(result.success, true)
-  t.is(result.assigned, 2)
-})
-
-test('poolManager:setPowerMode validates miner IDs', async function (t) {
-  const mockCtx = createMockCtx({ success: true })
-
-  await t.exception(async () => {
-    await setPowerMode(mockCtx, [], 'sleep')
-  }, /ERR_MINER_IDS_REQUIRED/)
-})
-
-test('poolManager:setPowerMode validates power mode', async function (t) {
-  const mockCtx = createMockCtx({ success: true })
-
-  await t.exception(async () => {
-    await setPowerMode(mockCtx, ['miner-1'], 'invalid-mode')
-  }, /ERR_INVALID_POWER_MODE/)
-})
-
-test('poolManager:setPowerMode calls RPC with correct params', async function (t) {
-  let capturedParams
-  const mockCtx = {
-    conf: { orks: [{ rpcPublicKey: 'key1' }] },
-    net_r0: {
-      jRequest: (pk, method, params) => {
-        capturedParams = params
-        return Promise.resolve({ success: true, affected: 2 })
-      }
-    }
-  }
-
-  const result = await setPowerMode(mockCtx, ['miner-1', 'miner-2'], 'sleep')
-
-  t.ok(capturedParams)
-  t.is(capturedParams.action, 'setPowerMode')
-  t.is(capturedParams.params.mode, 'sleep')
-  t.ok(result.success)
-  t.is(result.affected, 2)
-  t.is(result.mode, 'sleep')
-})
-
-test('poolManager:setPowerMode accepts all valid modes', async function (t) {
-  const validModes = ['low', 'normal', 'high', 'sleep']
-
-  for (const mode of validModes) {
-    const mockCtx = {
-      conf: { orks: [{ rpcPublicKey: 'key1' }] },
-      net_r0: {
-        jRequest: () => Promise.resolve({ success: true, affected: 1 })
-      }
-    }
-
-    const result = await setPowerMode(mockCtx, ['miner-1'], mode)
-    t.ok(result.success)
-    t.is(result.mode, mode)
-  }
-})
