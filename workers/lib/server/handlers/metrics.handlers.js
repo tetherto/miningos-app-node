@@ -380,7 +380,6 @@ async function getPowerModeTimeline (ctx, req) {
   const start = Number(req.query.start) || (now - METRICS_TIME.ONE_MONTH_MS)
   const end = Number(req.query.end) || now
   const container = req.query.container || null
-  const limit = Number(req.query.limit) || METRICS_DEFAULTS.TIMELINE_LIMIT
 
   if (start >= end) {
     throw new Error('ERR_INVALID_DATE_RANGE')
@@ -400,7 +399,7 @@ async function getPowerModeTimeline (ctx, req) {
 
   const results = await requestRpcEachLimit(ctx, RPC_METHODS.TAIL_LOG, rpcPayload)
 
-  const log = processPowerModeTimelineData(results, container).slice(0, limit)
+  const log = processPowerModeTimelineData(results, container)
 
   return { log }
 }

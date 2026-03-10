@@ -1127,7 +1127,7 @@ test('getPowerModeTimeline - always uses t-miner tag', async (t) => {
   t.pass()
 })
 
-test('getPowerModeTimeline - uses limit param to truncate results', async (t) => {
+test('getPowerModeTimeline - returns all results without truncation', async (t) => {
   const mockCtx = {
     conf: {
       orks: [{ rpcPublicKey: 'key1' }]
@@ -1148,22 +1148,10 @@ test('getPowerModeTimeline - uses limit param to truncate results', async (t) =>
   }
 
   const result = await getPowerModeTimeline(mockCtx, {
-    query: { start: 1700000000000, end: 1700100000000, limit: 2 }
+    query: { start: 1700000000000, end: 1700100000000 }
   })
 
-  t.is(result.log.length, 2, 'should truncate log to limit')
-  t.pass()
-})
-
-test('getPowerModeTimeline - uses default limit when not provided', async (t) => {
-  const mockCtx = {
-    conf: { orks: [{ rpcPublicKey: 'key1' }] },
-    net_r0: { jRequest: async () => ([]) }
-  }
-
-  const result = await getPowerModeTimeline(mockCtx, { query: {} })
-  t.ok(result.log, 'should return log with default limit applied')
-  t.ok(Array.isArray(result.log), 'should be array')
+  t.is(result.log.length, 5, 'should return all results')
   t.pass()
 })
 

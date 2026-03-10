@@ -98,11 +98,6 @@ class WrkServerHttp extends TetherWrkBase {
           httpd.addRoute(r)
         })
 
-        httpd.addHook('onSend', async (request, reply) => {
-          reply.header('X-Content-Type-Options', 'nosniff')
-          reply.header('Cache-Control', 'no-store')
-        })
-
         httpd.addHook('onError', async (request, reply, error) => {
           const isSafe = error.message && error.message.startsWith('ERR_')
           const message = isSafe ? error.message : 'Bad Request'

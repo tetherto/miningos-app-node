@@ -54,7 +54,6 @@ const schemas = {
         start: { type: 'integer', minimum: 0 },
         end: { type: 'integer', minimum: 0 },
         container: { type: 'string' },
-        limit: { type: 'integer', minimum: 1, maximum: 50000 },
         overwriteCache: { type: 'boolean' }
       }
     },
