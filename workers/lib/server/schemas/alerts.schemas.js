@@ -16,8 +16,8 @@ const schemas = {
     alertsHistory: {
       type: 'object',
       properties: {
-        start: { type: 'integer' },
-        end: { type: 'integer' },
+        start: { type: 'integer', minimum: 0 },
+        end: { type: 'integer', minimum: 0 },
         filter: { type: 'string' },
         search: { type: 'string' },
         sort: { type: 'string' },
