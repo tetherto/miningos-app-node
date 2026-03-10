@@ -10,6 +10,7 @@ const GlobalDataLib = require('./lib/globalData')
 const { UserService } = require('./lib/users')
 const { AlertsService } = require('./lib/alerts')
 const { auditLogger } = require('./lib/server/lib/auditLogger')
+const { SAFE_ERROR_MESSAGES } = require('./lib/constants')
 
 class WrkServerHttp extends TetherWrkBase {
   constructor (conf, ctx) {
@@ -98,11 +99,24 @@ class WrkServerHttp extends TetherWrkBase {
           httpd.addRoute(r)
         })
 
+        httpd.addHook('onSend', async (request, reply) => {
+          reply.header('X-Content-Type-Options', 'nosniff')
+          reply.header('Cache-Control', 'no-store')
+        })
+
         httpd.addHook('onError', async (request, reply, error) => {
+          const message = SAFE_ERROR_MESSAGES.has(error.message)
+            ? error.message
+            : 'Bad Request'
+
+          if (!SAFE_ERROR_MESSAGES.has(error.message)) {
+            debug('onError handler:', error.message)
+          }
+
           return reply.status(400).send({
             statusCode: 400,
             error: 'Bad Request',
-            message: error.message
+            message
           })
         })
 
