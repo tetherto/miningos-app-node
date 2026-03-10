@@ -1127,6 +1127,46 @@ test('getPowerModeTimeline - always uses t-miner tag', async (t) => {
   t.pass()
 })
 
+test('getPowerModeTimeline - uses limit param to truncate results', async (t) => {
+  const mockCtx = {
+    conf: {
+      orks: [{ rpcPublicKey: 'key1' }]
+    },
+    net_r0: {
+      jRequest: async () => {
+        const entries = []
+        for (let i = 0; i < 5; i++) {
+          entries.push({
+            ts: 1700000000000 + i * 10800000,
+            power_mode_group_aggr: { [`cont${i}-miner1`]: 'normal' },
+            status_group_aggr: { [`cont${i}-miner1`]: 'mining' }
+          })
+        }
+        return entries
+      }
+    }
+  }
+
+  const result = await getPowerModeTimeline(mockCtx, {
+    query: { start: 1700000000000, end: 1700100000000, limit: 2 }
+  })
+
+  t.is(result.log.length, 2, 'should truncate log to limit')
+  t.pass()
+})
+
+test('getPowerModeTimeline - uses default limit when not provided', async (t) => {
+  const mockCtx = {
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: { jRequest: async () => ([]) }
+  }
+
+  const result = await getPowerModeTimeline(mockCtx, { query: {} })
+  t.ok(result.log, 'should return log with default limit applied')
+  t.ok(Array.isArray(result.log), 'should be array')
+  t.pass()
+})
+
 test('processPowerModeTimelineData - filters by container post-RPC', (t) => {
   const results = [[
     {

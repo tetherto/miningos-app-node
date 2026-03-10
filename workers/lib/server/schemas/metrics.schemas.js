@@ -5,8 +5,8 @@ const schemas = {
     hashrate: {
       type: 'object',
       properties: {
-        start: { type: 'integer' },
-        end: { type: 'integer' },
+        start: { type: 'integer', minimum: 0 },
+        end: { type: 'integer', minimum: 0 },
         overwriteCache: { type: 'boolean' }
       },
       required: ['start', 'end']
@@ -14,8 +14,8 @@ const schemas = {
     consumption: {
       type: 'object',
       properties: {
-        start: { type: 'integer' },
-        end: { type: 'integer' },
+        start: { type: 'integer', minimum: 0 },
+        end: { type: 'integer', minimum: 0 },
         overwriteCache: { type: 'boolean' }
       },
       required: ['start', 'end']
@@ -23,8 +23,8 @@ const schemas = {
     efficiency: {
       type: 'object',
       properties: {
-        start: { type: 'integer' },
-        end: { type: 'integer' },
+        start: { type: 'integer', minimum: 0 },
+        end: { type: 'integer', minimum: 0 },
         overwriteCache: { type: 'boolean' }
       },
       required: ['start', 'end']
@@ -32,8 +32,8 @@ const schemas = {
     minerStatus: {
       type: 'object',
       properties: {
-        start: { type: 'integer' },
-        end: { type: 'integer' },
+        start: { type: 'integer', minimum: 0 },
+        end: { type: 'integer', minimum: 0 },
         overwriteCache: { type: 'boolean' }
       },
       required: ['start', 'end']
@@ -41,8 +41,8 @@ const schemas = {
     powerMode: {
       type: 'object',
       properties: {
-        start: { type: 'integer' },
-        end: { type: 'integer' },
+        start: { type: 'integer', minimum: 0 },
+        end: { type: 'integer', minimum: 0 },
         interval: { type: 'string', enum: ['1h', '1d', '1w'] },
         overwriteCache: { type: 'boolean' }
       },
@@ -51,17 +51,18 @@ const schemas = {
     powerModeTimeline: {
       type: 'object',
       properties: {
-        start: { type: 'integer' },
-        end: { type: 'integer' },
+        start: { type: 'integer', minimum: 0 },
+        end: { type: 'integer', minimum: 0 },
         container: { type: 'string' },
+        limit: { type: 'integer', minimum: 1, maximum: 50000 },
         overwriteCache: { type: 'boolean' }
       }
     },
     temperature: {
       type: 'object',
       properties: {
-        start: { type: 'integer' },
-        end: { type: 'integer' },
+        start: { type: 'integer', minimum: 0 },
+        end: { type: 'integer', minimum: 0 },
         interval: { type: 'string', enum: ['1h', '1d', '1w'] },
         container: { type: 'string' },
         overwriteCache: { type: 'boolean' }
@@ -77,8 +78,8 @@ const schemas = {
     containerHistory: {
       type: 'object',
       properties: {
-        start: { type: 'integer' },
-        end: { type: 'integer' },
+        start: { type: 'integer', minimum: 0 },
+        end: { type: 'integer', minimum: 0 },
         limit: { type: 'integer' },
         overwriteCache: { type: 'boolean' }
       }
