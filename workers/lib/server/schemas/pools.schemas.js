@@ -14,8 +14,8 @@ const schemas = {
     balanceHistory: {
       type: 'object',
       properties: {
-        start: { type: 'integer' },
-        end: { type: 'integer' },
+        start: { type: 'integer', minimum: 0 },
+        end: { type: 'integer', minimum: 0 },
         range: { type: 'string', enum: ['1D', '1W', '1M'] },
         overwriteCache: { type: 'boolean' }
       },
@@ -24,8 +24,8 @@ const schemas = {
     poolStatsAggregate: {
       type: 'object',
       properties: {
-        start: { type: 'integer' },
-        end: { type: 'integer' },
+        start: { type: 'integer', minimum: 0 },
+        end: { type: 'integer', minimum: 0 },
         range: { type: 'string', enum: ['daily', 'weekly', 'monthly'] },
         pool: { type: 'string' },
         overwriteCache: { type: 'boolean' }
