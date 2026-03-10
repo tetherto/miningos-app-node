@@ -11,7 +11,7 @@ const {
   HISTORY_FILTER_FIELDS,
   HISTORY_SEARCH_FIELDS
 } = require('../../constants')
-const { requestRpcMapLimit, parseJsonQueryParam, matchesFilter, deduplicateAlerts } = require('../../utils')
+const { parseJsonQueryParam, matchesFilter, deduplicateAlerts } = require('../../utils')
 
 function extractAlertsFromThings (things) {
   const alerts = []
@@ -95,7 +95,7 @@ async function getSiteAlerts (ctx, req) {
   const offset = Number(req.query.offset) || 0
   const limit = Math.min(Number(req.query.limit) || ALERTS_DEFAULT_LIMIT, ALERTS_MAX_SITE_LIMIT)
 
-  const results = await requestRpcMapLimit(ctx, RPC_METHODS.LIST_THINGS, {
+  const results = await ctx.dataProxy.requestDataMap(RPC_METHODS.LIST_THINGS, {
     status: 1,
     query: { 'last.alerts': { $ne: null } },
     fields: {
@@ -137,7 +137,7 @@ async function getAlertsHistory (ctx, req) {
   const offset = Number(req.query.offset) || 0
   const limit = Math.min(Number(req.query.limit) || ALERTS_DEFAULT_LIMIT, ALERTS_MAX_HISTORY_LIMIT)
 
-  const results = await requestRpcMapLimit(ctx, RPC_METHODS.GET_HISTORICAL_LOGS, {
+  const results = await ctx.dataProxy.requestDataMap(RPC_METHODS.GET_HISTORICAL_LOGS, {
     start,
     end,
     logType: 'alerts'

@@ -11,7 +11,7 @@ const {
   voteAction,
   cancelActionsBatch
 } = require('../../../workers/lib/server/handlers/actions.handlers')
-const { createMockCtxWithOrks, createMockReq } = require('../helpers/mockHelpers')
+const { createMockCtxWithOrks, createMockReq, withDataProxy } = require('../helpers/mockHelpers')
 
 test('queryActionsBatch - basic functionality', async (t) => {
   const mockCtx = createMockCtxWithOrks(
@@ -70,14 +70,14 @@ test('queryActions - with queries parameter', async (t) => {
 })
 
 test('queryActions - with invalid queries JSON', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: {
       orks: []
     },
     net_r0: {
       jRequest: async () => ({})
     }
-  }
+  })
 
   const mockReq = {
     query: { queries: 'invalid-json' }
@@ -94,7 +94,7 @@ test('queryActions - with invalid queries JSON', async (t) => {
 })
 
 test('queryActions - with groupBatch parameter', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: {
       orks: [
         { rpcPublicKey: 'key1' }
@@ -105,7 +105,7 @@ test('queryActions - with groupBatch parameter', async (t) => {
         return { actions: [] }
       }
     }
-  }
+  })
 
   const mockReq = {
     query: { groupBatch: 'true' }
@@ -119,7 +119,7 @@ test('queryActions - with groupBatch parameter', async (t) => {
 })
 
 test('queryActions - handles network errors', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: {
       orks: [
         { rpcPublicKey: 'key1' }
@@ -130,7 +130,7 @@ test('queryActions - handles network errors', async (t) => {
         throw new Error('Network error')
       }
     }
-  }
+  })
 
   const mockReq = {
     query: {}
@@ -145,7 +145,7 @@ test('queryActions - handles network errors', async (t) => {
 })
 
 test('getAction - basic functionality', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: {
       orks: [
         { rpcPublicKey: 'key1' }
@@ -156,7 +156,7 @@ test('getAction - basic functionality', async (t) => {
         return { id: payload.id, type: payload.type }
       }
     }
-  }
+  })
 
   const mockReq = {
     params: { id: 'action123', type: 'test' }
@@ -171,7 +171,7 @@ test('getAction - basic functionality', async (t) => {
 })
 
 test('getAction - handles errors', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: {
       orks: [
         { rpcPublicKey: 'key1' }
@@ -182,7 +182,7 @@ test('getAction - handles errors', async (t) => {
         throw new Error('Action not found')
       }
     }
-  }
+  })
 
   const mockReq = {
     params: { id: 'nonexistent', type: 'test' }
@@ -218,7 +218,7 @@ test('pushAction - requires write permission', async (t) => {
 })
 
 test('pushAction - with valid permissions', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: {
       orks: [
         { rpcPublicKey: 'key1' }
@@ -235,7 +235,7 @@ test('pushAction - with valid permissions', async (t) => {
         return { id: 'new-action', success: true }
       }
     }
-  }
+  })
 
   const mockReq = {
     _info: {
@@ -306,7 +306,7 @@ test('pushActionsBatch - validates batchActionsPayload array', async (t) => {
 })
 
 test('pushActionsBatch - with valid data', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: {
       orks: [
         { rpcPublicKey: 'key1' }
@@ -323,7 +323,7 @@ test('pushActionsBatch - with valid data', async (t) => {
         return { id: 'batch-action', success: true }
       }
     }
-  }
+  })
 
   const mockReq = {
     _info: {
@@ -366,7 +366,7 @@ test('voteAction - requires write permission', async (t) => {
 })
 
 test('voteAction - with valid permissions', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: {
       orks: [
         { rpcPublicKey: 'key1' }
@@ -383,7 +383,7 @@ test('voteAction - with valid permissions', async (t) => {
         return { success: true, vote: payload.approve }
       }
     }
-  }
+  })
 
   const mockReq = {
     _info: {
@@ -424,7 +424,7 @@ test('cancelActionsBatch - requires write permission', async (t) => {
 })
 
 test('cancelActionsBatch - with valid permissions', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: {
       orks: [
         { rpcPublicKey: 'key1' }
@@ -438,7 +438,7 @@ test('cancelActionsBatch - with valid permissions', async (t) => {
         return { success: true, cancelled: payload.ids }
       }
     }
-  }
+  })
 
   const mockReq = {
     _info: {
@@ -457,7 +457,7 @@ test('cancelActionsBatch - with valid permissions', async (t) => {
 })
 
 test('cancelActionsBatch - handles errors', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: {
       orks: [
         { rpcPublicKey: 'key1' }
@@ -471,7 +471,7 @@ test('cancelActionsBatch - handles errors', async (t) => {
         throw new Error('Cancellation failed')
       }
     }
-  }
+  })
 
   const mockReq = {
     _info: {

@@ -1,6 +1,6 @@
 'use strict'
 const { GLOBAL_DATA_TYPES } = require('../../constants')
-const { parseJsonQueryParam, requestRpcMapLimit } = require('../../utils')
+const { parseJsonQueryParam } = require('../../utils')
 
 async function getGlobalData (ctx, req) {
   const type = req.query.type
@@ -63,11 +63,11 @@ async function getGlobalConfig (ctx, req, rep) {
     req.query.fields = parseJsonQueryParam(req.query.fields, 'ERR_FIELDS_INVALID_JSON')
   }
 
-  return await requestRpcMapLimit(ctx, 'getGlobalConfig', req.query)
+  return await ctx.dataProxy.requestDataMap('getGlobalConfig', req.query)
 }
 
 async function setGlobalConfig (ctx, req, rep) {
-  return await requestRpcMapLimit(ctx, 'setGlobalConfig', req.body.data)
+  return await ctx.dataProxy.requestDataMap('setGlobalConfig', req.body.data)
 }
 
 module.exports = {

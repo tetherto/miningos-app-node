@@ -1,6 +1,6 @@
 {
   "a0": {
-    "superAdmin": "",
+    "superAdmin": "test@localhost",
     "ttl": 86400,
     "saltRounds": 10,
     "superAdminPerms": [

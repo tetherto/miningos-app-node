@@ -18,7 +18,6 @@ class AuthLib {
     }
 
     try {
-      console.log('Starting user migration')
       const oldUsers = httpdAuth.conf.users || []
 
       const superAdmin = users.find(user => user.id.toString() === SUPER_ADMIN_ID)
@@ -36,8 +35,6 @@ class AuthLib {
           console.error(`Failed to migrate user: ${oldUser.email}`, error)
         }
       }))
-
-      console.log('Migration complete')
     } catch (error) {
       console.error('Unexpected error occurred during migration. Migration Failed!', error)
       throw error

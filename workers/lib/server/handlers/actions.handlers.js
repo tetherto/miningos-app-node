@@ -1,13 +1,13 @@
 'use strict'
 
-const { requestRpcEachLimit, parseJsonQueryParam } = require('../../utils')
+const { parseJsonQueryParam } = require('../../utils')
 
 async function queryActionsBatch (ctx, req) {
   const payload = {
     ids: req.query.ids.split(',')
   }
 
-  return await requestRpcEachLimit(ctx, 'getActionsBatch', payload, (res, resultsArray) => {
+  return await ctx.dataProxy.requestData('getActionsBatch', payload, (res, resultsArray) => {
     if (res.error) {
       console.error(new Date().toISOString(), res.error)
     } else {
@@ -29,7 +29,7 @@ async function queryActions (ctx, req, rep) {
     payload.suffix = req.query.suffix
   }
 
-  return await requestRpcEachLimit(ctx, 'queryActions', payload)
+  return await ctx.dataProxy.requestData('queryActions', payload)
 }
 
 async function getAction (ctx, req) {
@@ -38,7 +38,7 @@ async function getAction (ctx, req) {
     type: req.params.type
   }
 
-  return await requestRpcEachLimit(ctx, 'getAction', payload)
+  return await ctx.dataProxy.requestData('getAction', payload)
 }
 
 async function pushActionsBatch (ctx, req, rep) {
@@ -61,7 +61,7 @@ async function pushActionsBatch (ctx, req, rep) {
     authPerms: permissions
   }
 
-  return await requestRpcEachLimit(ctx, 'pushActionsBatch', payload, (res, resultsArray) => {
+  return await ctx.dataProxy.requestData('pushActionsBatch', payload, (res, resultsArray) => {
     if (res.error) {
       resultsArray.push({ id: null, errors: [res.error] })
     } else {
@@ -84,7 +84,7 @@ async function pushAction (ctx, req) {
     authPerms: permissions
   }
 
-  return await requestRpcEachLimit(ctx, 'pushAction', payload, (res, resultsArray) => {
+  return await ctx.dataProxy.requestData('pushAction', payload, (res, resultsArray) => {
     if (res.error) {
       resultsArray.push({ id: null, errors: [res.error] })
     } else {
@@ -106,7 +106,7 @@ async function voteAction (ctx, req) {
     authPerms: caps
   }
 
-  return await requestRpcEachLimit(ctx, 'voteAction', payload, (res, resultsArray) => {
+  return await ctx.dataProxy.requestData('voteAction', payload, (res, resultsArray) => {
     if (res.error) {
       resultsArray.push({ res: { success: false, error: res.error } })
     } else {
@@ -126,7 +126,7 @@ async function cancelActionsBatch (ctx, req) {
     voter: req._info.user.metadata.email
   }
 
-  return await requestRpcEachLimit(ctx, 'cancelActionsBatch', payload, (res, resultsArray) => {
+  return await ctx.dataProxy.requestData('cancelActionsBatch', payload, (res, resultsArray) => {
     if (res.error) {
       resultsArray.push({ res: { success: false, error: res.error } })
     } else {

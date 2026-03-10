@@ -10,6 +10,7 @@ const GlobalDataLib = require('./lib/globalData')
 const { UserService } = require('./lib/users')
 const { AlertsService } = require('./lib/alerts')
 const { auditLogger } = require('./lib/server/lib/auditLogger')
+const { createDataProxy } = require('./lib/data.proxy')
 
 class WrkServerHttp extends TetherWrkBase {
   constructor (conf, ctx) {
@@ -24,6 +25,10 @@ class WrkServerHttp extends TetherWrkBase {
     this.noAuth = !!this.ctx.noauth
     this.queuedRequests = new Map()
     this.wsClients = new Set()
+
+    this.isRpcMode = ctx.isRpcMode !== false
+    if (ctx.ork) this.ork = ctx.ork
+    this.dataProxy = createDataProxy(this)
 
     this.init()
     this.start()
@@ -137,7 +142,7 @@ class WrkServerHttp extends TetherWrkBase {
           }, 15 * 60 * 1000)
         }
 
-        this.alertsService = new AlertsService({ orks: this.conf.orks, net: this.net_r0 })
+        this.alertsService = new AlertsService({ dataProxy: this.dataProxy })
         this.interval_0.add('broadcastAlerts', async () => {
           try {
             await this.alertsService.broadcastAlerts(this.wsClients)

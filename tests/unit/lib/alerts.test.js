@@ -2,14 +2,18 @@
 
 const test = require('brittle')
 const { AlertsService } = require('../../../workers/lib/alerts')
+const { buildDataProxy } = require('../helpers/mockHelpers')
 
-test('AlertsService constructor should initialize with orks and net', (t) => {
+const makeService = (orks, jRequestImpl) => {
+  return new AlertsService({ dataProxy: buildDataProxy(orks, jRequestImpl) })
+}
+
+test('AlertsService constructor should initialize with dataProxy', (t) => {
   const mockOrks = [{ rpcPublicKey: 'key1' }]
   const mockNet = { jRequest: async () => { } }
-  const service = new AlertsService({ orks: mockOrks, net: mockNet })
+  const service = makeService(mockOrks, mockNet.jRequest)
 
-  t.is(service.orks, mockOrks, 'Should set orks property')
-  t.is(service.net, mockNet, 'Should set net property')
+  t.ok(service.dataProxy, 'Should set dataProxy property')
 })
 
 test('fetchAlerts should fetch alerts from orks', async (t) => {
@@ -20,7 +24,7 @@ test('fetchAlerts should fetch alerts from orks', async (t) => {
       return [{ id: 'thing1', last: { alerts: { createdAt: Date.now() } } }]
     }
   }
-  const service = new AlertsService({ orks: mockOrks, net: mockNet })
+  const service = makeService(mockOrks, mockNet.jRequest)
   const result = await service.fetchAlerts()
 
   t.ok(Array.isArray(result), 'Should return an array')
@@ -35,7 +39,7 @@ test('fetchAlerts should handle fetchAll parameter', async (t) => {
       return [{ id: 'thing1' }]
     }
   }
-  const service = new AlertsService({ orks: mockOrks, net: mockNet })
+  const service = makeService(mockOrks, mockNet.jRequest)
   await service.fetchAlerts(true)
 
   t.ok(capturedQuery.query['last.alerts.createdAt'].$exists === true, 'Should use $exists when fetchAll is true')
@@ -51,7 +55,7 @@ test('fetchAlerts should filter by time when fetchAll is false', async (t) => {
       return []
     }
   }
-  const service = new AlertsService({ orks: mockOrks, net: mockNet })
+  const service = makeService(mockOrks, mockNet.jRequest)
   await service.fetchAlerts(false)
 
   t.ok(capturedQuery.query['last.alerts.createdAt'].$gte, 'Should use $gte time filter when fetchAll is false')
@@ -64,7 +68,7 @@ test('fetchAlerts should handle errors and return empty array', async (t) => {
       throw new Error('Network error')
     }
   }
-  const service = new AlertsService({ orks: mockOrks, net: mockNet })
+  const service = makeService(mockOrks, mockNet.jRequest)
   const result = await service.fetchAlerts()
 
   t.alike(result, [], 'Should return empty array on error')
@@ -79,7 +83,7 @@ test('fetchAlerts should fetch from multiple orks', async (t) => {
       return [{ id: `thing-${_key}` }]
     }
   }
-  const service = new AlertsService({ orks: mockOrks, net: mockNet })
+  const service = makeService(mockOrks, mockNet.jRequest)
   const result = await service.fetchAlerts()
 
   t.is(requestCount, 3, 'Should make requests to all orks')
@@ -91,7 +95,7 @@ test('broadcastAlerts should send alerts to all clients', async (t) => {
   const mockNet = {
     jRequest: async () => [{ id: 'alert1' }]
   }
-  const service = new AlertsService({ orks: mockOrks, net: mockNet })
+  const service = makeService(mockOrks, mockNet.jRequest)
   let sentData = null
   const mockClient = {
     readyState: 1,
@@ -112,7 +116,7 @@ test('broadcastAlerts should remove clients with readyState !== 1', async (t) =>
   const mockNet = {
     jRequest: async () => [{ id: 'alert1' }]
   }
-  const service = new AlertsService({ orks: mockOrks, net: mockNet })
+  const service = makeService(mockOrks, mockNet.jRequest)
   const mockClient = {
     readyState: 0,
     send: () => { }
@@ -129,7 +133,7 @@ test('broadcastAlerts should remove clients that throw errors on send', async (t
   const mockNet = {
     jRequest: async () => [{ id: 'alert1' }]
   }
-  const service = new AlertsService({ orks: mockOrks, net: mockNet })
+  const service = makeService(mockOrks, mockNet.jRequest)
   const mockClient = {
     readyState: 1,
     subscriptions: new Set(['alerts']),
@@ -148,7 +152,7 @@ test('broadcastAlerts should handle multiple clients with mixed states', async (
   const mockNet = {
     jRequest: async () => [{ id: 'alert1' }]
   }
-  const service = new AlertsService({ orks: mockOrks, net: mockNet })
+  const service = makeService(mockOrks, mockNet.jRequest)
   let sendCount = 0
   const goodClient1 = {
     readyState: 1,
@@ -185,7 +189,7 @@ test('fetchAlerts should create correct query structure', async (t) => {
       return []
     }
   }
-  const service = new AlertsService({ orks: mockOrks, net: mockNet })
+  const service = makeService(mockOrks, mockNet.jRequest)
   await service.fetchAlerts()
 
   t.is(capturedQuery.status, 1, 'Should query for status 1')
@@ -202,7 +206,7 @@ test('broadcastAlerts should handle empty clients set', async (t) => {
   const mockNet = {
     jRequest: async () => [{ id: 'alert1' }]
   }
-  const service = new AlertsService({ orks: mockOrks, net: mockNet })
+  const service = makeService(mockOrks, mockNet.jRequest)
   const clients = new Set()
   await service.broadcastAlerts(clients)
 
@@ -214,7 +218,7 @@ test('broadcastAlerts should skip null clients', async (t) => {
   const mockNet = {
     jRequest: async () => [{ id: 'alert1' }]
   }
-  const service = new AlertsService({ orks: mockOrks, net: mockNet })
+  const service = makeService(mockOrks, mockNet.jRequest)
   const clients = new Set([null, undefined])
 
   await service.broadcastAlerts(clients)
@@ -227,7 +231,7 @@ test('fetchAlerts should handle empty orks array', async (t) => {
   const mockNet = {
     jRequest: async () => []
   }
-  const service = new AlertsService({ orks: mockOrks, net: mockNet })
+  const service = makeService(mockOrks, mockNet.jRequest)
   const result = await service.fetchAlerts()
 
   t.ok(Array.isArray(result), 'Should return array even with no orks')
@@ -238,7 +242,7 @@ test('broadcastAlerts should not send to clients without subscription', async (t
   const mockNet = {
     jRequest: async () => [{ id: 'alert1' }]
   }
-  const service = new AlertsService({ orks: mockOrks, net: mockNet })
+  const service = makeService(mockOrks, mockNet.jRequest)
   let sendCount = 0
   const unsubscribedClient = {
     readyState: 1,
@@ -259,7 +263,7 @@ test('broadcastAlerts should only send to clients subscribed to alerts', async (
   const mockNet = {
     jRequest: async () => [{ id: 'alert1' }]
   }
-  const service = new AlertsService({ orks: mockOrks, net: mockNet })
+  const service = makeService(mockOrks, mockNet.jRequest)
   let sendCount = 0
   const subscribedClient = {
     readyState: 1,
@@ -298,7 +302,7 @@ test('fetchAlerts should extract alerts and append id, type, code and container'
       }
     }]
   }
-  const service = new AlertsService({ orks: mockOrks, net: mockNet })
+  const service = makeService(mockOrks, mockNet.jRequest)
   const result = await service.fetchAlerts()
 
   t.is(result.length, 2, 'Should return 2 alerts')
@@ -339,7 +343,7 @@ test('fetchAlerts should handle multiple miners with alerts', async (t) => {
       }
     ]
   }
-  const service = new AlertsService({ orks: mockOrks, net: mockNet })
+  const service = makeService(mockOrks, mockNet.jRequest)
   const result = await service.fetchAlerts()
 
   t.is(result.length, 3, 'Should return 3 total alerts from 2 miners')
@@ -375,7 +379,7 @@ test('fetchAlerts should skip miners without alerts array', async (t) => {
       }
     ]
   }
-  const service = new AlertsService({ orks: mockOrks, net: mockNet })
+  const service = makeService(mockOrks, mockNet.jRequest)
   const result = await service.fetchAlerts()
 
   t.is(result.length, 1, 'Should only return alerts from miner with valid alerts array')
@@ -395,7 +399,7 @@ test('fetchAlerts should handle miners with empty alerts array', async (t) => {
       }
     ]
   }
-  const service = new AlertsService({ orks: mockOrks, net: mockNet })
+  const service = makeService(mockOrks, mockNet.jRequest)
   const result = await service.fetchAlerts()
 
   t.is(result.length, 0, 'Should return empty array when miner has no alerts')
@@ -411,7 +415,7 @@ test('fetchAlerts should handle miners without last property', async (t) => {
       }
     ]
   }
-  const service = new AlertsService({ orks: mockOrks, net: mockNet })
+  const service = makeService(mockOrks, mockNet.jRequest)
   const result = await service.fetchAlerts()
 
   t.is(result.length, 0, 'Should return empty array when miner has no last property')
@@ -437,7 +441,7 @@ test('fetchAlerts should preserve all original alert properties', async (t) => {
       }
     }]
   }
-  const service = new AlertsService({ orks: mockOrks, net: mockNet })
+  const service = makeService(mockOrks, mockNet.jRequest)
   const result = await service.fetchAlerts()
 
   t.is(result.length, 1, 'Should return 1 alert')

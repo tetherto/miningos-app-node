@@ -7,10 +7,6 @@ const {
   RPC_METHODS,
   MINERPOOL_EXT_DATA_KEYS
 } = require('../../constants')
-const {
-  requestRpcMapLimit,
-  requestRpcMapAllPages
-} = require('../../utils')
 
 const getPoolStats = async (ctx) => {
   const pools = await _fetchPoolStats(ctx)
@@ -37,7 +33,7 @@ const getPoolConfigs = async (ctx) => {
 const getMinersWithPools = async (ctx, filters = {}) => {
   const { search, model, page = 1, limit = 50 } = filters
 
-  const results = await requestRpcMapAllPages(ctx, LIST_THINGS, {
+  const results = await ctx.dataProxy.requestDataAllPages(LIST_THINGS, {
     type: WORKER_TYPES.MINER,
     query: {},
     fields: { id: 1, code: 1, type: 1, info: 1, address: 1 }
@@ -96,7 +92,7 @@ const getMinersWithPools = async (ctx, filters = {}) => {
 }
 
 const getUnitsWithPoolData = async (ctx) => {
-  const results = await requestRpcMapAllPages(ctx, LIST_THINGS, {
+  const results = await ctx.dataProxy.requestDataAllPages(LIST_THINGS, {
     type: WORKER_TYPES.MINER,
     query: {},
     fields: { id: 1, type: 1, info: 1 }
@@ -136,7 +132,7 @@ const getUnitsWithPoolData = async (ctx) => {
 const getPoolAlerts = async (ctx, filters = {}) => {
   const { limit = 50 } = filters
 
-  const results = await requestRpcMapAllPages(ctx, LIST_THINGS, {
+  const results = await ctx.dataProxy.requestDataAllPages(LIST_THINGS, {
     type: WORKER_TYPES.MINER,
     query: {},
     fields: { id: 1, code: 1, type: 1, info: 1, alerts: 1 }
@@ -172,7 +168,7 @@ const getPoolAlerts = async (ctx, filters = {}) => {
 }
 
 async function _fetchPoolStats (ctx) {
-  const results = await requestRpcMapLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+  const results = await ctx.dataProxy.requestDataMap(RPC_METHODS.GET_WRK_EXT_DATA, {
     type: 'minerpool',
     query: { key: MINERPOOL_EXT_DATA_KEYS.STATS }
   })

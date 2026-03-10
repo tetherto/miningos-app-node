@@ -1,14 +1,62 @@
 'use strict'
 
-const createMockCtxWithOrks = (orks = [{ rpcPublicKey: 'key1' }], jRequestImpl = async () => ({})) => {
-  return {
-    conf: {
-      orks
-    },
-    net_r0: {
-      jRequest: jRequestImpl
-    }
+const async = require('async')
+
+const buildDataProxy = (orks = [], jRequestImpl = async () => ({})) => {
+  const eachLimit = async (method, params, errorHandler = null) => {
+    const results = []
+    await async.eachLimit(orks, 2, async (store) => {
+      try {
+        const res = await jRequestImpl(store.rpcPublicKey, method, params, {})
+        if (errorHandler) errorHandler(res, results)
+        else results.push(res)
+      } catch (err) {
+        if (errorHandler) errorHandler({ error: err.message }, results)
+        else results.push({ error: err.message })
+      }
+    })
+    return results
   }
+
+  const mapLimit = async (method, params) => {
+    return async.mapLimit(orks, 2, async (store) => {
+      return jRequestImpl(store.rpcPublicKey, method, params, {})
+    })
+  }
+
+  const mapAllPages = async (method, params, pageLimit = 100) => {
+    return async.mapLimit(orks, 2, async (store) => {
+      const allItems = []
+      let offset = 0
+      while (true) {
+        const batch = await jRequestImpl(store.rpcPublicKey, method, { ...params, limit: pageLimit, offset }, {})
+        if (!Array.isArray(batch) || batch.length === 0) break
+        allItems.push(...batch)
+        if (batch.length < pageLimit) break
+        offset += pageLimit
+      }
+      return allItems
+    })
+  }
+
+  return {
+    requestData: eachLimit,
+    requestDataMap: mapLimit,
+    requestDataAllPages: mapAllPages
+  }
+}
+
+const withDataProxy = (ctx) => {
+  const orks = ctx.conf?.orks || []
+  const jRequestImpl = ctx.net_r0?.jRequest || (async () => ({}))
+  return { ...ctx, dataProxy: buildDataProxy(orks, jRequestImpl) }
+}
+
+const createMockCtxWithOrks = (orks = [{ rpcPublicKey: 'key1' }], jRequestImpl = async () => ({})) => {
+  return withDataProxy({
+    conf: { orks },
+    net_r0: { jRequest: jRequestImpl }
+  })
 }
 
 const createMockCtxWithOrksAndNet = (orks, netImpl) => {
@@ -102,6 +150,8 @@ const createRoutesForTest = (routesPath) => {
 }
 
 module.exports = {
+  buildDataProxy,
+  withDataProxy,
   createMockCtxWithOrks,
   createMockCtxWithOrksAndNet,
   createMockAuthCtx,

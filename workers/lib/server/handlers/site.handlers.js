@@ -1,7 +1,5 @@
 'use strict'
 
-const { requestRpcMapLimit } = require('../../utils')
-
 /**
  * Extracts the latest entry from a tail-log key result.
  * tailLogMulti returns results per key in order.
@@ -275,9 +273,9 @@ async function getSiteLiveStatus (ctx, req) {
 
   const [tailLogResults, poolDataResults, globalConfigResults] =
     await Promise.all([
-      requestRpcMapLimit(ctx, 'tailLogMulti', tailLogPayload),
-      requestRpcMapLimit(ctx, 'getWrkExtData', poolPayload),
-      requestRpcMapLimit(ctx, 'getGlobalConfig', globalConfigPayload)
+      ctx.dataProxy.requestDataMap('tailLogMulti', tailLogPayload),
+      ctx.dataProxy.requestDataMap('getWrkExtData', poolPayload),
+      ctx.dataProxy.requestDataMap('getGlobalConfig', globalConfigPayload)
     ])
 
   return composeSiteStatus(
