@@ -374,7 +374,7 @@ test('Pool Manager API', { timeout: 90000 }, async (main) => {
         const res = await httpClient.get(api, { headers, encoding })
         t.ok(res.body)
         t.ok('poolConfig' in res.body)
-        t.ok(typeof res.body.overridenConfig === 'number')
+        t.ok(typeof res.body.overriddenConfig === 'number')
         t.pass()
       } catch (e) {
         console.error('Pool thing config error:', e)

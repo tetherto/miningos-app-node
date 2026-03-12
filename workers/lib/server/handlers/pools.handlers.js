@@ -296,15 +296,15 @@ const getPoolThingConfig = async (ctx, req) => {
   const info = thing?.[0]?.[0]?.info
   if (!rack || !info) throw new Error('ERR_THING_NOT_FOUND')
   if (rack?.startsWith(WORKER_TYPES.MINER)) {
-    return { poolConfig: info?.poolConfig || null, overridenConfig: 0 }
+    return { poolConfig: info?.poolConfig || null, overriddenConfig: 0 }
   }
 
   const miners = await ctx.dataProxy.requestData(RPC_METHODS.LIST_THINGS, {
     query: { tags: { $in: [`container-${info.container}`] } },
     fields: { 'info.poolConfig': 1 }
   })
-  const overridenConfig = miners?.[0]?.filter(m => m.info?.poolConfig && m.info?.poolConfig !== info?.poolConfig)?.length || 0
-  return { poolConfig: info?.poolConfig || null, overridenConfig }
+  const overriddenConfig = miners?.[0]?.filter(m => m.info?.poolConfig && m.info?.poolConfig !== info?.poolConfig)?.length || 0
+  return { poolConfig: info?.poolConfig || null, overriddenConfig }
 }
 
 module.exports = {

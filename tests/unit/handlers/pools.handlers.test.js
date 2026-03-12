@@ -503,7 +503,7 @@ test('getPoolThingConfig - thing not found when no rack or info', async (t) => {
   t.pass()
 })
 
-test('getPoolThingConfig - miner thing returns poolConfig and overridenConfig 0', async (t) => {
+test('getPoolThingConfig - miner thing returns poolConfig and overriddenConfig 0', async (t) => {
   const mockCtx = withDataProxy({
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
     net_r0: {
@@ -521,11 +521,11 @@ test('getPoolThingConfig - miner thing returns poolConfig and overridenConfig 0'
 
   t.ok(result, 'should return result')
   t.is(result.poolConfig, 'cfg1', 'should return poolConfig from info')
-  t.is(result.overridenConfig, 0, 'should not fetch miners for miner thing')
+  t.is(result.overriddenConfig, 0, 'should not fetch miners for miner thing')
   t.pass()
 })
 
-test('getPoolThingConfig - maintenance container returns overridenConfig 0', async (t) => {
+test('getPoolThingConfig - maintenance container returns overriddenConfig 0', async (t) => {
   const mockCtx = withDataProxy({
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
     net_r0: {
@@ -542,11 +542,11 @@ test('getPoolThingConfig - maintenance container returns overridenConfig 0', asy
   const result = await getPoolThingConfig(mockCtx, mockReq)
 
   t.is(result.poolConfig, 'cfg2', 'should return poolConfig')
-  t.is(result.overridenConfig, 0, 'should not fetch miners for maintenance container')
+  t.is(result.overriddenConfig, 0, 'should not fetch miners for maintenance container')
   t.pass()
 })
 
-test('getPoolThingConfig - container thing returns overridenConfig count', async (t) => {
+test('getPoolThingConfig - container thing returns overriddenConfig count', async (t) => {
   const mockCtx = withDataProxy({
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
     net_r0: {
@@ -571,7 +571,7 @@ test('getPoolThingConfig - container thing returns overridenConfig count', async
   const result = await getPoolThingConfig(mockCtx, mockReq)
 
   t.is(result.poolConfig, 'shared-cfg', 'should return container poolConfig')
-  t.is(result.overridenConfig, 2, 'should count miners with same poolConfig')
+  t.is(result.overriddenConfig, 2, 'should count miners with same poolConfig')
   t.pass()
 })
 
@@ -595,6 +595,6 @@ test('getPoolThingConfig - container with no poolConfig returns null and zero ov
   const result = await getPoolThingConfig(mockCtx, mockReq)
 
   t.is(result.poolConfig, null, 'should return null when no poolConfig')
-  t.is(result.overridenConfig, 0, 'should be 0 when no miners match')
+  t.is(result.overriddenConfig, 0, 'should be 0 when no miners match')
   t.pass()
 })
