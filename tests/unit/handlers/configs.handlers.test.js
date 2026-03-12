@@ -2,24 +2,23 @@
 
 const test = require('brittle')
 const { getConfigs } = require('../../../workers/lib/server/handlers/configs.handlers')
+const { RPC_METHODS } = require('../../../workers/lib/constants')
+const { createMockCtxWithOrks } = require('../helpers/mockHelpers')
 
 test('getConfigs - happy path', async (t) => {
-  const mockCtx = {
-    conf: {
-      orks: [{ rpcPublicKey: 'key1' }]
-    },
-    net_r0: {
-      jRequest: async (key, method, payload) => {
-        if (method === 'getConfigs') {
-          return [
-            { id: 'config1', name: 'Pool Config 1', url: 'stratum://pool1.example.com' },
-            { id: 'config2', name: 'Pool Config 2', url: 'stratum://pool2.example.com' }
-          ]
-        }
-        return []
+  const mockCtx = createMockCtxWithOrks(
+    [{ rpcPublicKey: 'key1' }],
+    async (key, method, payload) => {
+      if (method === 'getConfigs') {
+        return [
+          { id: 'config1', name: 'Pool Config 1', url: 'stratum://pool1.example.com' },
+          { id: 'config2', name: 'Pool Config 2', url: 'stratum://pool2.example.com' }
+        ]
       }
+      if (method === RPC_METHODS.LIST_THINGS) return []
+      return []
     }
-  }
+  )
 
   const mockReq = {
     params: { type: 'pool' },
@@ -35,17 +34,15 @@ test('getConfigs - happy path', async (t) => {
 
 test('getConfigs - with query filter', async (t) => {
   let capturedPayload = null
-  const mockCtx = {
-    conf: {
-      orks: [{ rpcPublicKey: 'key1' }]
-    },
-    net_r0: {
-      jRequest: async (key, method, payload) => {
-        capturedPayload = payload
-        return [{ id: 'config1', active: true }]
-      }
+  const mockCtx = createMockCtxWithOrks(
+    [{ rpcPublicKey: 'key1' }],
+    async (key, method, payload) => {
+      if (method === 'getConfigs') capturedPayload = payload
+      if (method === 'getConfigs') return [{ id: 'config1', active: true }]
+      if (method === RPC_METHODS.LIST_THINGS) return []
+      return []
     }
-  }
+  )
 
   const mockReq = {
     params: { type: 'pool' },
@@ -60,17 +57,15 @@ test('getConfigs - with query filter', async (t) => {
 
 test('getConfigs - with fields projection', async (t) => {
   let capturedPayload = null
-  const mockCtx = {
-    conf: {
-      orks: [{ rpcPublicKey: 'key1' }]
-    },
-    net_r0: {
-      jRequest: async (key, method, payload) => {
-        capturedPayload = payload
-        return [{ name: 'Config 1' }]
-      }
+  const mockCtx = createMockCtxWithOrks(
+    [{ rpcPublicKey: 'key1' }],
+    async (key, method, payload) => {
+      if (method === 'getConfigs') capturedPayload = payload
+      if (method === 'getConfigs') return [{ name: 'Config 1' }]
+      if (method === RPC_METHODS.LIST_THINGS) return []
+      return []
     }
-  }
+  )
 
   const mockReq = {
     params: { type: 'pool' },
@@ -86,17 +81,15 @@ test('getConfigs - with fields projection', async (t) => {
 
 test('getConfigs - with both query and fields', async (t) => {
   let capturedPayload = null
-  const mockCtx = {
-    conf: {
-      orks: [{ rpcPublicKey: 'key1' }]
-    },
-    net_r0: {
-      jRequest: async (key, method, payload) => {
-        capturedPayload = payload
-        return [{ name: 'Config 1' }]
-      }
+  const mockCtx = createMockCtxWithOrks(
+    [{ rpcPublicKey: 'key1' }],
+    async (key, method, payload) => {
+      if (method === 'getConfigs') capturedPayload = payload
+      if (method === 'getConfigs') return [{ name: 'Config 1' }]
+      if (method === RPC_METHODS.LIST_THINGS) return []
+      return []
     }
-  }
+  )
 
   const mockReq = {
     params: { type: 'pool' },
@@ -114,10 +107,7 @@ test('getConfigs - with both query and fields', async (t) => {
 })
 
 test('getConfigs - invalid config type throws', async (t) => {
-  const mockCtx = {
-    conf: { orks: [] },
-    net_r0: { jRequest: async () => ([]) }
-  }
+  const mockCtx = createMockCtxWithOrks([], async () => ([]))
 
   const mockReq = {
     params: { type: 'invalid_type' },
@@ -134,10 +124,7 @@ test('getConfigs - invalid config type throws', async (t) => {
 })
 
 test('getConfigs - missing config type throws', async (t) => {
-  const mockCtx = {
-    conf: { orks: [] },
-    net_r0: { jRequest: async () => ([]) }
-  }
+  const mockCtx = createMockCtxWithOrks([], async () => ([]))
 
   const mockReq = {
     params: {},
@@ -154,10 +141,7 @@ test('getConfigs - missing config type throws', async (t) => {
 })
 
 test('getConfigs - invalid query JSON throws', async (t) => {
-  const mockCtx = {
-    conf: { orks: [{ rpcPublicKey: 'key1' }] },
-    net_r0: { jRequest: async () => ([]) }
-  }
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => ([]))
 
   const mockReq = {
     params: { type: 'pool' },
@@ -174,10 +158,7 @@ test('getConfigs - invalid query JSON throws', async (t) => {
 })
 
 test('getConfigs - invalid fields JSON throws', async (t) => {
-  const mockCtx = {
-    conf: { orks: [{ rpcPublicKey: 'key1' }] },
-    net_r0: { jRequest: async () => ([]) }
-  }
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => ([]))
 
   const mockReq = {
     params: { type: 'pool' },
@@ -194,10 +175,7 @@ test('getConfigs - invalid fields JSON throws', async (t) => {
 })
 
 test('getConfigs - empty ork results', async (t) => {
-  const mockCtx = {
-    conf: { orks: [{ rpcPublicKey: 'key1' }] },
-    net_r0: { jRequest: async () => ([]) }
-  }
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => ([]))
 
   const mockReq = {
     params: { type: 'pool' },
@@ -211,12 +189,10 @@ test('getConfigs - empty ork results', async (t) => {
 })
 
 test('getConfigs - handles error results from orks', async (t) => {
-  const mockCtx = {
-    conf: { orks: [{ rpcPublicKey: 'key1' }] },
-    net_r0: {
-      jRequest: async () => ({ error: 'timeout' })
-    }
-  }
+  const mockCtx = createMockCtxWithOrks(
+    [{ rpcPublicKey: 'key1' }],
+    async () => ({ error: 'timeout' })
+  )
 
   const mockReq = {
     params: { type: 'pool' },
@@ -231,20 +207,15 @@ test('getConfigs - handles error results from orks', async (t) => {
 
 test('getConfigs - aggregates results from multiple orks', async (t) => {
   let callCount = 0
-  const mockCtx = {
-    conf: {
-      orks: [
-        { rpcPublicKey: 'key1' },
-        { rpcPublicKey: 'key2' }
-      ]
-    },
-    net_r0: {
-      jRequest: async () => {
-        callCount++
-        return [{ id: `config${callCount}`, name: `Config ${callCount}` }]
-      }
+  const mockCtx = createMockCtxWithOrks(
+    [{ rpcPublicKey: 'key1' }, { rpcPublicKey: 'key2' }],
+    async (key, method) => {
+      callCount++
+      if (method === 'getConfigs') return [{ id: `config${callCount}`, name: `Config ${callCount}` }]
+      if (method === RPC_METHODS.LIST_THINGS) return []
+      return []
     }
-  }
+  )
 
   const mockReq = {
     params: { type: 'pool' },

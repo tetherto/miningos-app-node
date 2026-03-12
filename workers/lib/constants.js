@@ -125,6 +125,7 @@ const ENDPOINTS = {
   // Pools endpoints
   POOLS: '/auth/pools',
   POOLS_BALANCE_HISTORY: '/auth/pools/:pool/balance-history',
+  POOLS_THING_CONFIG: '/auth/pools/config/:id',
 
   // Pool stats endpoints
   POOL_STATS_AGGREGATE: '/auth/pool-stats/aggregate',

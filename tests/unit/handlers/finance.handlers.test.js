@@ -872,7 +872,7 @@ test('calculateDetailedRevenueSummary - handles empty log', (t) => {
 
 test('getHashRevenue - happy path', async (t) => {
   const dayTs = 1700006400000
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: {
       orks: [{ rpcPublicKey: 'key1' }]
     },
@@ -898,7 +898,7 @@ test('getHashRevenue - happy path', async (t) => {
         return {}
       }
     }
-  }
+  })
 
   const mockReq = {
     query: { start: 1700000000000, end: 1700100000000, period: 'daily' }
@@ -925,10 +925,10 @@ test('getHashRevenue - happy path', async (t) => {
 })
 
 test('getHashRevenue - missing start throws', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [] },
     net_r0: { jRequest: async () => ({}) }
-  }
+  })
 
   try {
     await getHashRevenue(mockCtx, { query: { end: 1700100000000 } }, {})
@@ -940,10 +940,10 @@ test('getHashRevenue - missing start throws', async (t) => {
 })
 
 test('getHashRevenue - invalid range throws', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [] },
     net_r0: { jRequest: async () => ({}) }
-  }
+  })
 
   try {
     await getHashRevenue(mockCtx, { query: { start: 1700100000000, end: 1700000000000 } }, {})
@@ -955,10 +955,10 @@ test('getHashRevenue - invalid range throws', async (t) => {
 })
 
 test('getHashRevenue - empty ork results', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
     net_r0: { jRequest: async () => ({}) }
-  }
+  })
 
   const result = await getHashRevenue(mockCtx, { query: { start: 1700000000000, end: 1700100000000 } }, {})
   t.ok(result.log, 'should return log array')

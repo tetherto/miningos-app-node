@@ -369,4 +369,3 @@ test('poolManager:getPoolAlerts includes severity', async function (t) {
   t.is(result[0].severity, 'critical')
   t.is(result[0].type, 'all_pools_dead')
 })
-

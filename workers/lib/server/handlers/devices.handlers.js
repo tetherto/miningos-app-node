@@ -7,12 +7,7 @@ const {
   WORKER_TAGS,
   DEVICE_LIST_FIELDS
 } = require('../../constants')
-const {
-  requestRpcMapAllPages,
-  requestRpcMapLimit,
-  parseJsonQueryParam,
-  flattenRpcResults
-} = require('../../utils')
+const { parseJsonQueryParam, flattenRpcResults } = require('../../utils')
 
 const CABINET_TAGS_QUERY = { tags: { $in: [WORKER_TAGS.POWERMETER, WORKER_TAGS.TEMP_SENSOR] } }
 
@@ -62,7 +57,7 @@ function queryAndPaginate (items, { filter, fields, sort, search, offset, limit 
 async function getContainers (ctx, req) {
   const params = parseListQuery(req)
 
-  const results = await requestRpcMapLimit(ctx, RPC_METHODS.LIST_THINGS, {
+  const results = await ctx.dataProxy.requestDataMap(RPC_METHODS.LIST_THINGS, {
     query: { tags: { $in: [WORKER_TAGS.CONTAINER] } },
     fields: DEVICE_LIST_FIELDS,
     ...(params.limit && { limit: params.limit }),
@@ -82,7 +77,7 @@ async function getContainers (ctx, req) {
 async function getCabinets (ctx, req) {
   const { filter, sort, offset, limit } = parseListQuery(req)
 
-  const results = await requestRpcMapAllPages(ctx, RPC_METHODS.LIST_THINGS, {
+  const results = await ctx.dataProxy.requestDataAllPages(RPC_METHODS.LIST_THINGS, {
     query: CABINET_TAGS_QUERY,
     fields: DEVICE_LIST_FIELDS
   })
@@ -108,7 +103,7 @@ async function getCabinets (ctx, req) {
 async function getCabinetById (ctx, req) {
   const cabinetId = req.params.id
 
-  const results = await requestRpcMapAllPages(ctx, RPC_METHODS.LIST_THINGS, {
+  const results = await ctx.dataProxy.requestDataAllPages(RPC_METHODS.LIST_THINGS, {
     query: CABINET_TAGS_QUERY,
     fields: DEVICE_LIST_FIELDS
   })

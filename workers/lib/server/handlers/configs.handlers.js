@@ -1,7 +1,6 @@
 'use strict'
 
-const { requestRpcEachLimit } = require('../../utils')
-const { CONFIG_TYPES } = require('../../constants')
+const { CONFIG_TYPES, RPC_METHODS, WORKER_TYPES } = require('../../constants')
 
 const VALID_CONFIG_TYPES = Object.values(CONFIG_TYPES)
 
@@ -33,12 +32,28 @@ async function getConfigs (ctx, req) {
     }
   }
 
-  return await requestRpcEachLimit(ctx, 'getConfigs', payload, (res, resultsArray) => {
+  const configs = await ctx.dataProxy.requestData('getConfigs', payload, (res, resultsArray) => {
     if (res.error) {
       console.error(new Date().toISOString(), res.error)
     } else if (Array.isArray(res)) {
       resultsArray.push(...res)
     }
+  })
+
+  if (type !== CONFIG_TYPES.POOL) return configs
+  return fetchPoolConfigThings(ctx, configs)
+}
+
+const fetchPoolConfigThings = async (ctx, configs) => {
+  const ids = configs.map(c => c.id)
+  const things = await ctx.dataProxy.requestData(RPC_METHODS.LIST_THINGS, {
+    query: { 'info.poolConfig': { $in: ids } },
+    fields: { 'info.poolConfig': 1 }
+  })
+  return configs.map(config => {
+    const containers = things?.[0]?.filter(t => t.info?.poolConfig === config.id && t.rack.startsWith(WORKER_TYPES.CONTAINER))?.length || 0
+    const miners = things?.[0]?.filter(t => t.info?.poolConfig === config.id && t.rack.startsWith(WORKER_TYPES.MINER))?.length || 0
+    return { ...config, containers, miners }
   })
 }
 

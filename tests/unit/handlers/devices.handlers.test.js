@@ -10,6 +10,7 @@ const {
   queryAndPaginate
 } = require('../../../workers/lib/server/handlers/devices.handlers')
 const { flattenRpcResults } = require('../../../workers/lib/utils')
+const { createMockCtxWithOrks } = require('../helpers/mockHelpers')
 
 test('flattenRpcResults - flattens multi-ork arrays', (t) => {
   const results = [
@@ -109,15 +110,13 @@ test('queryAndPaginate - filters and paginates', (t) => {
 })
 
 test('getContainers - happy path', async (t) => {
-  const mockCtx = {
-    conf: { orks: [{ rpcPublicKey: 'key1' }] },
-    net_r0: {
-      jRequest: async () => [
-        { id: 'c1', type: 'bitdeer-d40' },
-        { id: 'c2', type: 'antbox-hydro' }
-      ]
-    }
-  }
+  const mockCtx = createMockCtxWithOrks(
+    [{ rpcPublicKey: 'key1' }],
+    async () => [
+      { id: 'c1', type: 'bitdeer-d40' },
+      { id: 'c2', type: 'antbox-hydro' }
+    ]
+  )
 
   const result = await getContainers(mockCtx, { query: {} })
   t.ok(result.containers, 'should return containers array')
@@ -127,15 +126,13 @@ test('getContainers - happy path', async (t) => {
 })
 
 test('getContainers - with filter', async (t) => {
-  const mockCtx = {
-    conf: { orks: [{ rpcPublicKey: 'key1' }] },
-    net_r0: {
-      jRequest: async () => [
-        { id: 'c1', type: 'bitdeer-d40', status: 'online' },
-        { id: 'c2', type: 'antbox-hydro', status: 'offline' }
-      ]
-    }
-  }
+  const mockCtx = createMockCtxWithOrks(
+    [{ rpcPublicKey: 'key1' }],
+    async () => [
+      { id: 'c1', type: 'bitdeer-d40', status: 'online' },
+      { id: 'c2', type: 'antbox-hydro', status: 'offline' }
+    ]
+  )
 
   const result = await getContainers(mockCtx, { query: { filter: '{"status":"online"}' } })
   t.is(result.containers.length, 1, 'should filter containers')
@@ -144,10 +141,7 @@ test('getContainers - with filter', async (t) => {
 })
 
 test('getContainers - empty results', async (t) => {
-  const mockCtx = {
-    conf: { orks: [{ rpcPublicKey: 'key1' }] },
-    net_r0: { jRequest: async () => [] }
-  }
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => [])
 
   const result = await getContainers(mockCtx, { query: {} })
   t.is(result.containers.length, 0, 'should return empty array')
@@ -156,16 +150,14 @@ test('getContainers - empty results', async (t) => {
 })
 
 test('getCabinets - happy path with grouping', async (t) => {
-  const mockCtx = {
-    conf: { orks: [{ rpcPublicKey: 'key1' }] },
-    net_r0: {
-      jRequest: async () => [
-        { id: 'd1', info: { pos: 'cab-A/slot1' }, tags: ['t-powermeter'] },
-        { id: 'd2', info: { pos: 'cab-A/slot2' }, tags: ['t-sensor-temp'] },
-        { id: 'd3', info: { pos: 'cab-B/slot1' }, tags: ['t-powermeter'] }
-      ]
-    }
-  }
+  const mockCtx = createMockCtxWithOrks(
+    [{ rpcPublicKey: 'key1' }],
+    async () => [
+      { id: 'd1', info: { pos: 'cab-A/slot1' }, tags: ['t-powermeter'] },
+      { id: 'd2', info: { pos: 'cab-A/slot2' }, tags: ['t-sensor-temp'] },
+      { id: 'd3', info: { pos: 'cab-B/slot1' }, tags: ['t-powermeter'] }
+    ]
+  )
 
   const result = await getCabinets(mockCtx, { query: {} })
   t.ok(result.cabinets, 'should return cabinets array')
@@ -179,10 +171,7 @@ test('getCabinets - happy path with grouping', async (t) => {
 })
 
 test('getCabinets - empty results', async (t) => {
-  const mockCtx = {
-    conf: { orks: [{ rpcPublicKey: 'key1' }] },
-    net_r0: { jRequest: async () => [] }
-  }
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => [])
 
   const result = await getCabinets(mockCtx, { query: {} })
   t.is(result.cabinets.length, 0, 'should return empty array')
@@ -191,16 +180,14 @@ test('getCabinets - empty results', async (t) => {
 })
 
 test('getCabinets - with pagination', async (t) => {
-  const mockCtx = {
-    conf: { orks: [{ rpcPublicKey: 'key1' }] },
-    net_r0: {
-      jRequest: async () => [
-        { id: 'd1', info: { pos: 'cab-A/slot1' } },
-        { id: 'd2', info: { pos: 'cab-B/slot1' } },
-        { id: 'd3', info: { pos: 'cab-C/slot1' } }
-      ]
-    }
-  }
+  const mockCtx = createMockCtxWithOrks(
+    [{ rpcPublicKey: 'key1' }],
+    async () => [
+      { id: 'd1', info: { pos: 'cab-A/slot1' } },
+      { id: 'd2', info: { pos: 'cab-B/slot1' } },
+      { id: 'd3', info: { pos: 'cab-C/slot1' } }
+    ]
+  )
 
   const result = await getCabinets(mockCtx, { query: { offset: '0', limit: '2' } })
   t.is(result.total, 3, 'total should reflect all cabinets')
@@ -209,16 +196,14 @@ test('getCabinets - with pagination', async (t) => {
 })
 
 test('getCabinetById - happy path', async (t) => {
-  const mockCtx = {
-    conf: { orks: [{ rpcPublicKey: 'key1' }] },
-    net_r0: {
-      jRequest: async () => [
-        { id: 'd1', info: { pos: 'cab-A/slot1' } },
-        { id: 'd2', info: { pos: 'cab-A/slot2' } },
-        { id: 'd3', info: { pos: 'cab-B/slot1' } }
-      ]
-    }
-  }
+  const mockCtx = createMockCtxWithOrks(
+    [{ rpcPublicKey: 'key1' }],
+    async () => [
+      { id: 'd1', info: { pos: 'cab-A/slot1' } },
+      { id: 'd2', info: { pos: 'cab-A/slot2' } },
+      { id: 'd3', info: { pos: 'cab-B/slot1' } }
+    ]
+  )
 
   const result = await getCabinetById(mockCtx, { params: { id: 'cab-A' }, query: {} })
   t.ok(result.cabinet, 'should return cabinet')
@@ -228,14 +213,10 @@ test('getCabinetById - happy path', async (t) => {
 })
 
 test('getCabinetById - not found', async (t) => {
-  const mockCtx = {
-    conf: { orks: [{ rpcPublicKey: 'key1' }] },
-    net_r0: {
-      jRequest: async () => [
-        { id: 'd1', info: { pos: 'cab-A/slot1' } }
-      ]
-    }
-  }
+  const mockCtx = createMockCtxWithOrks(
+    [{ rpcPublicKey: 'key1' }],
+    async () => [{ id: 'd1', info: { pos: 'cab-A/slot1' } }]
+  )
 
   try {
     await getCabinetById(mockCtx, { params: { id: 'nonexistent' }, query: {} })

@@ -1129,7 +1129,7 @@ test('getPowerModeTimeline - always uses t-miner tag', async (t) => {
 })
 
 test('getPowerModeTimeline - returns all results without truncation', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: {
       orks: [{ rpcPublicKey: 'key1' }]
     },
@@ -1146,7 +1146,7 @@ test('getPowerModeTimeline - returns all results without truncation', async (t) 
         return entries
       }
     }
-  }
+  })
 
   const result = await getPowerModeTimeline(mockCtx, {
     query: { start: 1700000000000, end: 1700100000000 }

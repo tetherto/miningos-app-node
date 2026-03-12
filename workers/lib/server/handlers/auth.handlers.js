@@ -1,7 +1,7 @@
 'use strict'
 
 const gLibUtilBase = require('lib-js-util-base')
-const { parseJsonQueryParam, requestRpcMapLimit, getAuthTokenFromHeaders } = require('../../utils')
+const { parseJsonQueryParam, getAuthTokenFromHeaders } = require('../../utils')
 
 async function getUserInfo (ctx, req) {
   return req._info.user
@@ -27,7 +27,7 @@ async function extDataRoute (ctx, req, rep) {
     req.query.query = parseJsonQueryParam(req.query.query, 'ERR_QUERY_INVALID_JSON')
   }
 
-  return await requestRpcMapLimit(ctx, 'getWrkExtData', req.query)
+  return await ctx.dataProxy.requestDataMap('getWrkExtData', req.query)
 }
 
 module.exports = {

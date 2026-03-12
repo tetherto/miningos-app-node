@@ -17,6 +17,7 @@ test('pools routes - route definitions', (t) => {
   t.ok(routeUrls.includes('/auth/pools'), 'should have pools route')
   t.ok(routeUrls.includes('/auth/pools/:pool/balance-history'), 'should have balance-history route')
   t.ok(routeUrls.includes('/auth/pool-stats/aggregate'), 'should have pool-stats aggregate route')
+  t.ok(routeUrls.includes('/auth/pools/config/:id'), 'should have pools thing config route')
   t.pass()
 })
 

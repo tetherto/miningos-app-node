@@ -1,6 +1,7 @@
 'use strict'
 
 const test = require('brittle')
+const { RPC_METHODS, WORKER_TYPES, MINER_CATEGORIES } = require('../../../workers/lib/constants')
 const {
   getPools,
   flattenPoolStats,
@@ -10,7 +11,8 @@ const {
   groupByBucket,
   getPoolStatsAggregate,
   processTransactionData,
-  calculateAggregateSummary
+  calculateAggregateSummary,
+  getPoolThingConfig
 } = require('../../../workers/lib/server/handlers/pools.handlers')
 const { withDataProxy } = require('../helpers/mockHelpers')
 
@@ -476,5 +478,123 @@ test('calculateAggregateSummary - handles empty log', (t) => {
   t.is(summary.totalRevenueBTC, 0, 'should be zero')
   t.is(summary.avgHashrate, 0, 'should be zero')
   t.is(summary.periodCount, 0, 'should be zero')
+  t.pass()
+})
+
+test('getPoolThingConfig - thing not found when no rack or info', async (t) => {
+  const mockCtx = withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: {
+      jRequest: async (key, method) => {
+        if (method === RPC_METHODS.LIST_THINGS) return []
+        return []
+      }
+    }
+  })
+
+  const mockReq = { params: { id: 'thing-1' } }
+
+  try {
+    await getPoolThingConfig(mockCtx, mockReq)
+    t.fail('should have thrown ERR_THING_NOT_FOUND')
+  } catch (err) {
+    t.is(err.message, 'ERR_THING_NOT_FOUND', 'should throw when thing missing rack/info')
+  }
+  t.pass()
+})
+
+test('getPoolThingConfig - miner thing returns poolConfig and overridenConfig 0', async (t) => {
+  const mockCtx = withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: {
+      jRequest: async (key, method, params) => {
+        if (method === RPC_METHODS.LIST_THINGS && params?.query?.id) {
+          return [{ id: 'miner-1', rack: 'miner-am-s19xp', info: { container: 'unit-1', poolConfig: 'cfg1' } }]
+        }
+        return []
+      }
+    }
+  })
+
+  const mockReq = { params: { id: 'miner-1' } }
+  const result = await getPoolThingConfig(mockCtx, mockReq)
+
+  t.ok(result, 'should return result')
+  t.is(result.poolConfig, 'cfg1', 'should return poolConfig from info')
+  t.is(result.overridenConfig, 0, 'should not fetch miners for miner thing')
+  t.pass()
+})
+
+test('getPoolThingConfig - maintenance container returns overridenConfig 0', async (t) => {
+  const mockCtx = withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: {
+      jRequest: async (key, method, params) => {
+        if (method === RPC_METHODS.LIST_THINGS && params?.query?.id) {
+          return [{ id: 'container-1', rack: 'container-x', info: { container: MINER_CATEGORIES.MAINTENANCE, poolConfig: 'cfg2' } }]
+        }
+        return []
+      }
+    }
+  })
+
+  const mockReq = { params: { id: 'container-1' } }
+  const result = await getPoolThingConfig(mockCtx, mockReq)
+
+  t.is(result.poolConfig, 'cfg2', 'should return poolConfig')
+  t.is(result.overridenConfig, 0, 'should not fetch miners for maintenance container')
+  t.pass()
+})
+
+test('getPoolThingConfig - container thing returns overridenConfig count', async (t) => {
+  const mockCtx = withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: {
+      jRequest: async (key, method, params) => {
+        if (method === RPC_METHODS.LIST_THINGS && params?.query?.id) {
+          return [{ id: 'container-1', rack: 'container-unit-a', info: { container: 'unit-a', poolConfig: 'shared-cfg' } }]
+        }
+        if (method === RPC_METHODS.LIST_THINGS && params?.query?.tags) {
+          return [
+            { id: 'm1', info: { poolConfig: 'shared-cfg' } },
+            { id: 'm2', info: { poolConfig: 'shared-cfg' } },
+            { id: 'm3', info: { poolConfig: 'other-cfg' } },
+            { id: 'm4', info: { poolConfig: 'other-cfg' } }
+          ]
+        }
+        return []
+      }
+    }
+  })
+
+  const mockReq = { params: { id: 'container-1' } }
+  const result = await getPoolThingConfig(mockCtx, mockReq)
+
+  t.is(result.poolConfig, 'shared-cfg', 'should return container poolConfig')
+  t.is(result.overridenConfig, 2, 'should count miners with same poolConfig')
+  t.pass()
+})
+
+test('getPoolThingConfig - container with no poolConfig returns null and zero overriden', async (t) => {
+  const mockCtx = withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: {
+      jRequest: async (key, method, params) => {
+        if (method === RPC_METHODS.LIST_THINGS && params?.query?.id) {
+          return [{ id: 'container-2', rack: 'container-unit-b', info: { container: 'unit-b' } }]
+        }
+        if (method === RPC_METHODS.LIST_THINGS && params?.type === WORKER_TYPES.MINER) {
+          return []
+        }
+        return []
+      }
+    }
+  })
+
+  const mockReq = { params: { id: 'container-2' } }
+  const result = await getPoolThingConfig(mockCtx, mockReq)
+
+  t.is(result.poolConfig, null, 'should return null when no poolConfig')
+  t.is(result.overridenConfig, 0, 'should be 0 when no miners match')
   t.pass()
 })

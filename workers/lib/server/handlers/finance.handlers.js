@@ -8,11 +8,7 @@ const {
   RPC_METHODS,
   GLOBAL_DATA_TYPES
 } = require('../../constants')
-const {
-  getStartOfDay,
-  safeDiv,
-  runParallel
-} = require('../../utils')
+const { getStartOfDay, safeDiv, runParallel } = require('../../utils')
 const { aggregateByPeriod } = require('../../period.utils')
 const {
   validateStartEnd,
@@ -987,12 +983,12 @@ async function getHashRevenue (ctx, req) {
     currentPriceResults,
     networkHashrateResults
   ] = await runParallel([
-    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+    (cb) => ctx.dataProxy.requestData(RPC_METHODS.GET_WRK_EXT_DATA, {
       type: WORKER_TYPES.MINERPOOL,
       query: { key: MINERPOOL_EXT_DATA_KEYS.TRANSACTIONS, start, end }
     }).then(r => cb(null, r)).catch(cb),
 
-    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.TAIL_LOG_RANGE_AGGR, {
+    (cb) => ctx.dataProxy.requestData(RPC_METHODS.TAIL_LOG_RANGE_AGGR, {
       keys: [{
         type: WORKER_TYPES.MINER,
         startDate,
@@ -1002,17 +998,17 @@ async function getHashRevenue (ctx, req) {
       }]
     }).then(r => cb(null, r)).catch(cb),
 
-    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+    (cb) => ctx.dataProxy.requestData(RPC_METHODS.GET_WRK_EXT_DATA, {
       type: WORKER_TYPES.MEMPOOL,
       query: { key: 'prices', start, end }
     }).then(r => cb(null, r)).catch(cb),
 
-    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+    (cb) => ctx.dataProxy.requestData(RPC_METHODS.GET_WRK_EXT_DATA, {
       type: WORKER_TYPES.MEMPOOL,
       query: { key: 'current_price' }
     }).then(r => cb(null, r)).catch(cb),
 
-    (cb) => requestRpcEachLimit(ctx, RPC_METHODS.GET_WRK_EXT_DATA, {
+    (cb) => ctx.dataProxy.requestData(RPC_METHODS.GET_WRK_EXT_DATA, {
       type: WORKER_TYPES.MEMPOOL,
       query: { key: 'HISTORICAL_HASHRATE', start, end }
     }).then(r => cb(null, r)).catch(cb)

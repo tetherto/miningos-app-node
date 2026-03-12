@@ -2,6 +2,7 @@
 
 const test = require('brittle')
 const { getSiteName, extDataRoute, getUserInfo, newAuthToken, getUserPermissions } = require('../../../workers/lib/server/handlers/auth.handlers')
+const { createMockCtxWithOrks } = require('../helpers/mockHelpers')
 
 test('getSiteName - returns site from context', (t) => {
   const mockCtx = {
@@ -16,17 +17,10 @@ test('getSiteName - returns site from context', (t) => {
 })
 
 test('extDataRoute - with query param', async (t) => {
-  const mockCtx = {
-    conf: {
-      orks: [
-        { rpcPublicKey: 'key1' },
-        { rpcPublicKey: 'key2' }
-      ]
-    },
-    net_r0: {
-      jRequest: async () => ({ data: 'test' })
-    }
-  }
+  const mockCtx = createMockCtxWithOrks(
+    [{ rpcPublicKey: 'key1' }, { rpcPublicKey: 'key2' }],
+    async () => ({ data: 'test' })
+  )
 
   const mockReq = {
     query: {
@@ -42,16 +36,10 @@ test('extDataRoute - with query param', async (t) => {
 })
 
 test('extDataRoute - without query param', async (t) => {
-  const mockCtx = {
-    conf: {
-      orks: [
-        { rpcPublicKey: 'key1' }
-      ]
-    },
-    net_r0: {
-      jRequest: async () => ({ data: 'test' })
-    }
-  }
+  const mockCtx = createMockCtxWithOrks(
+    [{ rpcPublicKey: 'key1' }],
+    async () => ({ data: 'test' })
+  )
 
   const mockReq = {
     query: {

@@ -131,6 +131,16 @@ test('Pool Manager API', { timeout: 90000 }, async (main) => {
     await worker.start()
     worker.worker.net_r0.jRequest = (publicKey, method, params) => {
       if (method === 'listThings') {
+        if (params?.query?.id) {
+          const thing = mockMiners.find(m => m.id === params.query.id)
+          if (!thing) return Promise.resolve([])
+          const withRackAndInfo = {
+            ...thing,
+            rack: thing.id.startsWith('miner-') ? 'miner-am-s19xp' : 'container-unit-a',
+            info: { ...thing.info, container: thing.tags?.unit || 'unit-A', poolConfig: thing.snap?.config?.pool_config ? 'stratum+tcp://btc.f2pool.com:3333' : null }
+          }
+          return Promise.resolve([withRackAndInfo])
+        }
         return Promise.resolve(mockMiners)
       }
       if (method === 'getWrkExtData') {
@@ -344,4 +354,45 @@ test('Pool Manager API', { timeout: 90000 }, async (main) => {
     })
   })
 
+  await main.test('Api: auth/pools/config/:id', async (n) => {
+    const thingId = 'miner-001'
+    const api = `${appNodeBaseUrl}/auth/pools/config/${thingId}`
+
+    await n.test('api should fail for missing auth token', async (t) => {
+      try {
+        await httpClient.get(api, { encoding })
+        t.fail()
+      } catch (e) {
+        t.is(e.response.message.includes('ERR_AUTH_FAIL'), true)
+      }
+    })
+
+    await n.test('api should succeed and return pool config for thing', async (t) => {
+      const token = await getTestToken(testUser)
+      const headers = { Authorization: `Bearer ${token}` }
+      try {
+        const res = await httpClient.get(api, { headers, encoding })
+        t.ok(res.body)
+        t.ok('poolConfig' in res.body)
+        t.ok(typeof res.body.overridenConfig === 'number')
+        t.pass()
+      } catch (e) {
+        console.error('Pool thing config error:', e)
+        t.fail()
+      }
+    })
+
+    await n.test('api should return 404 for unknown thing id', async (t) => {
+      const token = await getTestToken(testUser)
+      const headers = { Authorization: `Bearer ${token}` }
+      const unknownApi = `${appNodeBaseUrl}/auth/pools/config/nonexistent-thing-id`
+      try {
+        await httpClient.get(unknownApi, { headers, encoding })
+        t.fail()
+      } catch (e) {
+        t.ok(e.response?.message?.includes('ERR_THING_NOT_FOUND') || e.code === 'ERR_HTTP_REQUEST_FAILED' || e.statusCode === 404)
+        t.pass()
+      }
+    })
+  })
 })
