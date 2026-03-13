@@ -1,7 +1,7 @@
 'use strict'
 
 const async = require('async')
-const { RPC_TIMEOUT } = require('./constants')
+const { RPC_TIMEOUT, RPC_CONCURRENCY_LIMIT, RPC_PAGE_LIMIT } = require('./constants')
 const { getStartOfDay } = require('./period.utils')
 
 const dateNowSec = () => Math.floor(Date.now() / 1000)
