@@ -139,17 +139,15 @@ async function listMiners (ctx, req) {
   const dataPayload = { query, fields: orkProjection, status: 1 }
   if (mappedSort) { dataPayload.sort = mappedSort }
 
-  const countPayload = { query, fields: { id: 1 }, status: 1 }
-
   const [orkResults, countResults] = await Promise.all([
     fetchLimit <= RPC_PAGE_LIMIT
       ? requestRpcMapLimit(ctx, 'listThings', { ...dataPayload, limit: fetchLimit })
       : requestRpcMapBatchLimit(ctx, 'listThings', dataPayload, fetchLimit),
-    requestRpcMapLimit(ctx, 'listThings', countPayload)
+    requestRpcMapLimit(ctx, 'getThingsCount', { query, status: 1 })
   ])
 
   let items = flattenOrkResults(orkResults)
-  const totalCount = flattenOrkResults(countResults).length
+  const totalCount = countResults.reduce((acc, c) => acc + (c || 0), 0)
 
   if (mappedSort) {
     items = sortItems(items, mappedSort)

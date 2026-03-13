@@ -61,6 +61,7 @@ function createMockCtx (miners, opts = {}) {
     net_r0: {
       jRequest: async (key, method, payload) => {
         if (method === 'listThings') return miners
+        if (method === 'getThingsCount') return opts.thingsCount ?? miners.length
         if (method === 'getWrkExtData') return opts.poolData || []
         return {}
       }
@@ -221,7 +222,7 @@ test('listMiners - enforces max limit of 200', async (t) => {
 })
 
 test('listMiners - parses filter JSON', async (t) => {
-  const capturedPayloads = []
+  const capturedCalls = []
   const ctx = {
     conf: {
       orks: [{ rpcPublicKey: 'key1' }],
@@ -229,7 +230,8 @@ test('listMiners - parses filter JSON', async (t) => {
     },
     net_r0: {
       jRequest: async (key, method, payload) => {
-        capturedPayloads.push(payload)
+        capturedCalls.push({ method, payload })
+        if (method === 'getThingsCount') return 0
         return []
       }
     }
@@ -238,16 +240,15 @@ test('listMiners - parses filter JSON', async (t) => {
 
   await listMiners(ctx, req)
 
-  // Both data and count payloads share the same query
-  const dataPayload = capturedPayloads.find(p => p.limit !== undefined)
-  t.ok(dataPayload.query.$and)
-  t.is(dataPayload.query.$and[0].tags.$in[0], 't-miner')
-  t.is(dataPayload.query.$and[1]['last.snap.stats.status'], 'error')
+  const dataCall = capturedCalls.find(c => c.method === 'listThings')
+  t.ok(dataCall.payload.query.$and)
+  t.is(dataCall.payload.query.$and[0].tags.$in[0], 't-miner')
+  t.is(dataCall.payload.query.$and[1]['last.snap.stats.status'], 'error')
   t.pass()
 })
 
 test('listMiners - builds search query', async (t) => {
-  const capturedPayloads = []
+  const capturedCalls = []
   const ctx = {
     conf: {
       orks: [{ rpcPublicKey: 'key1' }],
@@ -255,7 +256,8 @@ test('listMiners - builds search query', async (t) => {
     },
     net_r0: {
       jRequest: async (key, method, payload) => {
-        capturedPayloads.push(payload)
+        capturedCalls.push({ method, payload })
+        if (method === 'getThingsCount') return 0
         return []
       }
     }
@@ -264,8 +266,8 @@ test('listMiners - builds search query', async (t) => {
 
   await listMiners(ctx, req)
 
-  const dataPayload = capturedPayloads.find(p => p.limit !== undefined)
-  const lastCondition = dataPayload.query.$and[dataPayload.query.$and.length - 1]
+  const dataCall = capturedCalls.find(c => c.method === 'listThings')
+  const lastCondition = dataCall.payload.query.$and[dataCall.payload.query.$and.length - 1]
   t.ok(lastCondition.$or)
   t.ok(lastCondition.$or.some(c => c.id?.$regex === '192.168'))
   t.ok(lastCondition.$or.some(c => c['opts.address']?.$regex === '192.168'))
@@ -319,7 +321,7 @@ test('MINER_FIELD_MAP - has expected field mappings', (t) => {
 })
 
 test('listMiners - sends limit (offset+limit) to ork data query', async (t) => {
-  const capturedPayloads = []
+  const capturedCalls = []
   const ctx = {
     conf: {
       orks: [{ rpcPublicKey: 'key1' }],
@@ -327,7 +329,8 @@ test('listMiners - sends limit (offset+limit) to ork data query', async (t) => {
     },
     net_r0: {
       jRequest: async (key, method, payload) => {
-        capturedPayloads.push(payload)
+        capturedCalls.push({ method, payload })
+        if (method === 'getThingsCount') return 0
         return []
       }
     }
@@ -337,13 +340,13 @@ test('listMiners - sends limit (offset+limit) to ork data query', async (t) => {
   await listMiners(ctx, req)
 
   // Data payload should have limit = offset + limit = 35
-  const dataPayload = capturedPayloads.find(p => p.limit !== undefined)
-  t.is(dataPayload.limit, 35)
+  const dataCall = capturedCalls.find(c => c.method === 'listThings')
+  t.is(dataCall.payload.limit, 35)
   t.pass()
 })
 
-test('listMiners - sends lightweight count query with id-only projection', async (t) => {
-  const capturedPayloads = []
+test('listMiners - sends getThingsCount RPC for total count', async (t) => {
+  const capturedCalls = []
   const ctx = {
     conf: {
       orks: [{ rpcPublicKey: 'key1' }],
@@ -351,7 +354,8 @@ test('listMiners - sends lightweight count query with id-only projection', async
     },
     net_r0: {
       jRequest: async (key, method, payload) => {
-        capturedPayloads.push(payload)
+        capturedCalls.push({ method, payload })
+        if (method === 'getThingsCount') return 0
         return []
       }
     }
@@ -360,11 +364,12 @@ test('listMiners - sends lightweight count query with id-only projection', async
 
   await listMiners(ctx, req)
 
-  // Count payload should have fields: { id: 1 } and no limit
-  const countPayload = capturedPayloads.find(p => p.limit === undefined)
-  t.ok(countPayload)
-  t.alike(countPayload.fields, { id: 1 })
-  t.is(countPayload.sort, undefined)
+  const countCall = capturedCalls.find(c => c.method === 'getThingsCount')
+  t.ok(countCall, 'should call getThingsCount')
+  t.ok(countCall.payload.query, 'count payload has query')
+  t.is(countCall.payload.status, 1, 'count payload has status: 1')
+  t.is(countCall.payload.fields, undefined, 'count payload has no fields projection')
+  t.is(countCall.payload.limit, undefined, 'count payload has no limit')
   t.pass()
 })
 
@@ -386,8 +391,9 @@ test('listMiners - totalCount reflects all matching items, not just overfetched 
   t.pass()
 })
 
-test('listMiners - makes two listThings RPC calls (data + count)', async (t) => {
-  let callCount = 0
+test('listMiners - makes one listThings + one getThingsCount RPC call', async (t) => {
+  let listThingsCount = 0
+  let getThingsCountCount = 0
   const ctx = {
     conf: {
       orks: [{ rpcPublicKey: 'key1' }],
@@ -395,7 +401,8 @@ test('listMiners - makes two listThings RPC calls (data + count)', async (t) => 
     },
     net_r0: {
       jRequest: async (key, method, payload) => {
-        if (method === 'listThings') callCount++
+        if (method === 'listThings') { listThingsCount++; return [] }
+        if (method === 'getThingsCount') { getThingsCountCount++; return 0 }
         return []
       }
     }
@@ -404,7 +411,8 @@ test('listMiners - makes two listThings RPC calls (data + count)', async (t) => 
 
   await listMiners(ctx, req)
 
-  t.is(callCount, 2)
+  t.is(listThingsCount, 1, 'one listThings call for data')
+  t.is(getThingsCountCount, 1, 'one getThingsCount call for count')
   t.pass()
 })
 
@@ -490,7 +498,7 @@ test('formatMiner - returns all fields when no projection (null)', (t) => {
 })
 
 test('listMiners - maps user fields to ork projection and filters response', async (t) => {
-  const capturedPayloads = []
+  const capturedCalls = []
   const miners = [createMockMiner()]
   const ctx = {
     conf: {
@@ -499,7 +507,8 @@ test('listMiners - maps user fields to ork projection and filters response', asy
     },
     net_r0: {
       jRequest: async (key, method, payload) => {
-        capturedPayloads.push(payload)
+        capturedCalls.push({ method, payload })
+        if (method === 'getThingsCount') return miners.length
         return miners
       }
     }
@@ -509,11 +518,11 @@ test('listMiners - maps user fields to ork projection and filters response', asy
   const result = await listMiners(ctx, req)
 
   // Check ork projection was mapped correctly
-  const dataPayload = capturedPayloads.find(p => p.limit !== undefined)
-  t.is(dataPayload.fields['last.snap.config.firmware_ver'], 1, 'maps firmware to ork path')
-  t.is(dataPayload.fields['opts.address'], 1, 'maps ip to ork path')
-  t.is(dataPayload.fields.id, 1, 'always includes id')
-  t.is(dataPayload.fields.code, 1, 'always includes code')
+  const dataCall = capturedCalls.find(c => c.method === 'listThings')
+  t.is(dataCall.payload.fields['last.snap.config.firmware_ver'], 1, 'maps firmware to ork path')
+  t.is(dataCall.payload.fields['opts.address'], 1, 'maps ip to ork path')
+  t.is(dataCall.payload.fields.id, 1, 'always includes id')
+  t.is(dataCall.payload.fields.code, 1, 'always includes code')
 
   // Check response only has requested fields
   const miner = result.data[0]

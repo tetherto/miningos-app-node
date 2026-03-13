@@ -283,6 +283,9 @@ test('Miners API', { timeout: 90000 }, async (main) => {
       if (method === 'listThings') {
         return Promise.resolve(mockMiners)
       }
+      if (method === 'getThingsCount') {
+        return Promise.resolve(mockMiners.length)
+      }
       if (method === 'getWrkExtData') {
         return Promise.resolve([])
       }
@@ -650,6 +653,9 @@ test('Miners API', { timeout: 90000 }, async (main) => {
         if (method === 'listThings') {
           return Promise.resolve(mockMiners)
         }
+        if (method === 'getThingsCount') {
+          return Promise.resolve(mockMiners.length)
+        }
         if (method === 'getWrkExtData') {
           return Promise.resolve([{
             workers: {
@@ -695,6 +701,7 @@ test('Miners API', { timeout: 90000 }, async (main) => {
       const originalJRequest = worker.worker.net_r0.jRequest
       worker.worker.net_r0.jRequest = (publicKey, method) => {
         if (method === 'listThings') return Promise.resolve([])
+        if (method === 'getThingsCount') return Promise.resolve(0)
         return Promise.resolve({})
       }
 
