@@ -1,8 +1,7 @@
 'use strict'
 
-const { parseJsonQueryParam, requestRpcMapLimit, requestRpcMapBatchLimit } = require('../../utils')
+const { parseJsonQueryParam } = require('../../utils')
 const {
-  RPC_PAGE_LIMIT,
   MINER_FIELD_MAP,
   MINER_PROJECTION_MAP,
   MINER_SEARCH_FIELDS,
@@ -140,10 +139,8 @@ async function listMiners (ctx, req) {
   if (mappedSort) { dataPayload.sort = mappedSort }
 
   const [orkResults, countResults] = await Promise.all([
-    fetchLimit <= RPC_PAGE_LIMIT
-      ? requestRpcMapLimit(ctx, 'listThings', { ...dataPayload, limit: fetchLimit })
-      : requestRpcMapBatchLimit(ctx, 'listThings', dataPayload, fetchLimit),
-    requestRpcMapLimit(ctx, 'getThingsCount', { query, status: 1 })
+    ctx.dataProxy.requestDataMap('listThings', { ...dataPayload, limit: fetchLimit }),
+    ctx.dataProxy.requestDataMap('getThingsCount', { query, status: 1 })
   ])
 
   let items = flattenOrkResults(orkResults)
@@ -156,7 +153,7 @@ async function listMiners (ctx, req) {
   let poolWorkers = null
   if (ctx.conf.featureConfig?.poolStats) {
     try {
-      const poolData = await requestRpcMapLimit(ctx, 'getWrkExtData', {
+      const poolData = await ctx.dataProxy.requestDataMap('getWrkExtData', {
         type: 'minerpool',
         query: { key: 'stats' }
       })

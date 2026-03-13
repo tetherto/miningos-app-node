@@ -55,15 +55,14 @@ function createMockMiner (overrides = {}) {
 function createMockCtx (miners, opts = {}) {
   return {
     conf: {
-      orks: [{ rpcPublicKey: 'key1' }],
       featureConfig: opts.featureConfig || {}
     },
-    net_r0: {
-      jRequest: async (key, method, payload) => {
-        if (method === 'listThings') return miners
-        if (method === 'getThingsCount') return opts.thingsCount ?? miners.length
-        if (method === 'getWrkExtData') return opts.poolData || []
-        return {}
+    dataProxy: {
+      requestDataMap: async (method, payload) => {
+        if (method === 'listThings') return [miners]
+        if (method === 'getThingsCount') return [opts.thingsCount ?? miners.length]
+        if (method === 'getWrkExtData') return opts.poolData || [[]]
+        return [{}]
       }
     }
   }
@@ -225,14 +224,13 @@ test('listMiners - parses filter JSON', async (t) => {
   const capturedCalls = []
   const ctx = {
     conf: {
-      orks: [{ rpcPublicKey: 'key1' }],
       featureConfig: {}
     },
-    net_r0: {
-      jRequest: async (key, method, payload) => {
+    dataProxy: {
+      requestDataMap: async (method, payload) => {
         capturedCalls.push({ method, payload })
-        if (method === 'getThingsCount') return 0
-        return []
+        if (method === 'getThingsCount') return [0]
+        return [[]]
       }
     }
   }
@@ -251,14 +249,13 @@ test('listMiners - builds search query', async (t) => {
   const capturedCalls = []
   const ctx = {
     conf: {
-      orks: [{ rpcPublicKey: 'key1' }],
       featureConfig: {}
     },
-    net_r0: {
-      jRequest: async (key, method, payload) => {
+    dataProxy: {
+      requestDataMap: async (method, payload) => {
         capturedCalls.push({ method, payload })
-        if (method === 'getThingsCount') return 0
-        return []
+        if (method === 'getThingsCount') return [0]
+        return [[]]
       }
     }
   }
@@ -324,14 +321,13 @@ test('listMiners - sends limit (offset+limit) to ork data query', async (t) => {
   const capturedCalls = []
   const ctx = {
     conf: {
-      orks: [{ rpcPublicKey: 'key1' }],
       featureConfig: {}
     },
-    net_r0: {
-      jRequest: async (key, method, payload) => {
+    dataProxy: {
+      requestDataMap: async (method, payload) => {
         capturedCalls.push({ method, payload })
-        if (method === 'getThingsCount') return 0
-        return []
+        if (method === 'getThingsCount') return [0]
+        return [[]]
       }
     }
   }
@@ -349,14 +345,13 @@ test('listMiners - sends getThingsCount RPC for total count', async (t) => {
   const capturedCalls = []
   const ctx = {
     conf: {
-      orks: [{ rpcPublicKey: 'key1' }],
       featureConfig: {}
     },
-    net_r0: {
-      jRequest: async (key, method, payload) => {
+    dataProxy: {
+      requestDataMap: async (method, payload) => {
         capturedCalls.push({ method, payload })
-        if (method === 'getThingsCount') return 0
-        return []
+        if (method === 'getThingsCount') return [0]
+        return [[]]
       }
     }
   }
@@ -396,14 +391,13 @@ test('listMiners - makes one listThings + one getThingsCount RPC call', async (t
   let getThingsCountCount = 0
   const ctx = {
     conf: {
-      orks: [{ rpcPublicKey: 'key1' }],
       featureConfig: {}
     },
-    net_r0: {
-      jRequest: async (key, method, payload) => {
-        if (method === 'listThings') { listThingsCount++; return [] }
-        if (method === 'getThingsCount') { getThingsCountCount++; return 0 }
-        return []
+    dataProxy: {
+      requestDataMap: async (method, payload) => {
+        if (method === 'listThings') { listThingsCount++; return [[]] }
+        if (method === 'getThingsCount') { getThingsCountCount++; return [0] }
+        return [[]]
       }
     }
   }
@@ -502,14 +496,13 @@ test('listMiners - maps user fields to ork projection and filters response', asy
   const miners = [createMockMiner()]
   const ctx = {
     conf: {
-      orks: [{ rpcPublicKey: 'key1' }],
       featureConfig: {}
     },
-    net_r0: {
-      jRequest: async (key, method, payload) => {
+    dataProxy: {
+      requestDataMap: async (method, payload) => {
         capturedCalls.push({ method, payload })
-        if (method === 'getThingsCount') return miners.length
-        return miners
+        if (method === 'getThingsCount') return [miners.length]
+        return [miners]
       }
     }
   }

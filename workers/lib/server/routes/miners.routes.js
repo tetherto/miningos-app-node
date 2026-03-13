@@ -22,8 +22,7 @@ module.exports = (ctx) => [
           fields: { type: 'string' },
           search: { type: 'string' },
           offset: { type: 'integer' },
-          limit: { type: 'integer' },
-          overwriteCache: { type: 'boolean' }
+          limit: { type: 'integer' }
         }
       }
     },
