@@ -35,7 +35,7 @@ module.exports = (ctx) => {
         (req) => ['configs', req.params.type, req.query.query, req.query.fields],
         ENDPOINTS.CONFIGS,
         getConfigs,
-        [AUTH_PERMISSIONS.POOL_CONFIG]
+        [`${AUTH_PERMISSIONS.POOL_CONFIG}:r`]
       )
     }
   ]
