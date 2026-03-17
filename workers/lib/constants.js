@@ -126,16 +126,8 @@ const ENDPOINTS = {
   POOLS: '/auth/pools',
   POOLS_BALANCE_HISTORY: '/auth/pools/:pool/balance-history',
   POOLS_THING_CONFIG: '/auth/pools/config/:id',
+  POOLS_CONTAINERS_STATS: '/auth/pools/stats/containers',
 
-  // Pool stats endpoints
-  POOL_STATS_AGGREGATE: '/auth/pool-stats/aggregate',
-
-  // Pool Manager endpoints
-  POOL_MANAGER_STATS: '/auth/pool-manager/stats',
-  POOL_MANAGER_POOLS: '/auth/pool-manager/pools',
-  POOL_MANAGER_MINERS: '/auth/pool-manager/miners',
-  POOL_MANAGER_UNITS: '/auth/pool-manager/units',
-  POOL_MANAGER_ALERTS: '/auth/pool-manager/alerts',
   SITE_STATUS_LIVE: '/auth/site/status/live',
 
   // Generic Config endpoints (type passed as parameter)
@@ -226,14 +218,6 @@ const WORKER_TYPES = {
   MINERPOOL: 'minerpool',
   MEMPOOL: 'mempool',
   ELECTRICITY: 'electricity'
-}
-
-const CACHE_KEYS = {
-  POOL_MANAGER_STATS: 'pool-manager/stats',
-  POOL_MANAGER_POOLS: 'pool-manager/pools',
-  POOL_MANAGER_MINERS: 'pool-manager/miners',
-  POOL_MANAGER_UNITS: 'pool-manager/units',
-  POOL_MANAGER_ALERTS: 'pool-manager/alerts'
 }
 
 const SEVERITY_LEVELS = new Set(['critical', 'high', 'medium', 'low'])
@@ -373,7 +357,8 @@ const MINER_FIELD_MAP = {
   macAddress: 'info.macAddress',
   pool: 'last.snap.config.pool_config.url',
   led: 'last.snap.config.led_status',
-  alerts: 'last.alerts'
+  alerts: 'last.alerts',
+  poolConfig: 'info.poolConfig'
 }
 
 const MINER_PROJECTION_MAP = {
@@ -455,7 +440,6 @@ module.exports = {
   GET_HISTORICAL_LOGS,
   RPC_METHODS,
   WORKER_TYPES,
-  CACHE_KEYS,
   POOL_ALERT_TYPES,
   MINER_POOL_STATUS,
   AGGR_FIELDS,

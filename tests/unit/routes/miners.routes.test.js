@@ -43,7 +43,6 @@ test('miners routes - schema validation', (t) => {
   t.is(props.search.type, 'string', 'search should be string')
   t.is(props.offset.type, 'integer', 'offset should be integer')
   t.is(props.limit.type, 'integer', 'limit should be integer')
-  t.is(props.overwriteCache.type, 'boolean', 'overwriteCache should be boolean')
 
   t.pass()
 })

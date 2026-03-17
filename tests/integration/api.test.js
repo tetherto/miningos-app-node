@@ -6,8 +6,9 @@ const { createWorker } = require('tether-svc-test-helper').worker
 const { setTimeout: sleep } = require('timers/promises')
 const HttpFacility = require('bfx-facs-http')
 const { ENDPOINTS } = require('../../workers/lib/constants')
+const { MOCK_MINERS: mockMiners } = require('./helpers/mock-data')
 
-test('Api security', { timeout: 90000 }, async (main) => {
+test('Api', { timeout: 90000 }, async (main) => {
   const baseDir = 'tests/integration'
   let worker
   let httpClient
@@ -69,7 +70,18 @@ test('Api security', { timeout: 90000 }, async (main) => {
     })
 
     await worker.start()
-    worker.worker.net_r0.jRequest = () => ({})
+    worker.worker.net_r0.jRequest = (publicKey, method) => {
+      if (method === 'listThings') {
+        return Promise.resolve(mockMiners)
+      }
+      if (method === 'getThingsCount') {
+        return Promise.resolve(mockMiners.length)
+      }
+      if (method === 'getWrkExtData') {
+        return Promise.resolve([])
+      }
+      return Promise.resolve({})
+    }
   }
 
   const createHttpClient = async () => {
@@ -276,6 +288,390 @@ test('Api security', { timeout: 90000 }, async (main) => {
   await createUser(admin1, 'admin')
   await createUser(admin2, 'admin')
 
+  const minersApi = `${appNodeBaseUrl}${ENDPOINTS.MINERS}`
+
+  await main.test('Api: miners - auth security', async (n) => {
+    await n.test('should fail for missing auth token', async (t) => {
+      try {
+        await httpClient.get(minersApi, { encoding })
+        t.fail('Expected error for missing auth token')
+      } catch (e) {
+        t.is(e.response.message.includes('ERR_AUTH_FAIL'), true)
+      }
+    })
+
+    await n.test('should fail for invalid auth token', async (t) => {
+      const headers = { Authorization: `Bearer ${invalidToken}` }
+      try {
+        await httpClient.get(minersApi, { headers, encoding })
+        t.fail('Expected error for invalid auth token')
+      } catch (e) {
+        t.is(e.response.message.includes('ERR_AUTH_FAIL'), true)
+      }
+    })
+
+    await n.test('should fail for readonly user (capCheck requires write)', async (t) => {
+      const headers = await createAuthHeaders(readonlyUser)
+      try {
+        await httpClient.get(minersApi, { headers, encoding })
+        t.fail('Expected error for readonly user')
+      } catch (e) {
+        t.is(e.response.message.includes('ERR_AUTH_FAIL'), true)
+      }
+    })
+
+    await n.test('should succeed for site operator user (has actions:rw)', async (t) => {
+      const headers = await createAuthHeaders(siteOperatorUser)
+      try {
+        await httpClient.get(minersApi, { headers, encoding })
+        t.pass()
+      } catch (e) {
+        t.fail(`Expected success but got: ${e.message || e}`)
+      }
+    })
+  })
+
+  await main.test('Api: miners - response structure', async (n) => {
+    await n.test('should return paginated response with correct top-level fields', async (t) => {
+      const headers = await createAuthHeaders(siteOperatorUser)
+      const { body: data } = await httpClient.get(minersApi, { headers, encoding })
+
+      t.ok(Array.isArray(data.data), 'data should be an array')
+      t.ok(typeof data.totalCount === 'number', 'totalCount should be a number')
+      t.ok(typeof data.offset === 'number', 'offset should be a number')
+      t.ok(typeof data.limit === 'number', 'limit should be a number')
+      t.ok(typeof data.hasMore === 'boolean', 'hasMore should be a boolean')
+    })
+
+    await n.test('should return all mock miners with default pagination', async (t) => {
+      const headers = await createAuthHeaders(siteOperatorUser)
+      const { body: data } = await httpClient.get(minersApi, { headers, encoding })
+
+      t.is(data.totalCount, 5, 'totalCount should be 5')
+      t.is(data.data.length, 5, 'data should have 5 items')
+      t.is(data.offset, 0, 'offset should default to 0')
+      t.is(data.hasMore, false, 'hasMore should be false when all items fit')
+    })
+
+    await n.test('each miner should have clean formatted fields', async (t) => {
+      const headers = await createAuthHeaders(siteOperatorUser)
+      const { body: data } = await httpClient.get(minersApi, { headers, encoding })
+      const miner = data.data[0]
+
+      t.ok(miner.id, 'should have id')
+      t.ok(miner.type, 'should have type')
+      t.ok(miner.model, 'should have model')
+      t.ok(miner.code, 'should have code')
+      t.ok(miner.ip, 'should have ip')
+      t.ok(miner.container, 'should have container')
+      t.ok(miner.rack, 'should have rack')
+      t.ok(miner.status !== undefined, 'should have status')
+      t.ok(typeof miner.hashrate === 'number', 'hashrate should be a number')
+      t.ok(typeof miner.power === 'number', 'power should be a number')
+      t.ok(typeof miner.efficiency === 'number', 'efficiency should be a number')
+      t.ok(miner.temperature !== undefined, 'should have temperature')
+      t.ok(miner.firmware, 'should have firmware')
+      t.ok(miner.powerMode, 'should have powerMode')
+      t.ok(miner.ledStatus !== undefined, 'should have ledStatus')
+      t.ok(miner.poolConfig, 'should have poolConfig')
+      t.ok(miner.lastSeen, 'should have lastSeen')
+    })
+
+    await n.test('formatted miner should have correct values from raw data', async (t) => {
+      const headers = await createAuthHeaders(siteOperatorUser)
+      const { body: data } = await httpClient.get(minersApi, { headers, encoding })
+
+      const miner = data.data.find(m => m.id === 'miner-001')
+      t.ok(miner, 'should find miner-001')
+      t.is(miner.id, 'miner-001')
+      t.is(miner.type, 'antminer-s19')
+      t.is(miner.model, 'Antminer S19 XP')
+      t.is(miner.code, 'M001')
+      t.is(miner.ip, '192.168.1.100')
+      t.is(miner.container, 'container-A')
+      t.is(miner.rack, 'rack-1')
+      t.is(miner.status, 'online')
+      t.is(miner.hashrate, 140000)
+      t.is(miner.power, 3010)
+      t.is(miner.efficiency, 21.5)
+      t.is(miner.temperature, 65)
+      t.is(miner.firmware, '2024.01.01')
+      t.is(miner.powerMode, 'normal')
+    })
+  })
+
+  await main.test('Api: miners - pagination', async (n) => {
+    await n.test('should respect limit parameter', async (t) => {
+      const headers = await createAuthHeaders(siteOperatorUser)
+      const api = `${minersApi}?limit=2`
+      const { body: data } = await httpClient.get(api, { headers, encoding })
+
+      t.is(data.data.length, 2, 'should return only 2 items')
+      t.is(data.totalCount, 5, 'totalCount should still be 5')
+      t.is(data.limit, 2, 'limit should be 2')
+      t.is(data.hasMore, true, 'hasMore should be true')
+    })
+
+    await n.test('should respect offset parameter', async (t) => {
+      const headers = await createAuthHeaders(siteOperatorUser)
+      const api = `${minersApi}?offset=3&limit=10`
+      const { body: data } = await httpClient.get(api, { headers, encoding })
+
+      t.is(data.data.length, 2, 'should return remaining 2 items')
+      t.is(data.totalCount, 5, 'totalCount should still be 5')
+      t.is(data.offset, 3, 'offset should be 3')
+      t.is(data.hasMore, false, 'hasMore should be false')
+    })
+
+    await n.test('should return empty page when offset exceeds total', async (t) => {
+      const headers = await createAuthHeaders(siteOperatorUser)
+      const api = `${minersApi}?offset=100`
+      const { body: data } = await httpClient.get(api, { headers, encoding })
+
+      t.is(data.data.length, 0, 'should return 0 items')
+      t.is(data.totalCount, 5, 'totalCount should still be 5')
+      t.is(data.hasMore, false, 'hasMore should be false')
+    })
+
+    await n.test('should cap limit at MAX_LIMIT (200)', async (t) => {
+      const headers = await createAuthHeaders(siteOperatorUser)
+      const api = `${minersApi}?limit=500`
+      const { body: data } = await httpClient.get(api, { headers, encoding })
+
+      t.ok(data.limit <= 200, 'limit should be capped at 200')
+    })
+  })
+
+  await main.test('Api: miners - filtering', async (n) => {
+    await n.test('should accept filter param and return valid response', async (t) => {
+      const headers = await createAuthHeaders(siteOperatorUser)
+      const filter = JSON.stringify({ status: 'online' })
+      const api = `${minersApi}?filter=${encodeURIComponent(filter)}`
+      const { body: data } = await httpClient.get(api, { headers, encoding })
+
+      t.ok(Array.isArray(data.data), 'should return data array')
+      t.ok(typeof data.totalCount === 'number', 'should have totalCount')
+    })
+
+    await n.test('should accept $or filter without error', async (t) => {
+      const headers = await createAuthHeaders(siteOperatorUser)
+      const filter = JSON.stringify({ $or: [{ status: 'error' }, { status: 'sleep' }] })
+      const api = `${minersApi}?filter=${encodeURIComponent(filter)}`
+      const { body: data } = await httpClient.get(api, { headers, encoding })
+
+      t.ok(Array.isArray(data.data), 'should return data array')
+    })
+
+    await n.test('should return error for invalid filter JSON', async (t) => {
+      const headers = await createAuthHeaders(siteOperatorUser)
+      const api = `${minersApi}?filter=not-valid-json`
+      try {
+        await httpClient.get(api, { headers, encoding })
+        t.fail('Expected error for invalid JSON')
+      } catch (e) {
+        t.ok(e.response.message.includes('ERR_FILTER_INVALID_JSON'), 'should return filter JSON error')
+      }
+    })
+  })
+
+  await main.test('Api: miners - sorting', async (n) => {
+    await n.test('should sort by hashrate descending', async (t) => {
+      const headers = await createAuthHeaders(siteOperatorUser)
+      const sort = JSON.stringify({ hashrate: -1 })
+      const api = `${minersApi}?sort=${encodeURIComponent(sort)}`
+      const { body: data } = await httpClient.get(api, { headers, encoding })
+
+      t.ok(data.data.length > 1, 'should return multiple items')
+      for (let i = 1; i < data.data.length; i++) {
+        t.ok(
+          data.data[i - 1].hashrate >= data.data[i].hashrate,
+          `hashrate should be descending: ${data.data[i - 1].hashrate} >= ${data.data[i].hashrate}`
+        )
+      }
+    })
+
+    await n.test('should sort by hashrate ascending', async (t) => {
+      const headers = await createAuthHeaders(siteOperatorUser)
+      const sort = JSON.stringify({ hashrate: 1 })
+      const api = `${minersApi}?sort=${encodeURIComponent(sort)}`
+      const { body: data } = await httpClient.get(api, { headers, encoding })
+
+      t.ok(data.data.length > 1, 'should return multiple items')
+      for (let i = 1; i < data.data.length; i++) {
+        t.ok(
+          data.data[i - 1].hashrate <= data.data[i].hashrate,
+          `hashrate should be ascending: ${data.data[i - 1].hashrate} <= ${data.data[i].hashrate}`
+        )
+      }
+    })
+
+    await n.test('should return error for invalid sort JSON', async (t) => {
+      const headers = await createAuthHeaders(siteOperatorUser)
+      const api = `${minersApi}?sort=not-valid-json`
+      try {
+        await httpClient.get(api, { headers, encoding })
+        t.fail('Expected error for invalid JSON')
+      } catch (e) {
+        t.ok(e.response.message.includes('ERR_SORT_INVALID_JSON'), 'should return sort JSON error')
+      }
+    })
+  })
+
+  await main.test('Api: miners - search', async (n) => {
+    await n.test('should accept search param and return valid response', async (t) => {
+      const headers = await createAuthHeaders(siteOperatorUser)
+      const api = `${minersApi}?search=192.168`
+      const { body: data } = await httpClient.get(api, { headers, encoding })
+
+      t.ok(Array.isArray(data.data), 'should return data array')
+      t.ok(typeof data.totalCount === 'number', 'should have totalCount')
+    })
+
+    await n.test('should accept search combined with other params', async (t) => {
+      const headers = await createAuthHeaders(siteOperatorUser)
+      const sort = JSON.stringify({ hashrate: -1 })
+      const api = `${minersApi}?search=miner&sort=${encodeURIComponent(sort)}&limit=3`
+      const { body: data } = await httpClient.get(api, { headers, encoding })
+
+      t.ok(Array.isArray(data.data), 'should return data array')
+      t.ok(data.data.length <= 3, 'should respect limit')
+    })
+  })
+
+  await main.test('Api: miners - combined query params', async (n) => {
+    await n.test('should accept filter, sort, and pagination together', async (t) => {
+      const headers = await createAuthHeaders(siteOperatorUser)
+      const filter = JSON.stringify({ status: 'online' })
+      const sort = JSON.stringify({ hashrate: -1 })
+      const api = `${minersApi}?filter=${encodeURIComponent(filter)}&sort=${encodeURIComponent(sort)}&limit=2&offset=0`
+      const { body: data } = await httpClient.get(api, { headers, encoding })
+
+      t.is(data.limit, 2, 'limit should be 2')
+      t.ok(data.data.length <= 2, 'should return at most 2 items')
+      if (data.data.length > 1) {
+        t.ok(data.data[0].hashrate >= data.data[1].hashrate, 'should be sorted by hashrate desc')
+      }
+    })
+
+    await n.test('should accept all query params together without error', async (t) => {
+      const headers = await createAuthHeaders(siteOperatorUser)
+      const filter = JSON.stringify({ status: 'online' })
+      const sort = JSON.stringify({ temperature: 1 })
+      const fields = JSON.stringify({ status: 1, ip: 1, temperature: 1 })
+      const api = `${minersApi}?filter=${encodeURIComponent(filter)}&sort=${encodeURIComponent(sort)}&fields=${encodeURIComponent(fields)}&search=192&limit=3&offset=0`
+      const { body: data } = await httpClient.get(api, { headers, encoding })
+
+      t.ok(Array.isArray(data.data), 'should return data array')
+      t.ok(data.data.length <= 3, 'should respect limit')
+      t.is(data.offset, 0, 'offset should be 0')
+      if (data.data.length > 0) {
+        const miner = data.data[0]
+        t.ok(miner.id, 'should always include id')
+        t.ok(miner.status !== undefined, 'should include requested field: status')
+        t.ok(miner.ip !== undefined, 'should include requested field: ip')
+        t.is(miner.hashrate, undefined, 'should exclude non-requested field: hashrate')
+        t.is(miner.power, undefined, 'should exclude non-requested field: power')
+        t.is(miner.firmware, undefined, 'should exclude non-requested field: firmware')
+      }
+    })
+  })
+
+  await main.test('Api: miners - overwriteCache', async (n) => {
+    await n.test('should accept overwriteCache=true without error', async (t) => {
+      const headers = await createAuthHeaders(siteOperatorUser)
+      const api = `${minersApi}?overwriteCache=true`
+      try {
+        const { body: data } = await httpClient.get(api, { headers, encoding })
+        t.ok(data.data, 'should return data')
+        t.pass()
+      } catch (e) {
+        t.fail(`Expected success but got: ${e.message || e}`)
+      }
+    })
+  })
+
+  await main.test('Api: miners - pool enrichment', async (n) => {
+    await n.test('should include poolHashrate when poolStats feature is enabled', async (t) => {
+      worker.worker.conf.featureConfig = { poolStats: true }
+
+      const originalJRequest = worker.worker.net_r0.jRequest
+      worker.worker.net_r0.jRequest = (publicKey, method) => {
+        if (method === 'listThings') {
+          return Promise.resolve(mockMiners)
+        }
+        if (method === 'getThingsCount') {
+          return Promise.resolve(mockMiners.length)
+        }
+        if (method === 'getWrkExtData') {
+          return Promise.resolve([{
+            workers: {
+              'miner-001': { hashrate: 139500 },
+              M002: { hashrate: 134000 }
+            }
+          }])
+        }
+        return Promise.resolve({})
+      }
+
+      const headers = await createAuthHeaders(siteOperatorUser)
+      const api = `${minersApi}?overwriteCache=true`
+      const { body: data } = await httpClient.get(api, { headers, encoding })
+
+      const miner1 = data.data.find(m => m.id === 'miner-001')
+      t.ok(miner1, 'should find miner-001')
+      t.is(miner1.poolHashrate, 139500, 'miner-001 should have poolHashrate from pool data')
+
+      const miner2 = data.data.find(m => m.id === 'miner-002')
+      t.ok(miner2, 'should find miner-002')
+      t.is(miner2.poolHashrate, 134000, 'miner-002 should have poolHashrate matched by code')
+
+      worker.worker.conf.featureConfig = {}
+      worker.worker.net_r0.jRequest = originalJRequest
+    })
+
+    await n.test('should not include poolHashrate when poolStats feature is disabled', async (t) => {
+      worker.worker.conf.featureConfig = {}
+      const headers = await createAuthHeaders(siteOperatorUser)
+      const api = `${minersApi}?overwriteCache=true`
+      const { body: data } = await httpClient.get(api, { headers, encoding })
+
+      const miner = data.data[0]
+      t.is(miner.poolHashrate, undefined, 'poolHashrate should not be present')
+    })
+  })
+
+  await main.test('Api: miners - edge cases', async (n) => {
+    await n.test('should handle empty RPC response gracefully', async (t) => {
+      const originalJRequest = worker.worker.net_r0.jRequest
+      worker.worker.net_r0.jRequest = (publicKey, method) => {
+        if (method === 'listThings') return Promise.resolve([])
+        if (method === 'getThingsCount') return Promise.resolve(0)
+        return Promise.resolve({})
+      }
+
+      const headers = await createAuthHeaders(siteOperatorUser)
+      const api = `${minersApi}?overwriteCache=true`
+      const { body: data } = await httpClient.get(api, { headers, encoding })
+
+      t.is(data.data.length, 0, 'should return empty data array')
+      t.is(data.totalCount, 0, 'totalCount should be 0')
+      t.is(data.hasMore, false, 'hasMore should be false')
+
+      worker.worker.net_r0.jRequest = originalJRequest
+    })
+
+    await n.test('should return error for invalid fields JSON', async (t) => {
+      const headers = await createAuthHeaders(siteOperatorUser)
+      const api = `${minersApi}?fields=not-valid-json`
+      try {
+        await httpClient.get(api, { headers, encoding })
+        t.fail('Expected error for invalid JSON')
+      } catch (e) {
+        t.ok(e.response.message.includes('ERR_FIELDS_INVALID_JSON'), 'should return fields JSON error')
+      }
+    })
+  })
+
   await main.test('Api: list-things', async (n) => {
     const api = `${appNodeBaseUrl}${ENDPOINTS.LIST_THINGS}`
     await testGetEndpointSecurity(n, httpClient, api, invalidToken, readonlyUser, encoding)
@@ -284,6 +680,65 @@ test('Api security', { timeout: 90000 }, async (main) => {
   await main.test('Api: list-racks', async (n) => {
     const api = `${appNodeBaseUrl}${ENDPOINTS.LIST_RACKS}?type=miner`
     await testGetEndpointSecurity(n, httpClient, api, invalidToken, readonlyUser, encoding)
+  })
+
+  await main.test('Api: get pools stats/containers', async (n) => {
+    const api = `${appNodeBaseUrl}${ENDPOINTS.POOLS_CONTAINERS_STATS}`
+    await testGetEndpointSecurity(n, httpClient, api, invalidToken, readonlyUser, encoding)
+  })
+
+  await main.test('Api: get pools stats/containers - response structure', async (n) => {
+    await n.test('returns array of container stats with container and overriddenConfig', async (t) => {
+      const headers = await createAuthHeaders(readonlyUser)
+      const api = `${appNodeBaseUrl}${ENDPOINTS.POOLS_CONTAINERS_STATS}`
+      const { body: data } = await httpClient.get(api, { headers, encoding })
+      t.ok(Array.isArray(data), 'response should be array')
+      data.forEach((item, i) => {
+        t.ok(item.container !== undefined, `item ${i} should have container`)
+        t.ok(item.overriddenConfig !== undefined, `item ${i} should have overriddenConfig`)
+        t.ok(Number.isInteger(item.overriddenConfig), `item ${i} overriddenConfig should be integer`)
+      })
+      t.pass()
+    })
+  })
+
+  await main.test('Api: get pools config by id', async (n) => {
+    await testGetEndpointSecurity(n, httpClient, `${appNodeBaseUrl}${ENDPOINTS.POOLS_THING_CONFIG.replace(':id', 'miner-001')}`, invalidToken, readonlyUser, encoding)
+  })
+
+  await main.test('Api: get pools config by id - response and not found', async (n) => {
+    const poolsConfigApi = (id) => `${appNodeBaseUrl}${ENDPOINTS.POOLS_THING_CONFIG.replace(':id', id)}`
+
+    await n.test('returns 200 with poolConfig and overriddenConfig when thing exists', async (t) => {
+      const headers = await createAuthHeaders(readonlyUser)
+      const api = poolsConfigApi('miner-001')
+      const { body: data } = await httpClient.get(api, { headers, encoding })
+      t.ok(data.poolConfig !== undefined, 'response should have poolConfig')
+      t.ok(data.overriddenConfig !== undefined, 'response should have overriddenConfig')
+      t.ok(Number.isInteger(data.overriddenConfig), 'overriddenConfig should be integer')
+      t.pass()
+    })
+
+    await n.test('returns error when thing not found', async (t) => {
+      const originalJRequest = worker.worker.net_r0.jRequest
+      worker.worker.net_r0.jRequest = (publicKey, method, params) => {
+        if (method === 'listThings' && params?.query?.id === 'nonexistent-thing-id') {
+          return Promise.resolve([])
+        }
+        return originalJRequest(publicKey, method, params)
+      }
+
+      const headers = await createAuthHeaders(readonlyUser)
+      const api = poolsConfigApi('nonexistent-thing-id')
+      try {
+        await httpClient.get(api, { headers, encoding })
+        t.fail('Expected error for non-existent thing')
+      } catch (e) {
+        t.ok(e.response?.message?.includes('ERR_THING_NOT_FOUND'), 'should return ERR_THING_NOT_FOUND')
+      }
+      worker.worker.net_r0.jRequest = originalJRequest
+      t.pass()
+    })
   })
 
   await main.test('Api: post thing-comment', async (n) => {
