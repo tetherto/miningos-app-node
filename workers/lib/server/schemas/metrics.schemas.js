@@ -79,7 +79,7 @@ const schemas = {
       properties: {
         start: { type: 'integer', minimum: 0 },
         end: { type: 'integer', minimum: 0 },
-        limit: { type: 'integer' },
+        limit: { type: 'integer', minimum: 1, maximum: 1000 },
         overwriteCache: { type: 'boolean' }
       }
     }
