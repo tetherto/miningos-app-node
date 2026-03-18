@@ -8,8 +8,8 @@ const schemas = {
         filter: { type: 'string' },
         sort: { type: 'string' },
         search: { type: 'string' },
-        offset: { type: 'integer' },
-        limit: { type: 'integer' },
+        offset: { type: 'integer', minimum: 0 },
+        limit: { type: 'integer', minimum: 1 },
         overwriteCache: { type: 'boolean' }
       }
     },
@@ -21,8 +21,8 @@ const schemas = {
         filter: { type: 'string' },
         search: { type: 'string' },
         sort: { type: 'string' },
-        offset: { type: 'integer' },
-        limit: { type: 'integer' },
+        offset: { type: 'integer', minimum: 0 },
+        limit: { type: 'integer', minimum: 1 },
         overwriteCache: { type: 'boolean' }
       },
       required: ['start', 'end']

@@ -66,8 +66,8 @@ const schemas = {
     hashRevenue: {
       type: 'object',
       properties: {
-        start: { type: 'integer' },
-        end: { type: 'integer' },
+        start: { type: 'integer', minimum: 0 },
+        end: { type: 'integer', minimum: 0 },
         period: { type: 'string', enum: ['daily', 'monthly', 'yearly'] },
         overwriteCache: { type: 'boolean' }
       },
