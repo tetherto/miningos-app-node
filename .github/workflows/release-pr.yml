@@ -1,28 +1,93 @@
-name: Bump Version
+name: Release PR
 
 on:
   workflow_dispatch:
     inputs:
       bump:
-        description: Version bump type
+        description: >-
+          Use none to open a release PR without changing package.json (first
+          release at the current version, e.g. 1.0.0).
         required: true
         type: choice
         options:
+          - none
           - major
           - minor
           - patch
           - prerelease
       preid:
-        description: Pre-release identifier
+        description: Pre-release identifier (ignored when bump is none)
         required: false
         type: string
 
 jobs:
   bump-version:
+    runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
-    uses: tetherto/oss-actions/.github/workflows/release-pr.yml@v1
-    with:
-      bump: ${{ inputs.bump }}
-      preid: ${{ inputs.preid }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version: lts/*
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
+
+      - name: Bump version
+        id: bump
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          if [ "$BUMP" = "none" ]; then
+            VERSION=$(node -p "require('./package.json').version")
+            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+            echo "branch=release/v$VERSION" >> "$GITHUB_OUTPUT"
+          else
+            PREID_ARG=${{ inputs.preid != '' && format('--preid={0}', inputs.preid) || '' }}
+            NEW_VERSION=$(npm version "$BUMP" $PREID_ARG --no-git-tag-version)
+            echo "version=${NEW_VERSION#v}" >> "$GITHUB_OUTPUT"
+            echo "branch=release/v${NEW_VERSION#v}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Update lockfile
+        if: inputs.bump != 'none'
+        run: |
+          if [ -f package-lock.json ]; then
+            npm install --ignore-scripts --package-lock-only
+          fi
+
+      - name: Create branch and push
+        env:
+          BUMP_INPUT: ${{ inputs.bump }}
+        run: |
+          git checkout -b ${{ steps.bump.outputs.branch }}
+          git add package.json
+          [ -f package-lock.json ] && git add package-lock.json
+          if [ "$BUMP_INPUT" = "none" ]; then
+            git commit --allow-empty -m "Release: v${{ steps.bump.outputs.version }}"
+          else
+            git commit -m "Release: v${{ steps.bump.outputs.version }}"
+          fi
+          git push origin ${{ steps.bump.outputs.branch }}
+
+      - name: Open Pull Request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr create \
+            --title "Release: v${{ steps.bump.outputs.version }}" \
+            --body "Release PR for \`v${{ steps.bump.outputs.version }}\`." \
+            --base main \
+            --head ${{ steps.bump.outputs.branch }}
