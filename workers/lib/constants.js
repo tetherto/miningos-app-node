@@ -150,7 +150,7 @@ const ENDPOINTS = {
   METRICS_CONTAINER_HISTORY: '/auth/metrics/containers/:id/history',
 
   // Groups endpoints
-  GROUPS_STATS: '/auth/groups/stats',
+  MINERS_GROUPS_STATS: '/auth/miners/groups/stats',
 
   // Alerts endpoints
   ALERTS_SITE: '/auth/alerts/site',

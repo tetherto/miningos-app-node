@@ -15,17 +15,17 @@ module.exports = (ctx) => {
   return [
     {
       method: HTTP_METHODS.GET,
-      url: ENDPOINTS.GROUPS_STATS,
+      url: ENDPOINTS.MINERS_GROUPS_STATS,
       schema: {
         querystring: schemas.query.groupsStats
       },
       ...createCachedAuthRoute(
         ctx,
         (req) => [
-          'groups/stats',
-          req.query.racks
+          'miners/groups/stats',
+          req.query.containers
         ],
-        ENDPOINTS.GROUPS_STATS,
+        ENDPOINTS.MINERS_GROUPS_STATS,
         getGroupStats,
         [`${AUTH_CAPS.m}:${AUTH_LEVELS.READ}`]
       )

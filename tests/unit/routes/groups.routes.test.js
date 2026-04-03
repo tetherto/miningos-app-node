@@ -15,7 +15,7 @@ test('groups routes - route definitions', (t) => {
   const routes = createRoutesForTest(ROUTES_PATH)
 
   const routeUrls = routes.map(route => route.url)
-  t.ok(routeUrls.includes('/auth/groups/stats'), 'should have groups stats route')
+  t.ok(routeUrls.includes('/auth/miners/groups/stats'), 'should have miners groups stats route')
 
   t.pass()
 })
