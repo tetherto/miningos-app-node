@@ -26,20 +26,30 @@ const {
   getIntervalConfig
 } = require('../../metrics.utils')
 
+function parseRacks (req) {
+  const raw = req.query.racks
+  if (!raw) return undefined
+  return raw.split(',').map(r => r.trim()).filter(Boolean)
+}
+
 async function getHashrate (ctx, req) {
   const { start, end } = validateStartEnd(req)
 
   const startDate = new Date(start).toISOString()
   const endDate = new Date(end).toISOString()
 
+  const keyObj = {
+    type: WORKER_TYPES.MINER,
+    startDate,
+    endDate,
+    fields: { [AGGR_FIELDS.HASHRATE_SUM]: 1 },
+    shouldReturnDailyData: 1
+  }
+  const racks = parseRacks(req)
+  if (racks) keyObj.racks = racks
+
   const results = await ctx.dataProxy.requestData(RPC_METHODS.TAIL_LOG_RANGE_AGGR, {
-    keys: [{
-      type: WORKER_TYPES.MINER,
-      startDate,
-      endDate,
-      fields: { [AGGR_FIELDS.HASHRATE_SUM]: 1 },
-      shouldReturnDailyData: 1
-    }]
+    keys: [keyObj]
   })
 
   const daily = processHashrateData(results)
@@ -86,14 +96,18 @@ async function getConsumption (ctx, req) {
   const startDate = new Date(start).toISOString()
   const endDate = new Date(end).toISOString()
 
+  const keyObj = {
+    type: WORKER_TYPES.POWERMETER,
+    startDate,
+    endDate,
+    fields: { [AGGR_FIELDS.SITE_POWER]: 1 },
+    shouldReturnDailyData: 1
+  }
+  const racks = parseRacks(req)
+  if (racks) keyObj.racks = racks
+
   const results = await ctx.dataProxy.requestData(RPC_METHODS.TAIL_LOG_RANGE_AGGR, {
-    keys: [{
-      type: WORKER_TYPES.POWERMETER,
-      startDate,
-      endDate,
-      fields: { [AGGR_FIELDS.SITE_POWER]: 1 },
-      shouldReturnDailyData: 1
-    }]
+    keys: [keyObj]
   })
 
   const daily = processConsumptionData(results)
@@ -693,6 +707,7 @@ function processContainerHistoryData (results, containerId) {
 
 module.exports = {
   ...require('../../metrics.utils'),
+  parseRacks,
   getHashrate,
   processHashrateData,
   calculateHashrateSummary,

@@ -149,6 +149,9 @@ const ENDPOINTS = {
   METRICS_CONTAINER_TELEMETRY: '/auth/metrics/containers/:id',
   METRICS_CONTAINER_HISTORY: '/auth/metrics/containers/:id/history',
 
+  // Groups endpoints
+  GROUPS_STATS: '/auth/groups/stats',
+
   // Alerts endpoints
   ALERTS_SITE: '/auth/alerts/site',
   ALERTS_HISTORY: '/auth/alerts/history',
@@ -270,6 +273,7 @@ const MINER_CATEGORIES = {
 }
 
 const LOG_KEYS = {
+  STAT_RTD: 'stat-rtd',
   STAT_3H: 'stat-3h',
   STAT_5M: 'stat-5m'
 }
