@@ -2,6 +2,7 @@
 
 const test = require('brittle')
 const {
+  parseRacks,
   getHashrate,
   processHashrateData,
   calculateHashrateSummary,
@@ -1624,5 +1625,129 @@ test('processContainerHistoryData - sorts by timestamp', (t) => {
   ]]
   const log = processContainerHistoryData(results, 'bitdeer-9a')
   t.ok(log[0].ts < log[1].ts, 'entries should be sorted ascending')
+  t.pass()
+})
+
+// ==================== parseRacks Tests ====================
+
+test('parseRacks - parses comma-separated racks', (t) => {
+  const result = parseRacks({ query: { racks: 'rack-0,rack-1,rack-2' } })
+  t.alike(result, ['rack-0', 'rack-1', 'rack-2'], 'should split on commas')
+  t.pass()
+})
+
+test('parseRacks - trims whitespace', (t) => {
+  const result = parseRacks({ query: { racks: 'rack-0 , rack-1 , rack-2' } })
+  t.alike(result, ['rack-0', 'rack-1', 'rack-2'], 'should trim spaces')
+  t.pass()
+})
+
+test('parseRacks - returns undefined when no racks', (t) => {
+  t.is(parseRacks({ query: {} }), undefined, 'missing racks returns undefined')
+  t.is(parseRacks({ query: { racks: '' } }), undefined, 'empty string returns undefined')
+  t.pass()
+})
+
+test('parseRacks - single rack', (t) => {
+  const result = parseRacks({ query: { racks: 'rack-0' } })
+  t.alike(result, ['rack-0'], 'single rack returns array with one element')
+  t.pass()
+})
+
+// ==================== Hashrate with racks filter Tests ====================
+
+test('getHashrate - passes racks to RPC payload', async (t) => {
+  let capturedPayload = null
+  const mockCtx = withDataProxy({
+    conf: {
+      orks: [{ rpcPublicKey: 'key1' }]
+    },
+    net_r0: {
+      jRequest: async (key, method, params) => {
+        capturedPayload = params
+        return [{ type: 'miner', data: [{ ts: 1700006400000, val: { hashrate_mhs_5m_sum_aggr: 100000 } }], error: null }]
+      }
+    }
+  })
+
+  const mockReq = {
+    query: { start: 1700000000000, end: 1700100000000, racks: 'rack-0,rack-1' }
+  }
+
+  await getHashrate(mockCtx, mockReq)
+  t.ok(capturedPayload, 'should have captured RPC payload')
+  t.alike(capturedPayload.keys[0].racks, ['rack-0', 'rack-1'], 'should include racks in RPC key')
+  t.pass()
+})
+
+test('getHashrate - omits racks from RPC when not provided', async (t) => {
+  let capturedPayload = null
+  const mockCtx = withDataProxy({
+    conf: {
+      orks: [{ rpcPublicKey: 'key1' }]
+    },
+    net_r0: {
+      jRequest: async (key, method, params) => {
+        capturedPayload = params
+        return [{ type: 'miner', data: [{ ts: 1700006400000, val: { hashrate_mhs_5m_sum_aggr: 100000 } }], error: null }]
+      }
+    }
+  })
+
+  const mockReq = {
+    query: { start: 1700000000000, end: 1700100000000 }
+  }
+
+  await getHashrate(mockCtx, mockReq)
+  t.is(capturedPayload.keys[0].racks, undefined, 'should not include racks when absent')
+  t.pass()
+})
+
+// ==================== Consumption with racks filter Tests ====================
+
+test('getConsumption - passes racks to RPC payload', async (t) => {
+  let capturedPayload = null
+  const mockCtx = withDataProxy({
+    conf: {
+      orks: [{ rpcPublicKey: 'key1' }]
+    },
+    net_r0: {
+      jRequest: async (key, method, params) => {
+        capturedPayload = params
+        return [{ type: 'powermeter', data: [{ ts: 1700006400000, val: { site_power_w: 50000 } }], error: null }]
+      }
+    }
+  })
+
+  const mockReq = {
+    query: { start: 1700000000000, end: 1700100000000, racks: 'rack-0,rack-1' }
+  }
+
+  await getConsumption(mockCtx, mockReq)
+  t.ok(capturedPayload, 'should have captured RPC payload')
+  t.alike(capturedPayload.keys[0].racks, ['rack-0', 'rack-1'], 'should include racks in RPC key')
+  t.pass()
+})
+
+test('getConsumption - omits racks from RPC when not provided', async (t) => {
+  let capturedPayload = null
+  const mockCtx = withDataProxy({
+    conf: {
+      orks: [{ rpcPublicKey: 'key1' }]
+    },
+    net_r0: {
+      jRequest: async (key, method, params) => {
+        capturedPayload = params
+        return [{ type: 'powermeter', data: [{ ts: 1700006400000, val: { site_power_w: 50000 } }], error: null }]
+      }
+    }
+  })
+
+  const mockReq = {
+    query: { start: 1700000000000, end: 1700100000000 }
+  }
+
+  await getConsumption(mockCtx, mockReq)
+  t.is(capturedPayload.keys[0].racks, undefined, 'should not include racks when absent')
   t.pass()
 })
