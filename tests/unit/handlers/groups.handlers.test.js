@@ -4,9 +4,9 @@ const test = require('brittle')
 const {
   getGroupStats,
   composeGroupStats,
-  extractKeyEntry,
   sumGroupedField
 } = require('../../../workers/lib/server/handlers/groups.handlers')
+const { extractKeyEntry } = require('../../../workers/lib/metrics.utils')
 const { withDataProxy } = require('../helpers/mockHelpers')
 
 // ==================== extractKeyEntry Tests ====================

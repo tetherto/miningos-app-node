@@ -100,6 +100,13 @@ function getIntervalConfig (interval) {
   }
 }
 
+function extractKeyEntry (orkResult, keyIndex) {
+  if (!Array.isArray(orkResult)) return null
+  const keyResult = orkResult[keyIndex]
+  if (!Array.isArray(keyResult) || keyResult.length === 0) return null
+  return keyResult[0] || null
+}
+
 module.exports = {
   parseEntryTs,
   validateStartEnd,
@@ -107,6 +114,7 @@ module.exports = {
   forEachRangeAggrItem,
   sumObjectValues,
   extractContainerFromMinerKey,
+  extractKeyEntry,
   resolveInterval,
   getIntervalConfig
 }

@@ -25,12 +25,7 @@ const {
   resolveInterval,
   getIntervalConfig
 } = require('../../metrics.utils')
-
-function parseContainers (req) {
-  const raw = req.query.containers
-  if (!raw) return undefined
-  return raw.split(',').map(r => r.trim()).filter(Boolean)
-}
+const { parseContainers } = require('../lib/queryUtils')
 
 async function getHashrate (ctx, req) {
   const { start, end } = validateStartEnd(req)
@@ -707,7 +702,6 @@ function processContainerHistoryData (results, containerId) {
 
 module.exports = {
   ...require('../../metrics.utils'),
-  parseContainers,
   getHashrate,
   processHashrateData,
   calculateHashrateSummary,

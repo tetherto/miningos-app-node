@@ -304,7 +304,14 @@ const AGGR_FIELDS = {
   OFFLINE_CNT: 'offline_cnt',
   SLEEP_CNT: 'power_mode_sleep_cnt',
   MAINTENANCE_CNT: 'maintenance_type_cnt',
-  CONTAINER_SPECIFIC_STATS: 'container_specific_stats_group_aggr'
+  CONTAINER_SPECIFIC_STATS: 'container_specific_stats_group_aggr',
+  HASHRATE_1M_CONTAINER_GROUP_SUM: 'hashrate_mhs_1m_container_group_sum_aggr',
+  POWER_W_CONTAINER_GROUP_SUM: 'power_w_container_group_sum_aggr',
+  POWER_MODE_LOW_CNT: 'power_mode_low_cnt',
+  POWER_MODE_NORMAL_CNT: 'power_mode_normal_cnt',
+  POWER_MODE_HIGH_CNT: 'power_mode_high_cnt',
+  ERROR_CNT: 'error_cnt',
+  NOT_MINING_CNT: 'not_mining_cnt'
 }
 
 const PERIOD_TYPES = {

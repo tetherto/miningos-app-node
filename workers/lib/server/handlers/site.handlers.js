@@ -1,21 +1,6 @@
 'use strict'
 
-/**
- * Extracts the latest entry from a tail-log key result.
- * tailLogMulti returns results per key in order.
- * Each ork result is an array of key results, each key result is an array of entries.
- * With limit=1, each key result has at most 1 entry.
- *
- * @param {Array} orkResult - Single ork's tailLogMulti response
- * @param {number} keyIndex - Index of the key in the keys array
- * @returns {Object|null} The latest entry for that key, or null
- */
-function extractKeyEntry (orkResult, keyIndex) {
-  if (!Array.isArray(orkResult)) return null
-  const keyResult = orkResult[keyIndex]
-  if (!Array.isArray(keyResult) || keyResult.length === 0) return null
-  return keyResult[0] || null
-}
+const { extractKeyEntry } = require('../../metrics.utils')
 
 /**
  * Aggregates miner stats from tailLogMulti results across all orks.

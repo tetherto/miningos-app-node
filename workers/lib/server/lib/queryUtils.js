@@ -172,6 +172,12 @@ function paginateResults (items, offset, limit) {
   }
 }
 
+function parseContainers (req) {
+  const raw = req.query.containers
+  if (!raw) return undefined
+  return raw.split(',').map(c => c.trim()).filter(Boolean)
+}
+
 module.exports = {
   getNestedValue,
   mapFilterFields,
@@ -179,5 +185,6 @@ module.exports = {
   buildSearchQuery,
   flattenOrkResults,
   sortItems,
-  paginateResults
+  paginateResults,
+  parseContainers
 }

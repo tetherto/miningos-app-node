@@ -2,7 +2,6 @@
 
 const test = require('brittle')
 const {
-  parseContainers,
   getHashrate,
   processHashrateData,
   calculateHashrateSummary,
@@ -1625,32 +1624,6 @@ test('processContainerHistoryData - sorts by timestamp', (t) => {
   ]]
   const log = processContainerHistoryData(results, 'bitdeer-9a')
   t.ok(log[0].ts < log[1].ts, 'entries should be sorted ascending')
-  t.pass()
-})
-
-// ==================== parseContainers Tests ====================
-
-test('parseContainers - parses comma-separated containers', (t) => {
-  const result = parseContainers({ query: { containers: 'C-01,C-02,C-03' } })
-  t.alike(result, ['C-01', 'C-02', 'C-03'], 'should split on commas')
-  t.pass()
-})
-
-test('parseContainers - trims whitespace', (t) => {
-  const result = parseContainers({ query: { containers: 'C-01 , C-02 , C-03' } })
-  t.alike(result, ['C-01', 'C-02', 'C-03'], 'should trim spaces')
-  t.pass()
-})
-
-test('parseContainers - returns undefined when no containers', (t) => {
-  t.is(parseContainers({ query: {} }), undefined, 'missing containers returns undefined')
-  t.is(parseContainers({ query: { containers: '' } }), undefined, 'empty string returns undefined')
-  t.pass()
-})
-
-test('parseContainers - single container', (t) => {
-  const result = parseContainers({ query: { containers: 'C-01' } })
-  t.alike(result, ['C-01'], 'single container returns array with one element')
   t.pass()
 })
 
