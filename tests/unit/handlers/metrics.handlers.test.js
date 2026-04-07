@@ -2,7 +2,7 @@
 
 const test = require('brittle')
 const {
-  parseRacks,
+  parseContainers,
   getHashrate,
   processHashrateData,
   calculateHashrateSummary,
@@ -1628,35 +1628,35 @@ test('processContainerHistoryData - sorts by timestamp', (t) => {
   t.pass()
 })
 
-// ==================== parseRacks Tests ====================
+// ==================== parseContainers Tests ====================
 
-test('parseRacks - parses comma-separated racks', (t) => {
-  const result = parseRacks({ query: { racks: 'rack-0,rack-1,rack-2' } })
-  t.alike(result, ['rack-0', 'rack-1', 'rack-2'], 'should split on commas')
+test('parseContainers - parses comma-separated containers', (t) => {
+  const result = parseContainers({ query: { containers: 'C-01,C-02,C-03' } })
+  t.alike(result, ['C-01', 'C-02', 'C-03'], 'should split on commas')
   t.pass()
 })
 
-test('parseRacks - trims whitespace', (t) => {
-  const result = parseRacks({ query: { racks: 'rack-0 , rack-1 , rack-2' } })
-  t.alike(result, ['rack-0', 'rack-1', 'rack-2'], 'should trim spaces')
+test('parseContainers - trims whitespace', (t) => {
+  const result = parseContainers({ query: { containers: 'C-01 , C-02 , C-03' } })
+  t.alike(result, ['C-01', 'C-02', 'C-03'], 'should trim spaces')
   t.pass()
 })
 
-test('parseRacks - returns undefined when no racks', (t) => {
-  t.is(parseRacks({ query: {} }), undefined, 'missing racks returns undefined')
-  t.is(parseRacks({ query: { racks: '' } }), undefined, 'empty string returns undefined')
+test('parseContainers - returns undefined when no containers', (t) => {
+  t.is(parseContainers({ query: {} }), undefined, 'missing containers returns undefined')
+  t.is(parseContainers({ query: { containers: '' } }), undefined, 'empty string returns undefined')
   t.pass()
 })
 
-test('parseRacks - single rack', (t) => {
-  const result = parseRacks({ query: { racks: 'rack-0' } })
-  t.alike(result, ['rack-0'], 'single rack returns array with one element')
+test('parseContainers - single container', (t) => {
+  const result = parseContainers({ query: { containers: 'C-01' } })
+  t.alike(result, ['C-01'], 'single container returns array with one element')
   t.pass()
 })
 
-// ==================== Hashrate with racks filter Tests ====================
+// ==================== Hashrate with containers filter Tests ====================
 
-test('getHashrate - passes racks to RPC payload', async (t) => {
+test('getHashrate - passes containers to RPC payload', async (t) => {
   let capturedPayload = null
   const mockCtx = withDataProxy({
     conf: {
@@ -1671,16 +1671,16 @@ test('getHashrate - passes racks to RPC payload', async (t) => {
   })
 
   const mockReq = {
-    query: { start: 1700000000000, end: 1700100000000, racks: 'rack-0,rack-1' }
+    query: { start: 1700000000000, end: 1700100000000, containers: 'C-01,C-02' }
   }
 
   await getHashrate(mockCtx, mockReq)
   t.ok(capturedPayload, 'should have captured RPC payload')
-  t.alike(capturedPayload.keys[0].racks, ['rack-0', 'rack-1'], 'should include racks in RPC key')
+  t.alike(capturedPayload.keys[0].containers, ['C-01', 'C-02'], 'should include containers in RPC key')
   t.pass()
 })
 
-test('getHashrate - omits racks from RPC when not provided', async (t) => {
+test('getHashrate - omits containers from RPC when not provided', async (t) => {
   let capturedPayload = null
   const mockCtx = withDataProxy({
     conf: {
@@ -1699,13 +1699,13 @@ test('getHashrate - omits racks from RPC when not provided', async (t) => {
   }
 
   await getHashrate(mockCtx, mockReq)
-  t.is(capturedPayload.keys[0].racks, undefined, 'should not include racks when absent')
+  t.is(capturedPayload.keys[0].containers, undefined, 'should not include containers when absent')
   t.pass()
 })
 
-// ==================== Consumption with racks filter Tests ====================
+// ==================== Consumption with containers filter Tests ====================
 
-test('getConsumption - passes racks to RPC payload', async (t) => {
+test('getConsumption - passes containers to RPC payload', async (t) => {
   let capturedPayload = null
   const mockCtx = withDataProxy({
     conf: {
@@ -1720,16 +1720,16 @@ test('getConsumption - passes racks to RPC payload', async (t) => {
   })
 
   const mockReq = {
-    query: { start: 1700000000000, end: 1700100000000, racks: 'rack-0,rack-1' }
+    query: { start: 1700000000000, end: 1700100000000, containers: 'C-01,C-02' }
   }
 
   await getConsumption(mockCtx, mockReq)
   t.ok(capturedPayload, 'should have captured RPC payload')
-  t.alike(capturedPayload.keys[0].racks, ['rack-0', 'rack-1'], 'should include racks in RPC key')
+  t.alike(capturedPayload.keys[0].containers, ['C-01', 'C-02'], 'should include containers in RPC key')
   t.pass()
 })
 
-test('getConsumption - omits racks from RPC when not provided', async (t) => {
+test('getConsumption - omits containers from RPC when not provided', async (t) => {
   let capturedPayload = null
   const mockCtx = withDataProxy({
     conf: {
@@ -1748,6 +1748,6 @@ test('getConsumption - omits racks from RPC when not provided', async (t) => {
   }
 
   await getConsumption(mockCtx, mockReq)
-  t.is(capturedPayload.keys[0].racks, undefined, 'should not include racks when absent')
+  t.is(capturedPayload.keys[0].containers, undefined, 'should not include containers when absent')
   t.pass()
 })

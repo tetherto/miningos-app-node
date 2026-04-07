@@ -7,7 +7,7 @@ const schemas = {
       properties: {
         start: { type: 'integer', minimum: 0 },
         end: { type: 'integer', minimum: 0 },
-        racks: { type: 'string' },
+        containers: { type: 'string' },
         overwriteCache: { type: 'boolean' }
       },
       required: ['start', 'end']
@@ -17,7 +17,7 @@ const schemas = {
       properties: {
         start: { type: 'integer', minimum: 0 },
         end: { type: 'integer', minimum: 0 },
-        racks: { type: 'string' },
+        containers: { type: 'string' },
         overwriteCache: { type: 'boolean' }
       },
       required: ['start', 'end']

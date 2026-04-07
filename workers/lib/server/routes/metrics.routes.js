@@ -33,7 +33,7 @@ module.exports = (ctx) => {
           'metrics/hashrate',
           req.query.start,
           req.query.end,
-          req.query.racks
+          req.query.containers
         ],
         ENDPOINTS.METRICS_HASHRATE,
         getHashrate
@@ -51,7 +51,7 @@ module.exports = (ctx) => {
           'metrics/consumption',
           req.query.start,
           req.query.end,
-          req.query.racks
+          req.query.containers
         ],
         ENDPOINTS.METRICS_CONSUMPTION,
         getConsumption

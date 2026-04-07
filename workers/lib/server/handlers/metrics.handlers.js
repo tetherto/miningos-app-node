@@ -26,8 +26,8 @@ const {
   getIntervalConfig
 } = require('../../metrics.utils')
 
-function parseRacks (req) {
-  const raw = req.query.racks
+function parseContainers (req) {
+  const raw = req.query.containers
   if (!raw) return undefined
   return raw.split(',').map(r => r.trim()).filter(Boolean)
 }
@@ -45,8 +45,8 @@ async function getHashrate (ctx, req) {
     fields: { [AGGR_FIELDS.HASHRATE_SUM]: 1 },
     shouldReturnDailyData: 1
   }
-  const racks = parseRacks(req)
-  if (racks) keyObj.racks = racks
+  const containers = parseContainers(req)
+  if (containers) keyObj.containers = containers
 
   const results = await ctx.dataProxy.requestData(RPC_METHODS.TAIL_LOG_RANGE_AGGR, {
     keys: [keyObj]
@@ -103,8 +103,8 @@ async function getConsumption (ctx, req) {
     fields: { [AGGR_FIELDS.SITE_POWER]: 1 },
     shouldReturnDailyData: 1
   }
-  const racks = parseRacks(req)
-  if (racks) keyObj.racks = racks
+  const containers = parseContainers(req)
+  if (containers) keyObj.containers = containers
 
   const results = await ctx.dataProxy.requestData(RPC_METHODS.TAIL_LOG_RANGE_AGGR, {
     keys: [keyObj]
@@ -707,7 +707,7 @@ function processContainerHistoryData (results, containerId) {
 
 module.exports = {
   ...require('../../metrics.utils'),
-  parseRacks,
+  parseContainers,
   getHashrate,
   processHashrateData,
   calculateHashrateSummary,
