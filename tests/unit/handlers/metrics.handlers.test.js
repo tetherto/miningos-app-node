@@ -1626,3 +1626,146 @@ test('processContainerHistoryData - sorts by timestamp', (t) => {
   t.ok(log[0].ts < log[1].ts, 'entries should be sorted ascending')
   t.pass()
 })
+
+// ==================== Uncovered branch tests ====================
+
+test('processTemperatureData - rolling avg for same container across entries', (t) => {
+  const results = [[
+    {
+      ts: 1700006400000,
+      temperature_c_group_max_aggr: { cont1: 65 },
+      temperature_c_group_avg_aggr: { cont1: 55 }
+    },
+    {
+      ts: 1700006400000,
+      temperature_c_group_max_aggr: { cont1: 70 },
+      temperature_c_group_avg_aggr: { cont1: 60 }
+    }
+  ]]
+
+  const points = processTemperatureData(results, '1D', null)
+  const key = Object.keys(points)[0]
+  t.is(points[key].containers.cont1.maxC, 70, 'should take max of both entries')
+  t.ok(points[key].containers.cont1.avgC > 55, 'should compute rolling avg')
+  t.pass()
+})
+
+test('processContainerHistoryData - prefix match fallback', (t) => {
+  const results = [[
+    {
+      ts: 1700006400000,
+      container_specific_stats_group_aggr: {
+        'bitdeer-9a-sensor1': { humidity: 45 }
+      }
+    }
+  ]]
+  const log = processContainerHistoryData(results, 'bitdeer-9a')
+  t.is(log.length, 1, 'should match via prefix')
+  t.is(log[0].humidity, 45, 'should return prefixed container data')
+  t.pass()
+})
+
+test('processContainerHistoryData - no match skips entry', (t) => {
+  const results = [[
+    {
+      ts: 1700006400000,
+      container_specific_stats_group_aggr: {
+        'other-container': { humidity: 45 }
+      }
+    }
+  ]]
+  const log = processContainerHistoryData(results, 'bitdeer-9a')
+  t.is(log.length, 0, 'should skip non-matching entries')
+  t.pass()
+})
+
+test('processContainerSensorSnapshot - handles non-object aggrData', (t) => {
+  const results = [[
+    {
+      container_specific_stats_group_aggr: 'invalid'
+    }
+  ]]
+  const result = processContainerSensorSnapshot(results, 'cont1')
+  t.is(result, null, 'should return null for non-object aggrData')
+  t.pass()
+})
+
+test('processTemperatureData - handles non-object maxObj', (t) => {
+  const results = [[{
+    ts: 1700006400000,
+    temperature_c_group_max_aggr: 'invalid',
+    temperature_c_group_avg_aggr: {}
+  }]]
+
+  const points = processTemperatureData(results, '1D', null)
+  const key = Object.keys(points)[0]
+  t.is(points[key].siteMaxC, null, 'should not process non-object maxObj')
+  t.pass()
+})
+
+test('processPowerModeData - handles non-object powerModeObj', (t) => {
+  const results = [[{
+    ts: 1700006400000,
+    power_mode_group_aggr: 'invalid',
+    status_group_aggr: {}
+  }]]
+
+  const points = processPowerModeData(results, '1D')
+  const key = Object.keys(points)[0]
+  t.is(points[key].normal, 0, 'should not process non-object powerModeObj')
+  t.pass()
+})
+
+test('getPowerMode - sets groupRange for multi-day range', async (t) => {
+  let capturedPayload = null
+  const mockCtx = withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: {
+      jRequest: async (key, method, params) => {
+        capturedPayload = params
+        return []
+      }
+    }
+  })
+
+  const threeDaysMs = 3 * 24 * 60 * 60 * 1000
+  await getPowerMode(mockCtx, {
+    query: { start: 1700000000000, end: 1700000000000 + threeDaysMs }
+  })
+
+  t.is(capturedPayload.groupRange, '1D', 'should set groupRange for multi-day range')
+  t.pass()
+})
+
+test('getTemperature - sets groupRange for multi-day range', async (t) => {
+  let capturedPayload = null
+  const mockCtx = withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: {
+      jRequest: async (key, method, params) => {
+        capturedPayload = params
+        return []
+      }
+    }
+  })
+
+  const threeDaysMs = 3 * 24 * 60 * 60 * 1000
+  await getTemperature(mockCtx, {
+    query: { start: 1700000000000, end: 1700000000000 + threeDaysMs }
+  })
+
+  t.is(capturedPayload.groupRange, '1D', 'should set groupRange for multi-day range')
+  t.pass()
+})
+
+test('processPowerModeTimelineData - handles non-object powerModeObj', (t) => {
+  const results = [[{
+    ts: 1700006400000,
+    power_mode_group_aggr: 'invalid',
+    status_group_aggr: {}
+  }]]
+
+  const log = processPowerModeTimelineData(results, null)
+  t.is(log.length, 0, 'should skip non-object powerModeObj entries')
+  t.pass()
+})
