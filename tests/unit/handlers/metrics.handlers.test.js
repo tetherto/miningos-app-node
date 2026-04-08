@@ -1627,8 +1627,6 @@ test('processContainerHistoryData - sorts by timestamp', (t) => {
   t.pass()
 })
 
-// ==================== Uncovered branch tests ====================
-
 test('processTemperatureData - rolling avg for same container across entries', (t) => {
   const results = [[
     {
