@@ -25,26 +25,20 @@ const {
   resolveInterval,
   getIntervalConfig
 } = require('../../metrics.utils')
-const { parseContainers } = require('../lib/queryUtils')
-
 async function getHashrate (ctx, req) {
   const { start, end } = validateStartEnd(req)
 
   const startDate = new Date(start).toISOString()
   const endDate = new Date(end).toISOString()
 
-  const keyObj = {
-    type: WORKER_TYPES.MINER,
-    startDate,
-    endDate,
-    fields: { [AGGR_FIELDS.HASHRATE_SUM]: 1 },
-    shouldReturnDailyData: 1
-  }
-  const containers = parseContainers(req)
-  if (containers) keyObj.containers = containers
-
   const results = await ctx.dataProxy.requestData(RPC_METHODS.TAIL_LOG_RANGE_AGGR, {
-    keys: [keyObj]
+    keys: [{
+      type: WORKER_TYPES.MINER,
+      startDate,
+      endDate,
+      fields: { [AGGR_FIELDS.HASHRATE_SUM]: 1 },
+      shouldReturnDailyData: 1
+    }]
   })
 
   const daily = processHashrateData(results)
@@ -91,18 +85,14 @@ async function getConsumption (ctx, req) {
   const startDate = new Date(start).toISOString()
   const endDate = new Date(end).toISOString()
 
-  const keyObj = {
-    type: WORKER_TYPES.POWERMETER,
-    startDate,
-    endDate,
-    fields: { [AGGR_FIELDS.SITE_POWER]: 1 },
-    shouldReturnDailyData: 1
-  }
-  const containers = parseContainers(req)
-  if (containers) keyObj.containers = containers
-
   const results = await ctx.dataProxy.requestData(RPC_METHODS.TAIL_LOG_RANGE_AGGR, {
-    keys: [keyObj]
+    keys: [{
+      type: WORKER_TYPES.POWERMETER,
+      startDate,
+      endDate,
+      fields: { [AGGR_FIELDS.SITE_POWER]: 1 },
+      shouldReturnDailyData: 1
+    }]
   })
 
   const daily = processConsumptionData(results)
