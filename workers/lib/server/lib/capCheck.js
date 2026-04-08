@@ -1,8 +1,6 @@
 'use strict'
 
 async function capCheck (ctx, req, rep, perms, write = true) {
-  if (ctx.noAuth) return
-
   const allowed = await ctx.authLib.tokenHasPerms(req._info.authToken, write, perms)
   if (allowed) return
 
