@@ -23,10 +23,10 @@ module.exports = (ctx) => {
         querystring: {
           type: 'object',
           properties: {
-            queries: { type: 'string' },
+            queries: { type: 'string', maxLength: 10000 },
             overwriteCache: { type: 'boolean' },
             groupBatch: { type: 'boolean' },
-            suffix: { type: 'string' }
+            suffix: { type: 'string', maxLength: 200 }
           },
           required: ['queries']
         }
@@ -109,7 +109,7 @@ module.exports = (ctx) => {
           properties: {
             batchActionsPayload: { type: 'array' },
             batchActionUID: { type: 'string' },
-            suffix: { type: 'string' }
+            suffix: { type: 'string', maxLength: 200 }
           },
           required: ['batchActionsPayload', 'batchActionUID']
         }
