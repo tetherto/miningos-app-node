@@ -15,7 +15,8 @@
     "/auth/actions/:type/:id": "30s",
     "/auth/global/data": "30s",
     "/auth/site/status/live": "15s",
-    "/auth/miners": "15s"
+    "/auth/miners": "15s",
+    "/auth/cooling-system": "15s"
   },
   "featureConfig": {
     "comments": true,
@@ -32,7 +33,13 @@
     "showMinerConsumptionDashboard": false,
     "totalSystemConsumptionHeader": false,
     "energyProvision": true,
-    "admeStats": true
+    "admeStats": true,
+    "alertsHistoricalLogEnabled": true,
+    "isReportingEnabled": true,
+    "centralDCSSetup": {
+      "enabled": false,
+      "tag": "t-dcs-siemens"
+    }
   },
   "ttl": 300,
   "site": "SITE_NAME",
