@@ -156,7 +156,9 @@ const ENDPOINTS = {
   ALERTS_SITE: '/auth/alerts/site',
   ALERTS_HISTORY: '/auth/alerts/history',
 
-  MINERS: '/auth/miners'
+  MINERS: '/auth/miners',
+  // Cooling System endpoints
+  COOLING_SYSTEM: '/auth/cooling-system'
 }
 
 const HTTP_METHODS = {
@@ -287,6 +289,112 @@ const WORKER_TAGS = {
 
 const DEVICE_LIST_FIELDS = {
   id: 1, type: 1, code: 1, ip: 1, tags: 1, info: 1, rack: 1
+}
+
+// Cooling system field projections by type/view
+const COOLING_SYSTEM_PROJECTIONS = {
+  base: { id: 1, code: 1, type: 1, tags: 1, rack: 1 },
+  equipment: {
+    pumps: { 'last.snap.stats.dcs_specific.equipment.pumps': 1 },
+    temperatures: { 'last.snap.stats.dcs_specific.equipment.temperatures': 1 },
+    pressures: { 'last.snap.stats.dcs_specific.equipment.pressures': 1 },
+    flows: { 'last.snap.stats.dcs_specific.equipment.flows': 1 },
+    levels: { 'last.snap.stats.dcs_specific.equipment.levels': 1 },
+    valves: { 'last.snap.stats.dcs_specific.equipment.valves': 1 },
+    heat_exchangers: { 'last.snap.stats.dcs_specific.equipment.heat_exchangers': 1 },
+    cooling_towers: { 'last.snap.stats.dcs_specific.equipment.cooling_towers': 1 },
+    tanks: { 'last.snap.stats.dcs_specific.equipment.tanks': 1 },
+    chillers: { 'last.snap.stats.dcs_specific.equipment.chillers': 1 },
+    fan_coils: { 'last.snap.stats.dcs_specific.equipment.fan_coils': 1 },
+    humidity_sensors: { 'last.snap.stats.dcs_specific.equipment.humidity_sensors': 1 },
+    vibration_sensors: { 'last.snap.stats.dcs_specific.equipment.vibration_sensors': 1 },
+    flow_switches: { 'last.snap.stats.dcs_specific.equipment.flow_switches': 1 }
+  },
+  config: { 'last.snap.config': 1 },
+  stats: {
+    flow: { 'last.snap.stats.flow': 1 },
+    temperature: { 'last.snap.stats.temperature': 1 },
+    humidity: { 'last.snap.stats.humidity': 1 }
+  },
+  miners: {
+    circuit1: {
+      'last.snap.stats.dcs_specific.equipment.pumps': 1,
+      'last.snap.stats.dcs_specific.equipment.temperatures': 1,
+      'last.snap.stats.dcs_specific.equipment.pressures': 1,
+      'last.snap.stats.dcs_specific.equipment.flows': 1,
+      'last.snap.stats.dcs_specific.equipment.heat_exchangers': 1,
+      'last.snap.stats.dcs_specific.equipment.valves': 1,
+      'last.snap.config.cooling_system': 1
+    },
+    circuit2: {
+      'last.snap.stats.dcs_specific.equipment.pumps': 1,
+      'last.snap.stats.dcs_specific.equipment.temperatures': 1,
+      'last.snap.stats.dcs_specific.equipment.levels': 1,
+      'last.snap.stats.dcs_specific.equipment.heat_exchangers': 1,
+      'last.snap.stats.dcs_specific.equipment.cooling_towers': 1,
+      'last.snap.stats.dcs_specific.equipment.valves': 1,
+      'last.snap.stats.dcs_specific.equipment.tanks': 1,
+      'last.snap.stats.dcs_specific.equipment.vibration_sensors': 1,
+      'last.snap.config.cooling_system': 1
+    },
+    layout: {
+      'last.snap.stats.dcs_specific.equipment.pumps': 1,
+      'last.snap.stats.dcs_specific.equipment.temperatures': 1,
+      'last.snap.stats.dcs_specific.equipment.pressures': 1,
+      'last.snap.stats.dcs_specific.equipment.flows': 1,
+      'last.snap.stats.dcs_specific.equipment.levels': 1,
+      'last.snap.stats.dcs_specific.equipment.heat_exchangers': 1,
+      'last.snap.stats.dcs_specific.equipment.cooling_towers': 1,
+      'last.snap.stats.dcs_specific.equipment.valves': 1,
+      'last.snap.stats.dcs_specific.equipment.tanks': 1,
+      'last.snap.stats.flow': 1,
+      'last.snap.config.cooling_system': 1
+    }
+  },
+  hvac: {
+    circuit1: {
+      'last.snap.stats.dcs_specific.equipment.pumps': 1,
+      'last.snap.stats.dcs_specific.equipment.temperatures': 1,
+      'last.snap.stats.dcs_specific.equipment.pressures': 1,
+      'last.snap.stats.dcs_specific.equipment.flows': 1,
+      'last.snap.stats.dcs_specific.equipment.levels': 1,
+      'last.snap.stats.dcs_specific.equipment.chillers': 1,
+      'last.snap.stats.dcs_specific.equipment.fan_coils': 1,
+      'last.snap.stats.dcs_specific.equipment.valves': 1,
+      'last.snap.stats.dcs_specific.equipment.tanks': 1,
+      'last.snap.stats.dcs_specific.equipment.flow_switches': 1,
+      'last.snap.config.cooling_system': 1
+    },
+    circuit2: {
+      'last.snap.stats.dcs_specific.equipment.pumps': 1,
+      'last.snap.stats.dcs_specific.equipment.temperatures': 1,
+      'last.snap.stats.dcs_specific.equipment.flows': 1,
+      'last.snap.stats.dcs_specific.equipment.levels': 1,
+      'last.snap.stats.dcs_specific.equipment.cooling_towers': 1,
+      'last.snap.stats.dcs_specific.equipment.vibration_sensors': 1,
+      'last.snap.config.cooling_system': 1
+    },
+    layout: {
+      'last.snap.stats.dcs_specific.equipment.pumps': 1,
+      'last.snap.stats.dcs_specific.equipment.temperatures': 1,
+      'last.snap.stats.dcs_specific.equipment.pressures': 1,
+      'last.snap.stats.dcs_specific.equipment.flows': 1,
+      'last.snap.stats.dcs_specific.equipment.levels': 1,
+      'last.snap.stats.dcs_specific.equipment.chillers': 1,
+      'last.snap.stats.dcs_specific.equipment.cooling_towers': 1,
+      'last.snap.stats.dcs_specific.equipment.fan_coils': 1,
+      'last.snap.stats.dcs_specific.equipment.valves': 1,
+      'last.snap.stats.dcs_specific.equipment.tanks': 1,
+      'last.snap.stats.dcs_specific.equipment.flow_switches': 1,
+      'last.snap.config.cooling_system': 1
+    },
+    ambient: {
+      'last.snap.stats.dcs_specific.equipment.fan_coils': 1,
+      'last.snap.stats.dcs_specific.equipment.humidity_sensors': 1,
+      'last.snap.stats.humidity': 1,
+      'last.snap.config.cooling_system': 1
+    }
+  }
 }
 
 const AGGR_FIELDS = {
@@ -479,5 +587,6 @@ module.exports = {
   MINER_SEARCH_FIELDS,
   MINER_DEFAULT_FIELDS,
   MINER_MAX_LIMIT,
-  MINER_DEFAULT_LIMIT
+  MINER_DEFAULT_LIMIT,
+  COOLING_SYSTEM_PROJECTIONS
 }
