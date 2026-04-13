@@ -38,7 +38,7 @@
     "isReportingEnabled": true,
     "centralDCSSetup": {
       "enabled": false,
-      "tag": "t-dcs-siemens"
+      "tag": "t-dcs"
     }
   },
   "ttl": 300,
