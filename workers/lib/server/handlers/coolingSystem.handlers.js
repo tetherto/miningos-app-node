@@ -1,6 +1,5 @@
 'use strict'
 
-const { requestRpcMapLimit } = require('../../utils')
 const { COOLING_SYSTEM_PROJECTIONS } = require('../../constants')
 
 const DCS_TAG_DEFAULT = 't-dcs'
@@ -27,7 +26,7 @@ function extractDcsThing (rpcResults) {
   for (const orkResult of rpcResults) {
     if (!Array.isArray(orkResult)) continue
     for (const thing of orkResult) {
-      if (thing?.type === 'dcs' && thing?.last?.snap) {
+      if (thing && thing?.type && thing.type.includes('dcs') && thing?.last?.snap) {
         return thing
       }
     }
@@ -578,7 +577,7 @@ async function getCoolingSystemData (ctx, req) {
     fields
   }
 
-  const rpcResults = await requestRpcMapLimit(ctx, 'listThings', payload)
+  const rpcResults = await ctx.dataProxy.requestDataMap('listThings', payload)
   const dcsThing = extractDcsThing(rpcResults)
 
   if (!dcsThing) {
