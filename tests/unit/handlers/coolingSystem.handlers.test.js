@@ -6,7 +6,7 @@ const {
   isCentralDCSEnabled,
   getDCSTag,
   getFieldProjection,
-  extractDcsSiemensThing,
+  extractDcsThing,
   buildCoolingViewData,
   buildMinersCircuit1View,
   buildMinersCircuit2View,
@@ -218,15 +218,15 @@ function createMockCtx (featureEnabled = true, customDcsResponse = null) {
   const snapData = createMockSnapData()
   const defaultResponse = [{
     id: 'dcs-1',
-    type: 'dcs-siemens',
-    tags: ['t-dcs-siemens'],
+    type: 'dcs',
+    tags: ['t-dcs'],
     last: { snap: snapData }
   }]
 
   const featureConfig = {
     centralDCSSetup: {
       enabled: featureEnabled,
-      tag: 't-dcs-siemens'
+      tag: 't-dcs'
     }
   }
 
@@ -271,7 +271,7 @@ test('getDCSTag - returns configured tag', (t) => {
 
 test('getDCSTag - returns default tag when not configured', (t) => {
   const ctx = { conf: { featureConfig: {} } }
-  t.is(getDCSTag(ctx), 't-dcs-siemens')
+  t.is(getDCSTag(ctx), 't-dcs')
   t.pass()
 })
 
@@ -307,31 +307,31 @@ test('COOLING_SYSTEM_PROJECTIONS - has correct structure', (t) => {
   t.pass()
 })
 
-// Extract DCS Siemens thing tests
-test('extractDcsSiemensThing - extracts thing from valid results', (t) => {
+// Extract DCS thing tests
+test('extractDcsThing - extracts thing from valid results', (t) => {
   const snapData = createMockSnapData()
   const rpcResults = [[{
     id: 'dcs-1',
-    type: 'dcs-siemens',
-    tags: ['t-dcs-siemens'],
+    type: 'dcs',
+    tags: ['t-dcs'],
     last: { snap: snapData }
   }]]
 
-  const thing = extractDcsSiemensThing(rpcResults)
+  const thing = extractDcsThing(rpcResults)
   t.ok(thing, 'should extract thing')
-  t.is(thing.type, 'dcs-siemens', 'should have correct type')
+  t.is(thing.type, 'dcs', 'should have correct type')
   t.ok(thing.last.snap, 'should have snap data')
   t.pass()
 })
 
-test('extractDcsSiemensThing - returns null for empty results', (t) => {
-  const thing = extractDcsSiemensThing([])
+test('extractDcsThing - returns null for empty results', (t) => {
+  const thing = extractDcsThing([])
   t.is(thing, null)
   t.pass()
 })
 
-test('extractDcsSiemensThing - returns null for non-array', (t) => {
-  const thing = extractDcsSiemensThing(null)
+test('extractDcsThing - returns null for non-array', (t) => {
+  const thing = extractDcsThing(null)
   t.is(thing, null)
   t.pass()
 })

@@ -3,7 +3,7 @@
 const { requestRpcMapLimit } = require('../../utils')
 const { COOLING_SYSTEM_PROJECTIONS } = require('../../constants')
 
-const DCS_SIEMENS_TAG_DEFAULT = 't-dcs-siemens'
+const DCS_TAG_DEFAULT = 't-dcs'
 
 function isCentralDCSEnabled (ctx) {
   if (ctx.conf?.featureConfig?.centralDCSSetup?.enabled === true) return true
@@ -11,7 +11,7 @@ function isCentralDCSEnabled (ctx) {
 }
 
 function getDCSTag (ctx) {
-  return ctx.conf?.featureConfig?.centralDCSSetup?.tag || DCS_SIEMENS_TAG_DEFAULT
+  return ctx.conf?.featureConfig?.centralDCSSetup?.tag || DCS_TAG_DEFAULT
 }
 
 function getFieldProjection (type, view) {
@@ -21,13 +21,13 @@ function getFieldProjection (type, view) {
   return { ...base, ...viewProjection }
 }
 
-function extractDcsSiemensThing (rpcResults) {
+function extractDcsThing (rpcResults) {
   if (!Array.isArray(rpcResults)) return null
 
   for (const orkResult of rpcResults) {
     if (!Array.isArray(orkResult)) continue
     for (const thing of orkResult) {
-      if (thing?.type === 'dcs-siemens' && thing?.last?.snap) {
+      if (thing?.type === 'dcs' && thing?.last?.snap) {
         return thing
       }
     }
@@ -538,7 +538,7 @@ function buildCoolingViewData (snap, type, view) {
 }
 
 /**
- * GET /auth/cooling-system
+ * GET /auth/dcs/cooling-system
  *
  * Returns cooling system data for the requested type and view.
  * App-node builds views from enriched equipment data fetched from DCS worker.
@@ -579,7 +579,7 @@ async function getCoolingSystemData (ctx, req) {
   }
 
   const rpcResults = await requestRpcMapLimit(ctx, 'listThings', payload)
-  const dcsThing = extractDcsSiemensThing(rpcResults)
+  const dcsThing = extractDcsThing(rpcResults)
 
   if (!dcsThing) {
     throw new Error('ERR_DCS_DATA_NOT_FOUND')
@@ -605,7 +605,7 @@ module.exports = {
   isCentralDCSEnabled,
   getDCSTag,
   getFieldProjection,
-  extractDcsSiemensThing,
+  extractDcsThing,
   buildCoolingViewData,
   buildMinersCircuit1View,
   buildMinersCircuit2View,

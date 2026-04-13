@@ -158,7 +158,7 @@ const ENDPOINTS = {
 
   MINERS: '/auth/miners',
   // Cooling System endpoints
-  COOLING_SYSTEM: '/auth/cooling-system'
+  COOLING_SYSTEM: '/auth/dcs/cooling-system'
 }
 
 const HTTP_METHODS = {
