@@ -67,7 +67,7 @@ test('actions routes - schema constraints for security', (t) => {
 
   const actionsRoute = routes.find(r => r.url === '/auth/actions')
   const queriesProp = actionsRoute.schema.querystring.properties.queries
-  t.is(queriesProp.maxLength, 10000, 'queries should have maxLength 10000')
+  t.is(queriesProp.maxLength, 1000, 'queries should have maxLength 1000')
 
   const suffixProp = actionsRoute.schema.querystring.properties.suffix
   t.is(suffixProp.maxLength, 200, 'GET suffix should have maxLength 200')
