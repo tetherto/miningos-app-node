@@ -1,46 +1,18 @@
 'use strict'
 
 const { COOLING_SYSTEM_PROJECTIONS } = require('../../constants')
-
-const DCS_TAG_DEFAULT = 't-dcs'
-
-function isCentralDCSEnabled (ctx) {
-  if (ctx.conf?.featureConfig?.centralDCSSetup?.enabled === true) return true
-  return false
-}
-
-function getDCSTag (ctx) {
-  return ctx.conf?.featureConfig?.centralDCSSetup?.tag || DCS_TAG_DEFAULT
-}
+const {
+  isCentralDCSEnabled,
+  getDCSTag,
+  extractDcsThing,
+  getSensorReading
+} = require('./dcs.utils')
 
 function getFieldProjection (type, view) {
   const base = COOLING_SYSTEM_PROJECTIONS.base
   const typeProjections = COOLING_SYSTEM_PROJECTIONS[type]
   const viewProjection = typeProjections?.[view] || {}
   return { ...base, ...viewProjection }
-}
-
-function extractDcsThing (rpcResults) {
-  if (!Array.isArray(rpcResults)) return null
-
-  for (const orkResult of rpcResults) {
-    if (!Array.isArray(orkResult)) continue
-    for (const thing of orkResult) {
-      if (thing && thing?.type && thing.type.includes('dcs') && thing?.last?.snap) {
-        return thing
-      }
-    }
-  }
-  return null
-}
-
-function getSensorReading (sensors, sensorId, defaultConfig = null) {
-  if (!sensorId) return defaultConfig
-  const sensor = sensors?.find(s => s.equipment === sensorId)
-  if (sensor?.value != null) {
-    return { value: sensor.value, unit: sensor.unit }
-  }
-  return defaultConfig
 }
 
 function filterPumpsByCircuit (pumps, circuit) {
@@ -601,10 +573,7 @@ async function getCoolingSystemData (ctx, req) {
 
 module.exports = {
   getCoolingSystemData,
-  isCentralDCSEnabled,
-  getDCSTag,
   getFieldProjection,
-  extractDcsThing,
   buildCoolingViewData,
   buildMinersCircuit1View,
   buildMinersCircuit2View,

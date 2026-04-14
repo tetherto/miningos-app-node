@@ -3,10 +3,7 @@
 const test = require('brittle')
 const {
   getCoolingSystemData,
-  isCentralDCSEnabled,
-  getDCSTag,
   getFieldProjection,
-  extractDcsThing,
   buildCoolingViewData,
   buildMinersCircuit1View,
   buildMinersCircuit2View,
@@ -14,6 +11,7 @@ const {
   buildHvacAmbientView
 } = require('../../../workers/lib/server/handlers/coolingSystem.handlers')
 const { COOLING_SYSTEM_PROJECTIONS } = require('../../../workers/lib/constants')
+const { extractDcsThing, getDCSTag, isCentralDCSEnabled } = require('../../../workers/lib/server/handlers/dcs.utils')
 
 // Sample enriched equipment data (as provided by the DCS worker)
 // All data includes units - app-node is completely agnostic

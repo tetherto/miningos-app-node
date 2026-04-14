@@ -158,7 +158,9 @@ const ENDPOINTS = {
 
   MINERS: '/auth/miners',
   // Cooling System endpoints
-  COOLING_SYSTEM: '/auth/dcs/cooling-system'
+  COOLING_SYSTEM: '/auth/dcs/cooling-system',
+  // Energy System endpoints
+  ENERGY_SYSTEM: '/auth/dcs/energy-system'
 }
 
 const HTTP_METHODS = {
@@ -397,6 +399,28 @@ const COOLING_SYSTEM_PROJECTIONS = {
   }
 }
 
+const ENERGY_SYSTEM_PROJECTIONS = {
+  base: { id: 1, code: 1, type: 1, tags: 1, rack: 1 },
+  miners: {
+    'last.snap.stats.dcs_specific.equipment.power_meters': 1,
+    'last.snap.stats.energy': 1,
+    'last.snap.config.energy_layout': 1
+  },
+  cooling_auxiliary: {
+    'last.snap.stats.dcs_specific.equipment.power_meters': 1,
+    'last.snap.stats.energy': 1,
+    'last.snap.config.energy_layout': 1
+  },
+  layout: {
+    'last.snap.stats.dcs_specific.equipment.power_meters': 1,
+    'last.snap.stats.dcs_specific.equipment.protection_relays': 1,
+    'last.snap.stats.dcs_specific.equipment.transformers': 1,
+    'last.snap.stats.dcs_specific.equipment.distribution_boards': 1,
+    'last.snap.stats.energy': 1,
+    'last.snap.config.energy_layout': 1
+  }
+}
+
 const AGGR_FIELDS = {
   HASHRATE_SUM: 'hashrate_mhs_5m_sum_aggr',
   SITE_POWER: 'site_power_w',
@@ -593,5 +617,6 @@ module.exports = {
   MINER_DEFAULT_FIELDS,
   MINER_MAX_LIMIT,
   MINER_DEFAULT_LIMIT,
-  COOLING_SYSTEM_PROJECTIONS
+  COOLING_SYSTEM_PROJECTIONS,
+  ENERGY_SYSTEM_PROJECTIONS
 }

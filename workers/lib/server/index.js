@@ -18,6 +18,7 @@ const alertsRoutes = require('./routes/alerts.routes')
 const minersRoutes = require('./routes/miners.routes')
 const groupsRoutes = require('./routes/groups.routes')
 const coolingSystemRoutes = require('./routes/coolingSystem.routes')
+const energySystemRoutes = require('./routes/energySystem.routes')
 
 /**
  * Collect all routes into a flat array for server injection.
@@ -42,7 +43,8 @@ function routes (ctx) {
     ...alertsRoutes(ctx),
     ...minersRoutes(ctx),
     ...groupsRoutes(ctx),
-    ...coolingSystemRoutes(ctx)
+    ...coolingSystemRoutes(ctx),
+    ...energySystemRoutes(ctx)
   ]
 }
 
