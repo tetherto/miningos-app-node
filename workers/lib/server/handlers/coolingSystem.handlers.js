@@ -6,7 +6,7 @@ const {
   getDCSTag,
   extractDcsThing,
   getSensorReading
-} = require('./dcs.utils')
+} = require('../../dcs.utils')
 
 function getFieldProjection (type, view) {
   const base = COOLING_SYSTEM_PROJECTIONS.base

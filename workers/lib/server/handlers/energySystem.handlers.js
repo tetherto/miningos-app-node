@@ -6,7 +6,7 @@ const {
   getDCSTag,
   extractDcsThing,
   findEquipment
-} = require('./dcs.utils')
+} = require('../../dcs.utils')
 
 function getFieldProjection (view) {
   const base = ENERGY_SYSTEM_PROJECTIONS.base
