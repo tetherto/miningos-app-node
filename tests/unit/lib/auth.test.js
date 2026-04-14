@@ -231,10 +231,7 @@ test('AuthLib - getTokenPerms with super admin', async (t) => {
 test('AuthLib - getTokenPerms with regular user', async (t) => {
   const mockAuth = {
     getTokenPerms: function (token) {
-      return { superadmin: false, perms: ['actions:r', 'miner:r'] }
-    },
-    tokenHasPerms: async (token, perm) => {
-      return perm === 'actions:w'
+      return { superadmin: false, perms: ['actions:rw', 'miner:r'] }
     },
     conf: {
       superAdminPerms: []
@@ -262,7 +259,6 @@ test('AuthLib - tokenHasPerms with super admin', async (t) => {
     getTokenPerms: function () {
       return { superadmin: true, perms: [] }
     },
-    tokenHasPerms: async () => false,
     conf: {
       superAdminPerms: []
     }
@@ -274,7 +270,7 @@ test('AuthLib - tokenHasPerms with super admin', async (t) => {
     auth: mockAuth
   })
 
-  const result = await authLib.tokenHasPerms('token', true, ['perm1', 'perm2'])
+  const result = await authLib.tokenHasPerms('token', true, ['perm1:r', 'perm2:r'])
 
   t.is(result, true, 'should return true for super admin')
 
@@ -286,7 +282,6 @@ test('AuthLib - tokenHasPerms without write permission', async (t) => {
     getTokenPerms: function () {
       return { superadmin: false, perms: [] }
     },
-    tokenHasPerms: async () => false,
     conf: {
       superAdminPerms: []
     }
@@ -298,7 +293,7 @@ test('AuthLib - tokenHasPerms without write permission', async (t) => {
     auth: mockAuth
   })
 
-  const result = await authLib.tokenHasPerms('token', true, ['perm1'])
+  const result = await authLib.tokenHasPerms('token', true, ['perm1:r'])
 
   t.is(result, false, 'should return false when write required but not available')
 
@@ -308,10 +303,7 @@ test('AuthLib - tokenHasPerms without write permission', async (t) => {
 test('AuthLib - tokenHasPerms with matchAll=true', async (t) => {
   const mockAuth = {
     getTokenPerms: function () {
-      return { superadmin: false, perms: [] }
-    },
-    tokenHasPerms: async (token, perm) => {
-      return perm === 'perm1'
+      return { superadmin: false, perms: ['perm1:r'] }
     },
     conf: {
       superAdminPerms: []
@@ -324,7 +316,7 @@ test('AuthLib - tokenHasPerms with matchAll=true', async (t) => {
     auth: mockAuth
   })
 
-  const result = await authLib.tokenHasPerms('token', false, ['perm1', 'perm2'], true)
+  const result = await authLib.tokenHasPerms('token', false, ['perm1:r', 'perm2:r'], true)
 
   t.is(result, false, 'should return false when matchAll and not all perms match')
 
@@ -334,10 +326,7 @@ test('AuthLib - tokenHasPerms with matchAll=true', async (t) => {
 test('AuthLib - tokenHasPerms with matchAll=false', async (t) => {
   const mockAuth = {
     getTokenPerms: function () {
-      return { superadmin: false, perms: [] }
-    },
-    tokenHasPerms: async (token, perm) => {
-      return perm === 'perm1'
+      return { superadmin: false, perms: ['perm1:r'] }
     },
     conf: {
       superAdminPerms: []
@@ -350,7 +339,7 @@ test('AuthLib - tokenHasPerms with matchAll=false', async (t) => {
     auth: mockAuth
   })
 
-  const result = await authLib.tokenHasPerms('token', false, ['perm1', 'perm2'], false)
+  const result = await authLib.tokenHasPerms('token', false, ['perm1:r', 'perm2:r'], false)
 
   t.is(result, true, 'should return true when matchAll=false and at least one perm matches')
 

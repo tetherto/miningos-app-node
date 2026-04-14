@@ -1,6 +1,12 @@
 'use strict'
 const { SUPER_ADMIN_ID, MIGRATED_USER_ROLES } = require('./constants')
 
+function _permsMatch (perms, perm) {
+  const [key, required] = perm.split(':')
+  const av = perms.find(p => p.startsWith(`${key}:`))?.split(':')[1] ?? ''
+  return [...required].every(c => av.includes(c))
+}
+
 class AuthLib {
   constructor ({ httpc, httpd, userService, auth }) {
     this._httpc = httpc
@@ -63,8 +69,8 @@ class AuthLib {
   }
 
   async getTokenPerms (token) {
-    const { superadmin: superAdmin, perms = [] } = this._auth.getTokenPerms(token)
-    const write = superAdmin || (await this._auth.tokenHasPerms(token, 'actions:w'))
+    const { superadmin: superAdmin, perms = [] } = await this._auth.getTokenPerms(token)
+    const write = superAdmin || _permsMatch(perms, 'actions:w')
     const applicablePerms = superAdmin ? (this._auth.conf.superAdminPerms ?? []) : perms
     const caps = applicablePerms.map(perm => perm.split(':')[0])
 
@@ -72,16 +78,16 @@ class AuthLib {
   }
 
   async tokenHasPerms (token, write, requestedPerms, matchAll = false) {
-    const perms = await this.getTokenPerms(token)
-    if (perms.superAdmin) {
+    const { superAdmin, write: hasWrite, permissions } = await this.getTokenPerms(token)
+    if (superAdmin) {
       return true
     }
 
-    if (write && !perms.write) {
+    if (write && !hasWrite) {
       return false
     }
 
-    const resolved = await Promise.all(requestedPerms.map(perm => this._auth.tokenHasPerms(token, perm)))
+    const resolved = requestedPerms.map(perm => _permsMatch(permissions, perm))
 
     return matchAll
       ? resolved.every(res => res)
