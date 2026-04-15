@@ -160,7 +160,9 @@ const ENDPOINTS = {
   // Cooling System endpoints
   COOLING_SYSTEM: '/auth/dcs/cooling-system',
   // Energy System endpoints
-  ENERGY_SYSTEM: '/auth/dcs/energy-system'
+  ENERGY_SYSTEM: '/auth/dcs/energy-system',
+  // Site Overview endpoints
+  SITE_OVERVIEW_GROUPS: '/auth/site-overview/groups'
 }
 
 const HTTP_METHODS = {
