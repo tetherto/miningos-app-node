@@ -78,16 +78,16 @@ class AuthLib {
   }
 
   async tokenHasPerms (token, write, requestedPerms, matchAll = false) {
-    const { superAdmin, write: hasWrite, permissions } = await this.getTokenPerms(token)
-    if (superAdmin) {
+    const perms = await this.getTokenPerms(token)
+    if (perms.superAdmin) {
       return true
     }
 
-    if (write && !hasWrite) {
+    if (write && !perms.write) {
       return false
     }
 
-    const resolved = requestedPerms.map(perm => _permsMatch(permissions, perm))
+    const resolved = requestedPerms.map(perm => _permsMatch(perms.permissions, perm))
 
     return matchAll
       ? resolved.every(res => res)
