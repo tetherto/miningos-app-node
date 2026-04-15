@@ -69,7 +69,7 @@ class AuthLib {
   }
 
   async getTokenPerms (token) {
-    const { superadmin: superAdmin, perms = [] } = await this._auth.getTokenPerms(token)
+    const { superadmin: superAdmin, perms = [] } = this._auth.getTokenPerms(token)
     const write = superAdmin || _permsMatch(perms, 'actions:w')
     const applicablePerms = superAdmin ? (this._auth.conf.superAdminPerms ?? []) : perms
     const caps = applicablePerms.map(perm => perm.split(':')[0])
