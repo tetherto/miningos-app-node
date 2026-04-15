@@ -162,7 +162,7 @@ const ENDPOINTS = {
   // Energy System endpoints
   ENERGY_SYSTEM: '/auth/dcs/energy-system',
   // Site Overview endpoints
-  SITE_OVERVIEW_GROUPS: '/auth/site-overview/groups'
+  SITE_OVERVIEW_GROUPS: '/auth/site/overview/groups'
 }
 
 const HTTP_METHODS = {
@@ -423,6 +423,31 @@ const ENERGY_SYSTEM_PROJECTIONS = {
   }
 }
 
+// Site Overview aggregation fields for group-level stats
+const SITE_OVERVIEW_AGGR_FIELDS = {
+  hashrate_mhs_5m_container_group_sum_aggr: 1,
+  hashrate_mhs_5m_rack_group_sum_aggr: 1,
+  power_w_container_group_sum_aggr: 1,
+  power_w_rack_group_sum_aggr: 1,
+  efficiency_w_ths_container_group_avg_aggr: 1,
+  efficiency_w_ths_pdu_rack_group_avg_aggr: 1,
+  offline_cnt: 1,
+  error_cnt: 1,
+  not_mining_cnt: 1,
+  power_mode_sleep_cnt: 1,
+  power_mode_low_cnt: 1,
+  power_mode_normal_cnt: 1,
+  power_mode_high_cnt: 1,
+  hashrate_mhs_5m_active_container_group_cnt: 1
+}
+
+// DCS power meter field projections for site overview
+const DCS_POWER_METER_FIELDS = {
+  'last.snap.stats.dcs_specific.equipment.power_meters': 1,
+  'last.snap.config.mining': 1,
+  'last.snap.config.energy_layout': 1
+}
+
 const AGGR_FIELDS = {
   HASHRATE_SUM: 'hashrate_mhs_5m_sum_aggr',
   SITE_POWER: 'site_power_w',
@@ -620,5 +645,7 @@ module.exports = {
   MINER_MAX_LIMIT,
   MINER_DEFAULT_LIMIT,
   COOLING_SYSTEM_PROJECTIONS,
-  ENERGY_SYSTEM_PROJECTIONS
+  ENERGY_SYSTEM_PROJECTIONS,
+  SITE_OVERVIEW_AGGR_FIELDS,
+  DCS_POWER_METER_FIELDS
 }
