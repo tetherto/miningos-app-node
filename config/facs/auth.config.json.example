@@ -1,7 +1,8 @@
 {
   "a0": {
     "superAdmin": "test@localhost",
-    "ttl": 86400,
+    "ttl": 900,
+    "jwtSecret": "REPLACE_WITH_LONG_RANDOM_HEX_SECRET",
     "saltRounds": 10,
     "superAdminPerms": [
       "miner:rw",
