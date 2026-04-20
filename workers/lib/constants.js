@@ -163,7 +163,9 @@ const ENDPOINTS = {
   // Energy System endpoints
   ENERGY_SYSTEM: '/auth/dcs/energy-system',
   // Site Overview endpoints
-  SITE_OVERVIEW_GROUPS: '/auth/site/overview/groups'
+  SITE_OVERVIEW_GROUPS: '/auth/site/overview/groups',
+  // Site Efficiency endpoint
+  SITE_EFFICIENCY: '/auth/site/efficiency'
 }
 
 const HTTP_METHODS = {
@@ -436,7 +438,7 @@ const SITE_OVERVIEW_AGGR_FIELDS = {
   power_w_rack_group_sum_aggr: 1,
   efficiency_w_ths_container_group_avg_aggr: 1,
   efficiency_w_ths_pdu_rack_group_avg_aggr: 1,
-  hashrate_mhs_5m_pdu_rack_group_avg_aggr:1,
+  hashrate_mhs_5m_pdu_rack_group_avg_aggr: 1,
   power_w_pdu_rack_group_sum_aggr: 1,
   offline_cnt: 1,
   error_cnt: 1,
@@ -451,6 +453,15 @@ const SITE_OVERVIEW_AGGR_FIELDS = {
 // DCS power meter field projections for site overview
 const DCS_POWER_METER_FIELDS = {
   'last.snap.stats.dcs_specific.equipment.power_meters': 1,
+  'last.snap.config.mining': 1,
+  'last.snap.config.energy_layout': 1
+}
+
+// DCS field projections for site efficiency
+const DCS_EFFICIENCY_FIELDS = {
+  'last.snap.stats.dcs_specific.equipment.power_meters': 1,
+  'last.snap.stats.dcs_specific.equipment.distribution_boards': 1,
+  'last.snap.stats.dcs_specific.equipment.transformers': 1,
   'last.snap.config.mining': 1,
   'last.snap.config.energy_layout': 1
 }
@@ -654,5 +665,6 @@ module.exports = {
   COOLING_SYSTEM_PROJECTIONS,
   ENERGY_SYSTEM_PROJECTIONS,
   SITE_OVERVIEW_AGGR_FIELDS,
-  DCS_POWER_METER_FIELDS
+  DCS_POWER_METER_FIELDS,
+  DCS_EFFICIENCY_FIELDS
 }
