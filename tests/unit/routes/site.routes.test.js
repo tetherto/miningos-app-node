@@ -15,6 +15,7 @@ test('site routes - route definitions', (t) => {
   const routeUrls = routes.map(route => route.url)
   t.ok(routeUrls.includes('/auth/site/status/live'), 'should have site status live route')
   t.ok(routeUrls.includes('/auth/site/overview/groups'), 'should have site overview groups route')
+  t.ok(routeUrls.includes('/auth/site/efficiency'), 'should have site efficiency route')
 
   t.pass()
 })
@@ -27,6 +28,9 @@ test('site routes - HTTP methods', (t) => {
 
   const siteOverviewRoute = routes.find(r => r.url === '/auth/site/overview/groups')
   t.is(siteOverviewRoute.method, 'GET', 'site overview groups route should be GET')
+
+  const siteEfficiencyRoute = routes.find(r => r.url === '/auth/site/efficiency')
+  t.is(siteEfficiencyRoute.method, 'GET', 'site efficiency route should be GET')
 
   t.pass()
 })
@@ -43,6 +47,11 @@ test('site routes - schema validation', (t) => {
   t.ok(siteOverviewRoute.schema, 'site overview groups route should have schema')
   t.ok(siteOverviewRoute.schema.querystring, 'should have querystring schema')
   t.is(siteOverviewRoute.schema.querystring.properties.overwriteCache.type, 'boolean', 'overwriteCache should be boolean')
+
+  const siteEfficiencyRoute = routes.find(r => r.url === '/auth/site/efficiency')
+  t.ok(siteEfficiencyRoute.schema, 'site efficiency route should have schema')
+  t.ok(siteEfficiencyRoute.schema.querystring, 'should have querystring schema')
+  t.is(siteEfficiencyRoute.schema.querystring.properties.overwriteCache.type, 'boolean', 'overwriteCache should be boolean')
 
   t.pass()
 })
