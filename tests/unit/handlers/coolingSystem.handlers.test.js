@@ -7,7 +7,10 @@ const {
   buildCoolingViewData,
   buildMinersCircuit1View,
   buildMinersCircuit2View,
+  buildMinersLayoutView,
   buildHvacCircuit1View,
+  buildHvacCircuit2View,
+  buildHvacLayoutView,
   buildHvacAmbientView
 } = require('../../../workers/lib/server/handlers/coolingSystem.handlers')
 const { COOLING_SYSTEM_PROJECTIONS } = require('../../../workers/lib/constants')
@@ -17,14 +20,14 @@ const { extractDcsThing, getDCSTag, isCentralDCSEnabled } = require('../../../wo
 // All data includes units - app-node is completely agnostic
 const createMockEquipment = () => ({
   pumps: [
-    { equipment: 'B-7513', circuit: 'MINER_LOOP', status: 'Running', FbkRunOut: true, speed: { value: 100, unit: '%' }, current: { value: 42.3, unit: 'A' }, Trip: false },
-    { equipment: 'B-7514', circuit: 'MINER_LOOP', status: 'Running', FbkRunOut: true, speed: { value: 100, unit: '%' }, current: { value: 41.8, unit: 'A' }, Trip: false },
-    { equipment: 'B-7515', circuit: 'MINER_LOOP', status: 'Standby', FbkRunOut: false, speed: { value: 0, unit: '%' }, current: { value: 0, unit: 'A' }, Trip: false },
-    { equipment: 'B-7516', circuit: 'COOLING_TOWER', status: 'Running', FbkRunOut: true, speed: { value: 100, unit: '%' }, current: { value: 48.1, unit: 'A' }, Trip: false },
-    { equipment: 'B-7517', circuit: 'COOLING_TOWER', status: 'Running', FbkRunOut: true, speed: { value: 100, unit: '%' }, current: { value: 47.6, unit: 'A' }, Trip: false },
-    { equipment: 'B-7501', circuit: 'HVAC_RETURN', status: 'Running', FbkRunOut: true, speed: { value: 100, unit: '%' }, current: { value: 15.2, unit: 'A' }, Trip: false },
-    { equipment: 'B-7502', circuit: 'HVAC_SUPPLY', status: 'Running', FbkRunOut: true, speed: { value: 100, unit: '%' }, current: { value: 14.8, unit: 'A' }, Trip: false },
-    { equipment: 'B-7503', circuit: 'HVAC_CONDENSER', status: 'Running', FbkRunOut: true, speed: { value: 100, unit: '%' }, current: { value: 22.1, unit: 'A' }, Trip: false }
+    { equipment: 'B-7513', circuit: 'MINER_LOOP', status: 'Running', fbk_run_out: true, speed: { value: 100, unit: '%' }, current: { value: 42.3, unit: 'A' }, trip: false, intlock: false, label: 'Pump 1' },
+    { equipment: 'B-7514', circuit: 'MINER_LOOP', status: 'Running', fbk_run_out: true, speed: { value: 100, unit: '%' }, current: { value: 41.8, unit: 'A' }, trip: false, intlock: false, label: 'Pump 2' },
+    { equipment: 'B-7515', circuit: 'MINER_LOOP', status: 'Standby', fbk_run_out: false, speed: { value: 0, unit: '%' }, current: { value: 0, unit: 'A' }, trip: false, intlock: false, label: 'Pump 3' },
+    { equipment: 'B-7516', circuit: 'COOLING_TOWER', status: 'Running', fbk_run_out: true, speed: { value: 100, unit: '%' }, current: { value: 48.1, unit: 'A' }, trip: false, intlock: false, label: 'CT Pump 1' },
+    { equipment: 'B-7517', circuit: 'COOLING_TOWER', status: 'Running', fbk_run_out: true, speed: { value: 100, unit: '%' }, current: { value: 47.6, unit: 'A' }, trip: false, intlock: false, label: 'CT Pump 2' },
+    { equipment: 'B-7501', circuit: 'HVAC_RETURN', status: 'Running', fbk_run_out: true, speed: { value: 100, unit: '%' }, current: { value: 15.2, unit: 'A' }, trip: false, intlock: false, label: 'HVAC Return' },
+    { equipment: 'B-7502', circuit: 'HVAC_SUPPLY', status: 'Running', fbk_run_out: true, speed: { value: 100, unit: '%' }, current: { value: 14.8, unit: 'A' }, trip: false, intlock: false, label: 'HVAC Supply' },
+    { equipment: 'B-7503', circuit: 'HVAC_CONDENSER', status: 'Running', fbk_run_out: true, speed: { value: 100, unit: '%' }, current: { value: 22.1, unit: 'A' }, trip: false, intlock: false, label: 'HVAC Condenser' }
   ],
   temperatures: [
     { equipment: 'TS-7513', value: 37.1, unit: '°C' },
@@ -103,6 +106,13 @@ const createMockEquipment = () => ({
 // Sample config data (site-specific cooling system configuration)
 // All labels, defaults, and metadata come from config
 const createMockConfig = () => ({
+  mining: {
+    total_groups: 16,
+    racks_per_group: 4,
+    miners_per_rack: 20,
+    vlan_start: 129,
+    miner_model: 'S21'
+  },
   cooling_system: {
     miner_loop: {
       name: 'Circuit 1 - Miner Loop',
@@ -110,25 +120,35 @@ const createMockConfig = () => ({
       water_type: 'Cooling Water',
       defaults: {
         supply_temp: { value: 37, unit: '°C' },
-        return_temp: { value: 47, unit: '°C' }
+        return_temp: { value: 47, unit: '°C' },
+        rated_flow: { value: 400, unit: 'm³/h' },
+        pumps_config: { rated_head: 30, rated_flow: 200 }
       },
       line1: {
         name: 'LINE 1',
         groups: 'Groups 1-8',
+        heat_exchanger: 'TC-7501',
         supply_temp_sensor: 'TS-7513',
         return_temp_sensor: 'TS-7515',
         supply_pressure_sensor: 'PIT-7502',
         return_pressure_sensor: 'PIT-7503',
-        supply_flow_sensor: 'FIT-7513'
+        supply_flow_sensor: 'FIT-7513',
+        control_valve: 'TCV-7501'
       },
       line2: {
         name: 'LINE 2',
         groups: 'Groups 9-16',
+        heat_exchanger: 'TC-7502',
         supply_temp_sensor: 'TS-7514',
         return_temp_sensor: 'TS-7516',
         supply_pressure_sensor: 'PIT-7504',
         return_pressure_sensor: 'PIT-7505',
-        supply_flow_sensor: 'FIT-7514'
+        supply_flow_sensor: 'FIT-7514',
+        control_valve: 'TCV-7502'
+      },
+      heat_exchangers: {
+        'tc-7501': { miner_side_out_sensor: 'TS-7521' },
+        'tc-7502': { miner_side_out_sensor: 'TS-7522' }
       },
       control_valves: {
         pressure_bypass: 'PCV-7502'
@@ -138,10 +158,31 @@ const createMockConfig = () => ({
       name: 'Circuit 2 - Cooling Tower Loop',
       description: 'Filtered Water',
       water_type: 'Filtered Water',
+      defaults: {
+        tower_capacity: { value: 1000, unit: 'kW' },
+        tower_capacity_gcal: { value: 0.86, unit: 'Gcal/h' },
+        pumps_config: { rated_head: 25, rated_flow: 150 }
+      },
+      tower_level_sensor: 'LIT-7501',
+      tower_vibration_sensor: 'VT-7501',
+      tower_fan: 'FAN-7501',
+      heat_exchangers: {
+        'tc-7501': { miner_side_out_sensor: 'TS-7521', tower_side_in_sensor: 'TS-7513', tower_side_out_sensor: 'TS-7515' },
+        'tc-7502': { miner_side_out_sensor: 'TS-7522', tower_side_in_sensor: 'TS-7514', tower_side_out_sensor: 'TS-7516' }
+      },
       makeup: {
         tank: 'TQ-7501',
         level_sensor: 'LIT-7503',
-        level_control_valve: 'LCV-7502'
+        level_control_valve: 'LCV-7502',
+        on_off_valves: ['LCV-7501']
+      }
+    },
+    makeup: {
+      pump: 'B-7515',
+      defaults: {
+        tank_volume: { value: 50, unit: 'm³' },
+        pump_head: { value: 20, unit: 'm' },
+        pump_flow: { value: 10, unit: 'm³/h' }
       }
     },
     hvac_chilled_water: {
@@ -361,11 +402,16 @@ test('buildMinersCircuit2View - builds view from enriched equipment', (t) => {
   t.ok(view, 'should return view')
   t.is(view.title, 'Circuit 2 - Cooling Tower Loop', 'title from config')
   t.ok(view.cooling_towers, 'should have cooling_towers')
-  t.ok(view.makeup_tank, 'should have makeup_tank')
-  t.ok(view.heat_exchanger_temps, 'should have heat_exchanger_temps')
+  t.ok(view.makeup, 'should have makeup system')
+  t.ok(view.makeup.tank, 'should have makeup tank')
+  t.ok(view.heat_exchangers, 'should have heat_exchangers')
+  t.ok(view.summary, 'should have summary')
   // Check enriched data with units
   t.ok(view.cooling_towers[0].fan_power.unit, 'fan_power should have unit')
   t.ok(view.cooling_towers[0].level.unit, 'level should have unit')
+  // Check tower sensor refs
+  t.ok(view.cooling_towers[0].level_sensor, 'should have level_sensor ref')
+  t.ok(view.cooling_towers[0].vibration_sensor, 'should have vibration_sensor ref')
   t.pass()
 })
 
@@ -417,7 +463,8 @@ test('buildCoolingViewData - returns miners circuit2 data', (t) => {
 
   t.ok(data, 'should return data')
   t.ok(data.cooling_towers, 'should have cooling_towers')
-  t.ok(data.makeup_tank, 'should have makeup_tank')
+  t.ok(data.makeup, 'should have makeup')
+  t.ok(data.heat_exchangers, 'should have heat_exchangers')
   t.pass()
 })
 
@@ -553,5 +600,298 @@ test('getCoolingSystemData - throws error when DCS data not found', async (t) =>
   } catch (err) {
     t.is(err.message, 'ERR_DCS_DATA_NOT_FOUND', 'should throw ERR_DCS_DATA_NOT_FOUND')
   }
+  t.pass()
+})
+
+// buildMinersCircuit1View - summary and sensor details
+test('buildMinersCircuit1View - computes summary with avgSupplyTemp, avgReturnTemp, deltaT, totalFlow', (t) => {
+  const equipment = createMockEquipment()
+  const config = createMockConfig()
+  const view = buildMinersCircuit1View(equipment, config)
+
+  t.ok(view.summary, 'should have summary')
+  t.ok(view.summary.supply_temp, 'should have supply_temp summary')
+  t.ok(view.summary.return_temp, 'should have return_temp summary')
+  t.ok(view.summary.delta_t, 'should have delta_t summary')
+  t.ok(view.summary.total_flow, 'should have total_flow summary')
+  t.ok(view.summary.system_pressure, 'should have system_pressure summary')
+  t.ok(view.summary.rated_flow, 'should have rated_flow')
+  t.ok(view.pumps_config, 'should have pumps_config')
+  t.pass()
+})
+
+test('buildMinersCircuit1View - lines include sensors arrays', (t) => {
+  const equipment = createMockEquipment()
+  const config = createMockConfig()
+  const view = buildMinersCircuit1View(equipment, config)
+
+  const line = view.lines[0]
+  t.ok(line.supply.sensors, 'supply should have sensors')
+  t.ok(line.supply.sensors.length > 0, 'supply sensors should not be empty')
+  t.ok(line.return.sensors, 'return should have sensors')
+  t.ok(line.return.sensors.length > 0, 'return sensors should not be empty')
+  // Each sensor should have tag and reading
+  const sensor = line.supply.sensors[0]
+  t.ok(sensor.tag, 'sensor should have tag')
+  t.pass()
+})
+
+test('buildMinersCircuit1View - lines have heat_exchanger with sensors and control_valve', (t) => {
+  const equipment = createMockEquipment()
+  const config = createMockConfig()
+  const view = buildMinersCircuit1View(equipment, config)
+
+  const line = view.lines[0]
+  t.ok(line.heat_exchanger, 'should have heat_exchanger')
+  t.ok(line.heat_exchanger.sensors, 'heat_exchanger should have sensors')
+  t.ok(line.heat_exchanger.control_valve, 'heat_exchanger should have control_valve')
+  t.ok(line.heat_exchanger.control_valve.id, 'control_valve should have id')
+  t.pass()
+})
+
+test('buildMinersCircuit1View - control_valves from config', (t) => {
+  const equipment = createMockEquipment()
+  const config = createMockConfig()
+  const view = buildMinersCircuit1View(equipment, config)
+
+  t.ok(view.control_valves, 'should have control_valves')
+  t.ok(view.control_valves.pressure_bypass, 'should have pressure_bypass')
+  t.is(view.control_valves.pressure_bypass.id, 'PCV-7502', 'bypass valve id')
+  t.pass()
+})
+
+test('buildMinersCircuit1View - control_valves null when config has none', (t) => {
+  const equipment = createMockEquipment()
+  const config = createMockConfig()
+  delete config.cooling_system.miner_loop.control_valves
+  const view = buildMinersCircuit1View(equipment, config)
+
+  t.is(view.control_valves, null, 'should be null when no control_valves configured')
+  t.pass()
+})
+
+test('buildMinersCircuit1View - pumps include label and has_interlock', (t) => {
+  const equipment = createMockEquipment()
+  const config = createMockConfig()
+  const view = buildMinersCircuit1View(equipment, config)
+
+  t.is(view.pumps[0].label, 'Pump 1', 'pump should have label')
+  t.is(view.pumps[0].has_interlock, false, 'pump should have has_interlock')
+  t.is(view.pumps[0].has_fault, false, 'pump should have has_fault')
+  t.pass()
+})
+
+// buildMinersCircuit2View - detailed tests
+test('buildMinersCircuit2View - heat_exchangers have groups mapping', (t) => {
+  const equipment = createMockEquipment()
+  const config = createMockConfig()
+  const view = buildMinersCircuit2View(equipment, config)
+
+  t.ok(view.heat_exchangers.length > 0, 'should have heat exchangers')
+  // TC-7501 is mapped to line1 groups
+  const hx1 = view.heat_exchangers.find(hx => hx.id === 'TC-7501')
+  t.is(hx1.groups, 'Groups 1-8', 'HX should have groups from line config')
+  t.pass()
+})
+
+test('buildMinersCircuit2View - summary with pre_hx and post_hx temps', (t) => {
+  const equipment = createMockEquipment()
+  const config = createMockConfig()
+  const view = buildMinersCircuit2View(equipment, config)
+
+  t.ok(view.summary, 'should have summary')
+  t.ok(view.summary.pre_hx_temp, 'should have pre_hx_temp')
+  t.ok(view.summary.post_hx_temp, 'should have post_hx_temp')
+  t.ok(view.summary.delta_t, 'should have delta_t')
+  t.ok(view.summary.tower_capacity, 'should have tower_capacity')
+  t.pass()
+})
+
+test('buildMinersCircuit2View - makeup system includes pump and on_off_valves', (t) => {
+  const equipment = createMockEquipment()
+  const config = createMockConfig()
+  const view = buildMinersCircuit2View(equipment, config)
+
+  t.ok(view.makeup, 'should have makeup')
+  t.ok(view.makeup.tank, 'should have tank')
+  t.ok(view.makeup.pump, 'should have pump')
+  t.is(view.makeup.pump.id, 'B-7515', 'makeup pump id')
+  t.ok(view.makeup.on_off_valves, 'should have on_off_valves')
+  t.is(view.makeup.on_off_valves.length, 1, 'should have 1 on_off_valve')
+  t.pass()
+})
+
+test('buildMinersCircuit2View - makeup pump null when no pump configured', (t) => {
+  const equipment = createMockEquipment()
+  const config = createMockConfig()
+  delete config.cooling_system.makeup
+  const view = buildMinersCircuit2View(equipment, config)
+
+  t.is(view.makeup.pump, null, 'makeup pump should be null')
+  t.pass()
+})
+
+// buildMinersLayoutView tests
+test('buildMinersLayoutView - builds complete layout', (t) => {
+  const equipment = createMockEquipment()
+  const config = createMockConfig()
+  const stats = {
+    flow: {
+      miner_loop: { value: 384, unit: 'm³/h' },
+      cooling_tower: { value: 800, unit: 'm³/h' }
+    }
+  }
+  const view = buildMinersLayoutView(equipment, config, stats)
+
+  t.ok(view, 'should return view')
+  t.ok(view.summary, 'should have summary')
+  t.is(view.summary.pumps_running, 7, 'should count running pumps')
+  t.is(view.summary.pumps_total, 8, 'should count total pumps')
+  t.ok(view.legend, 'should have legend')
+  t.ok(view.mining_room, 'should have mining_room')
+  t.is(view.mining_room.total_groups, 16, 'should have total_groups')
+  t.is(view.mining_room.total_miners, 1280, 'should compute total_miners')
+  t.is(view.mining_room.miner_model, 'S21', 'should have miner_model')
+  t.is(view.mining_room.groups.length, 16, 'should have 16 groups')
+  t.is(view.mining_room.groups[0].id, 'G1', 'first group id')
+  t.is(view.mining_room.groups[0].vlan, 129, 'first group vlan')
+  t.pass()
+})
+
+test('buildMinersLayoutView - circuit1 and circuit2 sections', (t) => {
+  const equipment = createMockEquipment()
+  const config = createMockConfig()
+  const view = buildMinersLayoutView(equipment, config, {})
+
+  t.ok(view.circuit1, 'should have circuit1')
+  t.ok(view.circuit1.summary, 'circuit1 should have summary')
+  t.ok(view.circuit1.lines, 'circuit1 should have lines')
+  t.ok(view.circuit1.pumps, 'circuit1 should have pumps')
+  t.ok(view.circuit2, 'should have circuit2')
+  t.ok(view.circuit2.summary, 'circuit2 should have summary')
+  t.ok(view.circuit2.heat_exchangers, 'circuit2 should have heat_exchangers')
+  t.ok(view.circuit2.cooling_towers, 'circuit2 should have cooling_towers')
+  t.ok(view.circuit2.makeup, 'circuit2 should have makeup')
+  t.pass()
+})
+
+// buildHvacCircuit2View tests
+test('buildHvacCircuit2View - builds view from enriched equipment', (t) => {
+  const equipment = createMockEquipment()
+  const config = createMockConfig()
+  const view = buildHvacCircuit2View(equipment, config)
+
+  t.ok(view, 'should return view')
+  t.ok(view.cooling_towers, 'should have cooling_towers')
+  t.ok(view.pumps, 'should have pumps')
+  t.ok(view.supply_return, 'should have supply_return')
+  t.pass()
+})
+
+// buildHvacLayoutView tests
+test('buildHvacLayoutView - builds complete HVAC layout', (t) => {
+  const equipment = createMockEquipment()
+  const config = createMockConfig()
+  const view = buildHvacLayoutView(equipment, config)
+
+  t.ok(view, 'should return view')
+  t.ok(view.summary, 'should have summary')
+  t.is(view.summary.chiller_running, true, 'chiller should be running')
+  t.is(view.summary.fan_coils_running, 3, 'should have 3 fan coils running')
+  t.is(view.summary.fan_coils_total, 4, 'should have 4 fan coils total')
+  t.is(view.summary.pumps_running, 7, 'should count running pumps')
+  t.ok(view.circuit1, 'should have circuit1')
+  t.ok(view.circuit1.chiller, 'should have chiller in circuit1')
+  t.ok(view.circuit2, 'should have circuit2')
+  t.ok(view.circuit2.cooling_towers, 'should have cooling_towers in circuit2')
+  t.pass()
+})
+
+// buildCoolingViewData - layout views
+test('buildCoolingViewData - returns miners layout data', (t) => {
+  const snap = createMockSnapData()
+  const data = buildCoolingViewData(snap, 'miners', 'layout')
+
+  t.ok(data, 'should return data')
+  t.ok(data.summary, 'should have summary')
+  t.ok(data.mining_room, 'should have mining_room')
+  t.ok(data.circuit1, 'should have circuit1')
+  t.ok(data.circuit2, 'should have circuit2')
+  t.pass()
+})
+
+test('buildCoolingViewData - returns hvac layout data', (t) => {
+  const snap = createMockSnapData()
+  const data = buildCoolingViewData(snap, 'hvac', 'layout')
+
+  t.ok(data, 'should return data')
+  t.ok(data.summary, 'should have summary')
+  t.ok(data.circuit1, 'should have circuit1')
+  t.ok(data.circuit2, 'should have circuit2')
+  t.pass()
+})
+
+test('buildCoolingViewData - returns hvac circuit2 data', (t) => {
+  const snap = createMockSnapData()
+  const data = buildCoolingViewData(snap, 'hvac', 'circuit2')
+
+  t.ok(data, 'should return data')
+  t.ok(data.cooling_towers, 'should have cooling_towers')
+  t.ok(data.pumps, 'should have pumps')
+  t.pass()
+})
+
+test('buildCoolingViewData - returns null for invalid miners view', (t) => {
+  const snap = createMockSnapData()
+  const data = buildCoolingViewData(snap, 'miners', 'nonexistent')
+
+  t.is(data, null, 'should return null')
+  t.pass()
+})
+
+test('buildCoolingViewData - returns null for invalid hvac view', (t) => {
+  const snap = createMockSnapData()
+  const data = buildCoolingViewData(snap, 'hvac', 'nonexistent')
+
+  t.is(data, null, 'should return null')
+  t.pass()
+})
+
+// getCoolingSystemData - layout views
+test('getCoolingSystemData - returns miners layout data', async (t) => {
+  const ctx = createMockCtx(true)
+  const req = { query: { type: 'miners', view: 'layout' } }
+
+  const result = await getCoolingSystemData(ctx, req)
+
+  t.is(result.type, 'miners', 'type should be miners')
+  t.is(result.view, 'layout', 'view should be layout')
+  t.ok(result.data, 'should have data')
+  t.ok(result.data.mining_room, 'should have mining_room')
+  t.pass()
+})
+
+test('getCoolingSystemData - returns hvac layout data', async (t) => {
+  const ctx = createMockCtx(true)
+  const req = { query: { type: 'hvac', view: 'layout' } }
+
+  const result = await getCoolingSystemData(ctx, req)
+
+  t.is(result.type, 'hvac', 'type should be hvac')
+  t.is(result.view, 'layout', 'view should be layout')
+  t.ok(result.data, 'should have data')
+  t.ok(result.data.summary, 'should have summary')
+  t.pass()
+})
+
+test('getCoolingSystemData - returns hvac circuit2 data', async (t) => {
+  const ctx = createMockCtx(true)
+  const req = { query: { type: 'hvac', view: 'circuit2' } }
+
+  const result = await getCoolingSystemData(ctx, req)
+
+  t.is(result.type, 'hvac', 'type should be hvac')
+  t.is(result.view, 'circuit2', 'view should be circuit2')
+  t.ok(result.data, 'should have data')
   t.pass()
 })
