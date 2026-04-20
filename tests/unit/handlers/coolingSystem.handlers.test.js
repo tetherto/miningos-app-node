@@ -895,3 +895,358 @@ test('getCoolingSystemData - returns hvac circuit2 data', async (t) => {
   t.ok(result.data, 'should have data')
   t.pass()
 })
+
+// Empty equipment - exercises all the || [], ?., and fallback branches
+const createEmptyEquipment = () => ({
+  pumps: [],
+  temperatures: [],
+  pressures: [],
+  flows: [],
+  levels: [],
+  heat_exchangers: [],
+  cooling_towers: [],
+  valves: [],
+  tanks: [],
+  chillers: [],
+  fan_coils: [],
+  humidity_sensors: [],
+  vibration_sensors: [],
+  flow_switches: []
+})
+
+const createMinimalConfig = () => ({
+  cooling_system: {
+    miner_loop: {
+      line1: {
+        name: 'LINE 1',
+        groups: 'Groups 1-8',
+        supply_temp_sensor: 'MISSING-1',
+        return_temp_sensor: 'MISSING-2',
+        supply_pressure_sensor: 'MISSING-3',
+        return_pressure_sensor: 'MISSING-4',
+        supply_flow_sensor: 'MISSING-5'
+      }
+    },
+    cooling_tower_loop: {},
+    hvac_chilled_water: {},
+    hvac_condenser: {},
+    ambient: {},
+    view_metadata: {
+      miners: {
+        circuit1: { title: 'C1', description: 'D1', water_type: 'W1' },
+        circuit2: { title: 'C2', description: 'D2', water_type: 'W2' },
+        layout: { title: 'Layout', description: 'Layout Desc' }
+      },
+      hvac: {
+        circuit1: { title: 'HVAC C1', description: 'HVAC D1' },
+        circuit2: { title: 'HVAC C2', description: 'HVAC D2' },
+        layout: { title: 'HVAC Layout', description: 'HVAC Layout Desc' },
+        ambient: { title: 'Ambient', description: 'Ambient Desc' }
+      }
+    }
+  }
+})
+
+test('buildMinersCircuit1View - empty equipment uses fallbacks', (t) => {
+  const equipment = createEmptyEquipment()
+  const config = createMinimalConfig()
+  const view = buildMinersCircuit1View(equipment, config)
+
+  t.is(view.title, 'C1', 'title from view_metadata fallback')
+  t.is(view.water_type, 'W1', 'water_type from view_metadata fallback')
+  t.is(view.target_supply_temp, undefined, 'no target_supply_temp')
+  t.is(view.target_return_temp, undefined, 'no target_return_temp')
+  t.is(view.summary.supply_temp, null, 'no supply_temp summary')
+  t.is(view.summary.return_temp, null, 'no return_temp summary')
+  t.is(view.summary.delta_t, null, 'no delta_t summary')
+  t.is(view.summary.total_flow, null, 'no total_flow summary')
+  t.is(view.summary.system_pressure, null, 'no system_pressure summary')
+  t.is(view.summary.rated_flow, null, 'no rated_flow')
+  t.is(view.pumps_config, null, 'no pumps_config')
+  t.is(view.lines.length, 1, 'should have 1 line from config')
+  t.is(view.lines[0].heat_exchanger, null, 'heat_exchanger null when not found')
+  t.is(view.control_valves, null, 'no control_valves')
+  t.is(view.pumps.length, 0, 'no miner loop pumps')
+  t.pass()
+})
+
+test('buildMinersCircuit1View - line with no heat_exchanger config key', (t) => {
+  const equipment = createEmptyEquipment()
+  const config = createMinimalConfig()
+  const view = buildMinersCircuit1View(equipment, config)
+
+  t.is(view.lines[0].heat_exchanger, null, 'heat_exchanger null')
+  t.ok(view.lines[0].supply.sensors.length > 0, 'sensors still created for missing sensors')
+  t.is(view.lines[0].supply.sensors[0].reading, null, 'sensor reading null when not found')
+  t.pass()
+})
+
+test('buildMinersCircuit1View - line with heat_exchanger but no control_valve', (t) => {
+  const equipment = createMockEquipment()
+  const config = createMockConfig()
+  // Remove control_valve from line config
+  delete config.cooling_system.miner_loop.line1.control_valve
+  delete config.cooling_system.miner_loop.line2.control_valve
+  const view = buildMinersCircuit1View(equipment, config)
+
+  t.ok(view.lines[0].heat_exchanger, 'heat_exchanger present')
+  t.ok(view.lines[0].heat_exchanger.control_valve, 'control_valve still present via tcv_id')
+  t.pass()
+})
+
+test('buildMinersCircuit2View - empty equipment uses fallbacks', (t) => {
+  const equipment = createEmptyEquipment()
+  const config = createMinimalConfig()
+  const view = buildMinersCircuit2View(equipment, config)
+
+  t.is(view.title, 'C2', 'title from view_metadata fallback')
+  t.is(view.water_type, 'W2', 'water_type from view_metadata fallback')
+  t.is(view.summary.pre_hx_temp, null, 'no pre_hx_temp')
+  t.is(view.summary.post_hx_temp, null, 'no post_hx_temp')
+  t.is(view.summary.delta_t, null, 'no delta_t')
+  t.is(view.summary.tower_capacity, null, 'no tower_capacity')
+  t.is(view.summary.tower_level, null, 'no tower_level')
+  t.is(view.heat_exchangers.length, 0, 'no heat_exchangers')
+  t.is(view.cooling_towers.length, 0, 'no cooling_towers')
+  t.is(view.makeup.pump, null, 'no makeup pump')
+  t.is(view.makeup.level_control_valve, null, 'no level_control_valve')
+  t.is(view.makeup.on_off_valves.length, 0, 'no on_off_valves')
+  t.is(view.pumps.length, 0, 'no pumps')
+  t.is(view.pumps_config, null, 'no pumps_config')
+  t.pass()
+})
+
+test('buildMinersCircuit2View - heat_exchangers with no controlValveId', (t) => {
+  const equipment = createMockEquipment()
+  const config = createMinimalConfig()
+  config.cooling_system.miner_loop.line1 = { ...config.cooling_system.miner_loop.line1, heat_exchanger: 'TC-7501' }
+  config.cooling_system.miner_loop.line2 = { name: 'LINE 2', groups: 'Groups 9-16', heat_exchanger: 'TC-7502' }
+  const view = buildMinersCircuit2View(equipment, config)
+
+  t.ok(view.heat_exchangers.length > 0, 'should have heat exchangers')
+  t.is(view.heat_exchangers[0].control_valve, null, 'control_valve null when not configured')
+  t.pass()
+})
+
+test('buildMinersCircuit2View - makeup tank falls back to first tank', (t) => {
+  const equipment = createMockEquipment()
+  const config = createMinimalConfig()
+  const view = buildMinersCircuit2View(equipment, config)
+
+  t.is(view.makeup.tank.id, 'TQ-7501', 'falls back to first tank')
+  t.pass()
+})
+
+test('buildMinersCircuit2View - on_off_valves with position > 50 are open', (t) => {
+  const equipment = createMockEquipment()
+  const config = createMockConfig()
+  const view = buildMinersCircuit2View(equipment, config)
+
+  const onOffValves = view.makeup.on_off_valves
+  t.is(onOffValves[0].is_open, false, 'valve with position 25 should be closed')
+  t.pass()
+})
+
+test('buildMinersLayoutView - uses defaults when no mining config', (t) => {
+  const equipment = createEmptyEquipment()
+  const config = createMinimalConfig()
+  const view = buildMinersLayoutView(equipment, config, {})
+
+  t.is(view.mining_room.total_groups, 16, 'default total_groups')
+  t.is(view.mining_room.racks_per_group, 4, 'default racks_per_group')
+  t.is(view.mining_room.miners_per_rack, 20, 'default miners_per_rack')
+  t.is(view.mining_room.total_miners, 1280, 'default total_miners')
+  t.is(view.mining_room.miner_model, null, 'no miner_model')
+  t.is(view.mining_room.groups[0].vlan, 129, 'default vlan_start')
+  t.is(view.summary.pumps_running, 0, 'no pumps running')
+  t.is(view.summary.pumps_total, 0, 'no pumps total')
+  t.pass()
+})
+
+test('buildMinersLayoutView - null flow stats', (t) => {
+  const equipment = createEmptyEquipment()
+  const config = createMinimalConfig()
+  const view = buildMinersLayoutView(equipment, config, null)
+
+  t.is(view.summary.total_miner_loop_flow, undefined, 'no miner_loop flow')
+  t.is(view.summary.total_tower_loop_flow, undefined, 'no tower_loop flow')
+  t.pass()
+})
+
+test('buildHvacCircuit1View - empty equipment uses fallbacks', (t) => {
+  const equipment = createEmptyEquipment()
+  const config = createMinimalConfig()
+  const view = buildHvacCircuit1View(equipment, config)
+
+  t.is(view.title, 'HVAC C1', 'title from view_metadata fallback')
+  t.is(view.chiller, null, 'no chiller')
+  t.is(view.control_valves, null, 'no control_valves')
+  t.is(view.return_pumps.length, 0, 'no return_pumps')
+  t.is(view.supply_pumps.length, 0, 'no supply_pumps')
+  t.is(view.fan_coils.total, 0, 'no fan coils')
+  t.is(view.fan_coils.running, 0, 'no fan coils running')
+  t.pass()
+})
+
+test('buildHvacCircuit1View - buffer tank falls back to first tank', (t) => {
+  const equipment = createMockEquipment()
+  const config = createMinimalConfig()
+  const view = buildHvacCircuit1View(equipment, config)
+
+  t.is(view.buffer_tank.id, 'TQ-7501', 'falls back to first tank')
+  t.pass()
+})
+
+test('buildHvacCircuit1View - with full config has bypass valve and buffer tank', (t) => {
+  const equipment = createMockEquipment()
+  const config = createMockConfig()
+  const view = buildHvacCircuit1View(equipment, config)
+
+  t.ok(view.control_valves, 'should have control_valves')
+  t.ok(view.control_valves.pressure_bypass, 'should have pressure_bypass')
+  t.ok(view.buffer_tank.makeup_valve, 'should have makeup_valve')
+  t.ok(view.supply_return.flow_switches.length > 0, 'should have flow_switches')
+  t.pass()
+})
+
+test('buildHvacCircuit2View - empty equipment uses fallbacks', (t) => {
+  const equipment = createEmptyEquipment()
+  const config = createMinimalConfig()
+  const view = buildHvacCircuit2View(equipment, config)
+
+  t.is(view.title, 'HVAC C2', 'title from view_metadata fallback')
+  t.is(view.cooling_towers.length, 0, 'no cooling_towers')
+  t.is(view.pumps.length, 0, 'no pumps')
+  t.pass()
+})
+
+test('buildHvacLayoutView - empty equipment', (t) => {
+  const equipment = createEmptyEquipment()
+  const config = createMinimalConfig()
+  const view = buildHvacLayoutView(equipment, config)
+
+  t.is(view.summary.chiller_running, false, 'no chiller running')
+  t.is(view.summary.fan_coils_running, 0, 'no fan coils running')
+  t.is(view.summary.fan_coils_total, 0, 'no fan coils')
+  t.is(view.summary.pumps_running, 0, 'no pumps running')
+  t.is(view.summary.pumps_total, 0, 'no pumps')
+  t.pass()
+})
+
+test('buildHvacAmbientView - empty equipment and no rooms config', (t) => {
+  const equipment = createEmptyEquipment()
+  const config = createMinimalConfig()
+  const view = buildHvacAmbientView(equipment, config, {})
+
+  t.is(view.title, 'Ambient', 'title from view_metadata')
+  t.is(view.rooms.length, 0, 'no rooms')
+  t.is(view.summary.average_humidity, null, 'no humidity')
+  t.is(view.summary.rooms_count, 0, 'no rooms count')
+  t.is(view.ambient_sensors.length, 0, 'no ambient sensors')
+  t.pass()
+})
+
+test('buildHvacAmbientView - rooms with no matching fan coils or humidity', (t) => {
+  const equipment = createEmptyEquipment()
+  const config = createMinimalConfig()
+  config.cooling_system.ambient = {
+    rooms: [
+      { name: 'Empty Room', fan_coils: ['MISSING-FC'], humidity_sensors: ['MISSING-HT'] }
+    ],
+    ambient_sensors: ['MISSING-AS']
+  }
+  const view = buildHvacAmbientView(equipment, config, { humidity: { avg: null } })
+
+  t.is(view.rooms.length, 1, 'should have 1 room')
+  t.is(view.rooms[0].fan_coils.length, 0, 'no matching fan coils')
+  t.is(view.rooms[0].humidity_sensors.length, 0, 'no matching humidity sensors')
+  t.is(view.rooms[0].temperature, null, 'no temperature')
+  t.is(view.rooms[0].humidity, null, 'no humidity')
+  t.pass()
+})
+
+test('buildHvacAmbientView - room with fan coils that have zero temperature', (t) => {
+  const equipment = createEmptyEquipment()
+  equipment.fan_coils = [
+    { equipment: 'FC-1', is_running: false, temperature: { value: 0, unit: '°C' }, valve_position: { value: 0, unit: '%' } }
+  ]
+  const config = createMinimalConfig()
+  config.cooling_system.ambient = {
+    rooms: [{ name: 'Cold Room', fan_coils: ['FC-1'], humidity_sensors: [] }]
+  }
+  const view = buildHvacAmbientView(equipment, config, {})
+
+  t.is(view.rooms[0].temperature, null, 'zero temp filtered out')
+  t.pass()
+})
+
+test('formatPump - pump with no optional fields', (t) => {
+  const equipment = {
+    pumps: [{ equipment: 'P-1', circuit: 'MINER_LOOP', status: 'Off' }],
+    temperatures: [],
+    pressures: [],
+    flows: [],
+    levels: [],
+    heat_exchangers: [],
+    cooling_towers: [],
+    valves: [],
+    tanks: []
+  }
+  const config = createMinimalConfig()
+  const view = buildMinersCircuit1View(equipment, config)
+
+  t.is(view.pumps.length, 1, 'should have 1 pump')
+  t.is(view.pumps[0].is_running, false, 'fbk_run_out defaults to false')
+  t.is(view.pumps[0].has_fault, false, 'trip defaults to false')
+  t.is(view.pumps[0].has_interlock, false, 'intlock defaults to false')
+  t.is(view.pumps[0].label, undefined, 'no label')
+  t.pass()
+})
+
+test('getCoolingSystemData - throws for missing type', async (t) => {
+  const ctx = createMockCtx(true)
+  const req = { query: { view: 'circuit1' } }
+
+  try {
+    await getCoolingSystemData(ctx, req)
+    t.fail('should throw error')
+  } catch (err) {
+    t.is(err.message, 'ERR_INVALID_TYPE')
+  }
+  t.pass()
+})
+
+test('getCoolingSystemData - throws for missing view', async (t) => {
+  const ctx = createMockCtx(true)
+  const req = { query: { type: 'miners' } }
+
+  try {
+    await getCoolingSystemData(ctx, req)
+    t.fail('should throw error')
+  } catch (err) {
+    t.is(err.message, 'ERR_INVALID_VIEW')
+  }
+  t.pass()
+})
+
+test('getCoolingSystemData - hvac ambient is valid view', async (t) => {
+  const ctx = createMockCtx(true)
+  const req = { query: { type: 'hvac', view: 'ambient' } }
+
+  const result = await getCoolingSystemData(ctx, req)
+  t.is(result.view, 'ambient')
+  t.pass()
+})
+
+test('getCoolingSystemData - miners ambient is invalid view', async (t) => {
+  const ctx = createMockCtx(true)
+  const req = { query: { type: 'miners', view: 'ambient' } }
+
+  try {
+    await getCoolingSystemData(ctx, req)
+    t.fail('should throw error')
+  } catch (err) {
+    t.is(err.message, 'ERR_INVALID_VIEW')
+  }
+  t.pass()
+})
