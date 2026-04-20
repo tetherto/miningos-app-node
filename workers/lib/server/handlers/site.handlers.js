@@ -312,6 +312,8 @@ function aggregateOverviewMinerStats (tailLogResults) {
     const entry = extractKeyEntry(orkResult, 0)
     if (!entry) continue
 
+    console.log("entry", entry)
+
     mergeGroupedField(aggregated.hashrateByGroup, entry.hashrate_mhs_5m_container_group_sum_aggr)
     mergeGroupedField(aggregated.hashrateByRack, entry.hashrate_mhs_5m_rack_group_sum_aggr)
     mergeGroupedField(aggregated.powerByGroup, entry.power_w_container_group_sum_aggr)

@@ -340,6 +340,7 @@ const COOLING_SYSTEM_PROJECTIONS = {
       'last.snap.stats.dcs_specific.equipment.valves': 1,
       'last.snap.stats.dcs_specific.equipment.tanks': 1,
       'last.snap.stats.dcs_specific.equipment.vibration_sensors': 1,
+      'last.snap.stats.dcs_specific.equipment.fans': 1,
       'last.snap.config.cooling_system': 1
     },
     layout: {
@@ -352,8 +353,11 @@ const COOLING_SYSTEM_PROJECTIONS = {
       'last.snap.stats.dcs_specific.equipment.cooling_towers': 1,
       'last.snap.stats.dcs_specific.equipment.valves': 1,
       'last.snap.stats.dcs_specific.equipment.tanks': 1,
+      'last.snap.stats.dcs_specific.equipment.vibration_sensors': 1,
+      'last.snap.stats.dcs_specific.equipment.fans': 1,
       'last.snap.stats.flow': 1,
-      'last.snap.config.cooling_system': 1
+      'last.snap.config.cooling_system': 1,
+      'last.snap.config.mining': 1
     }
   },
   hvac: {
