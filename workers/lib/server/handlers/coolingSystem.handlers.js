@@ -434,9 +434,13 @@ function buildHvacCircuit1View (equipment, config) {
   const fanCoils = equipment.fan_coils
   const valves = equipment.valves
   const tanks = equipment.tanks
+  const fans = equipment.fans
   const flowSwitches = equipment.flow_switches
   const chilledConfig = config?.cooling_system?.hvac_chilled_water || {}
   const viewConfig = config?.cooling_system?.view_metadata?.hvac?.circuit1 || {}
+
+  const supplyReturnConfig = chilledConfig.supply_return || {}
+  const condenserConfig = chilledConfig.condenser || {}
 
   const chiller = chillers?.[0]
   const chillerData = chiller
@@ -445,31 +449,55 @@ function buildHvacCircuit1View (equipment, config) {
         name: chiller.equipment,
         is_running: chiller.is_running,
         mode: chiller.mode,
+        capacity_tr: chilledConfig.chiller_capacity_tr || null,
         cooling_capacity: chiller.cooling_capacity,
+        compressor_load: chiller.compressor_load,
         power_consumption: chiller.power_consumption,
         evaporator_temp: chiller.evaporator_temp,
-        condenser_temp: chiller.condenser_temp
+        condenser_temp: chiller.condenser_temp,
+        chilled_water_side: {
+          inlet_temp: getSensorWithTag(temperatures, supplyReturnConfig.return_temp_sensor),
+          outlet_temp: getSensorWithTag(temperatures, supplyReturnConfig.supply_temp_sensor),
+          inlet_flow: getSensorWithTag(flows, supplyReturnConfig.return_flow_sensor),
+          outlet_flow: getSensorWithTag(flows, supplyReturnConfig.supply_flow_sensor),
+          flow_switch: supplyReturnConfig.flow_switches?.[0]
+            ? { tag: supplyReturnConfig.flow_switches[0], is_active: (flowSwitches || []).find(fs => fs.equipment === supplyReturnConfig.flow_switches[0])?.is_active }
+            : null
+        },
+        condenser_water_side: {
+          inlet_temp: getSensorWithTag(temperatures, condenserConfig.inlet_temp_sensor),
+          outlet_temp: getSensorWithTag(temperatures, condenserConfig.outlet_temp_sensor),
+          inlet_flow: getSensorWithTag(flows, condenserConfig.inlet_flow_sensor),
+          outlet_flow: getSensorWithTag(flows, condenserConfig.outlet_flow_sensor),
+          flow_switch: supplyReturnConfig.flow_switches?.[1]
+            ? { tag: supplyReturnConfig.flow_switches[1], is_active: (flowSwitches || []).find(fs => fs.equipment === supplyReturnConfig.flow_switches[1])?.is_active }
+            : null
+        }
       }
     : null
 
-  const supplyReturnConfig = chilledConfig.supply_return || {}
+  const supplyTemp = getSensorReading(temperatures, supplyReturnConfig.supply_temp_sensor, chilledConfig.defaults?.supply_temp)
+  const returnTemp = getSensorReading(temperatures, supplyReturnConfig.return_temp_sensor, chilledConfig.defaults?.return_temp)
+  const supplyFlow = getSensorReading(flows, supplyReturnConfig.supply_flow_sensor)
+  const returnFlow = getSensorReading(flows, supplyReturnConfig.return_flow_sensor)
+  const systemPressure = getSensorReading(pressures, supplyReturnConfig.pressure_sensor)
+
   const supplyReturn = {
     supply: {
-      temperature: getSensorReading(temperatures, supplyReturnConfig.supply_temp_sensor, chilledConfig.defaults?.supply_temp),
-      flow: getSensorReading(flows, supplyReturnConfig.supply_flow_sensor),
-      pressure: getSensorReading(pressures, supplyReturnConfig.pressure_sensor)
+      temperature: supplyTemp,
+      flow: supplyFlow,
+      pressure: systemPressure
     },
     return: {
-      temperature: getSensorReading(temperatures, supplyReturnConfig.return_temp_sensor, chilledConfig.defaults?.return_temp),
-      flow: getSensorReading(flows, supplyReturnConfig.return_flow_sensor)
+      temperature: returnTemp,
+      flow: returnFlow
     },
-    flow_switches: (flowSwitches || []).map(fs => ({
-      id: fs.equipment,
-      is_active: fs.is_active
-    }))
+    flow_switches: (supplyReturnConfig.flow_switches || []).map(fsId => {
+      const fs = (flowSwitches || []).find(f => f.equipment === fsId)
+      return { id: fsId, is_active: fs?.is_active || false }
+    })
   }
 
-  const condenserConfig = chilledConfig.condenser || {}
   const condenser = {
     inlet: {
       temperature: getSensorReading(temperatures, condenserConfig.inlet_temp_sensor),
@@ -481,31 +509,48 @@ function buildHvacCircuit1View (equipment, config) {
     }
   }
 
+  const tempUnit = supplyTemp?.unit
+  const flowUnit = supplyFlow?.unit
+  const avgSupplyTemp = supplyTemp?.value
+  const avgReturnTemp = returnTemp?.value
+  const totalFlow = supplyFlow?.value
+  const deltaT = (avgSupplyTemp != null && avgReturnTemp != null)
+    ? Math.round((avgReturnTemp - avgSupplyTemp) * 10) / 10
+    : null
+
   const bufferConfig = chilledConfig.buffer_tank || {}
   const bufferTankId = bufferConfig.tank || tanks?.[0]?.equipment
   const makeupValve = valves?.find(v => v.equipment === bufferConfig.makeup_valve)
   const bufferTank = {
     id: bufferTankId,
     name: bufferTankId,
+    volume: chilledConfig.defaults?.buffer_tank_volume || null,
     level: getSensorReading(levels, bufferConfig.level_sensor),
+    level_sensor: bufferConfig.level_sensor,
     makeup_valve: bufferConfig.makeup_valve
       ? {
           id: bufferConfig.makeup_valve,
-          position: makeupValve?.position
+          type: makeupValve?.type || null,
+          description: makeupValve?.description || null,
+          position: makeupValve?.position,
+          is_open: makeupValve?.position?.value > 50
         }
       : null
   }
 
-  const bypassValveId = chilledConfig.control_valves?.pressure_bypass
-  const bypassValve = valves?.find(v => v.equipment === bypassValveId)
-  const controlValves = bypassValveId
-    ? {
-        pressure_bypass: {
-          id: bypassValveId,
-          position: bypassValve?.position
-        }
-      }
-    : null
+  const controlValveEntries = chilledConfig.control_valves || {}
+  const controlValves = {}
+  for (const [role, valveId] of Object.entries(controlValveEntries)) {
+    const valve = valves?.find(v => v.equipment === valveId)
+    controlValves[role] = {
+      id: valveId,
+      type: valve?.type || null,
+      description: valve?.description || null,
+      position: valve?.position || null,
+      setpoint: valve?.setpoint || null,
+      controlled_by: supplyReturnConfig.pressure_sensor || null
+    }
+  }
 
   const returnPumps = filterPumpsByCircuit(pumps, 'HVAC_RETURN').map(formatPump)
   const supplyPumps = filterPumpsByCircuit(pumps, 'HVAC_SUPPLY').map(formatPump)
@@ -513,12 +558,26 @@ function buildHvacCircuit1View (equipment, config) {
   const fanCoilsSummary = {
     total: (fanCoils || []).length,
     running: (fanCoils || []).filter(fc => fc.is_running).length,
-    units: (fanCoils || []).map(fc => ({
-      id: fc.equipment,
-      is_running: fc.is_running,
-      temperature: fc.temperature,
-      valve_position: fc.valve_position
-    }))
+    units: (fanCoils || []).map(fc => {
+      const fcNumber = fc.equipment.replace(/^FCT?-/, '')
+      const fanId = `V-${fcNumber}`
+      const valveId = `PIV-${fcNumber}`
+      const tempSensorId = `TT-${fcNumber}`
+      const fan = (fans || []).find(f => f.equipment === fanId)
+      const valve = valves?.find(v => v.equipment === valveId)
+
+      return {
+        id: fc.equipment,
+        is_running: fc.is_running,
+        fan_id: fanId,
+        fan_running: fan?.fbk_run_out || false,
+        fan_speed: fc.fan_speed,
+        valve_tag: valveId,
+        valve_position: valve?.position || fc.valve_position,
+        temperature_tag: tempSensorId,
+        temperature: fc.temperature
+      }
+    })
   }
 
   return {
@@ -526,11 +585,23 @@ function buildHvacCircuit1View (equipment, config) {
     description: chilledConfig.description || viewConfig.description,
     target_supply_temp: chilledConfig.defaults?.supply_temp,
     target_return_temp: chilledConfig.defaults?.return_temp,
+    summary: {
+      supply_temp: avgSupplyTemp != null ? { value: avgSupplyTemp, unit: tempUnit } : null,
+      return_temp: avgReturnTemp != null ? { value: avgReturnTemp, unit: tempUnit } : null,
+      delta_t: deltaT != null ? { value: deltaT, unit: tempUnit } : null,
+      total_flow: totalFlow != null ? { value: totalFlow, unit: flowUnit } : null,
+      rated_flow: chilledConfig.defaults?.rated_flow || null,
+      system_pressure: systemPressure
+        ? { ...systemPressure, sensor: supplyReturnConfig.pressure_sensor }
+        : null
+    },
     chiller: chillerData,
     supply_return: supplyReturn,
     condenser,
     buffer_tank: bufferTank,
-    control_valves: controlValves,
+    control_valves: Object.keys(controlValves).length > 0 ? controlValves : null,
+    return_pumps_config: chilledConfig.defaults?.return_pumps_config || null,
+    supply_pumps_config: chilledConfig.defaults?.supply_pumps_config || null,
     return_pumps: returnPumps,
     supply_pumps: supplyPumps,
     fan_coils: fanCoilsSummary
@@ -542,6 +613,7 @@ function buildHvacCircuit2View (equipment, config) {
   const temperatures = equipment.temperatures
   const flows = equipment.flows
   const coolingTowers = equipment.cooling_towers
+  const vibrationSensors = equipment.vibration_sensors
   const condenserConfig = config?.cooling_system?.hvac_condenser || {}
   const viewConfig = config?.cooling_system?.view_metadata?.hvac?.circuit2 || {}
 
@@ -549,23 +621,41 @@ function buildHvacCircuit2View (equipment, config) {
   const supplyReturn = {
     supply: {
       temperature: getSensorReading(temperatures, supplyReturnConfig.supply_temp_sensor, condenserConfig.defaults?.supply_temp),
-      flow: getSensorReading(flows, supplyReturnConfig.supply_flow_sensor)
+      flow: getSensorReading(flows, supplyReturnConfig.supply_flow_sensor),
+      sensors: [
+        getSensorWithTag(temperatures, supplyReturnConfig.supply_temp_sensor),
+        getSensorWithTag(flows, supplyReturnConfig.supply_flow_sensor)
+      ].filter(Boolean)
     },
     return: {
       temperature: getSensorReading(temperatures, supplyReturnConfig.return_temp_sensor, condenserConfig.defaults?.return_temp),
-      flow: getSensorReading(flows, supplyReturnConfig.return_flow_sensor)
+      flow: getSensorReading(flows, supplyReturnConfig.return_flow_sensor),
+      sensors: [
+        getSensorWithTag(temperatures, supplyReturnConfig.return_temp_sensor),
+        getSensorWithTag(flows, supplyReturnConfig.return_flow_sensor)
+      ].filter(Boolean)
     }
   }
 
-  const towerData = (coolingTowers || []).map(ct => ({
-    id: ct.equipment,
-    name: ct.equipment,
-    is_running: ct.is_running,
-    fan_status: ct.fan_status,
-    fan_power: ct.fan_power,
-    level: ct.level,
-    vibration: ct.vibration
-  }))
+  const towerConfigRef = condenserConfig.tower || {}
+  const towerData = (coolingTowers || []).map(ct => {
+    const isConfiguredTower = ct.equipment === towerConfigRef.equipment
+    return {
+      id: ct.equipment,
+      name: ct.equipment,
+      is_running: ct.is_running,
+      fan_status: ct.fan_status,
+      fan_speed: ct.fan_speed,
+      fan_power: ct.fan_power,
+      fan_id: isConfiguredTower ? towerConfigRef.fan : null,
+      level: ct.level,
+      level_sensor: isConfiguredTower ? towerConfigRef.level_sensor : null,
+      vibration: ct.vibration,
+      vibration_sensor: isConfiguredTower ? towerConfigRef.vibration_sensor : null,
+      capacity_mcal: condenserConfig.defaults?.tower_capacity_mcal || null,
+      capacity_flow: condenserConfig.defaults?.tower_flow || null
+    }
+  })
 
   const condenserPumps = filterPumpsByCircuit(pumps, 'HVAC_CONDENSER').map(formatPump)
 
@@ -574,6 +664,7 @@ function buildHvacCircuit2View (equipment, config) {
     description: condenserConfig.description || viewConfig.description,
     target_supply_temp: condenserConfig.defaults?.supply_temp,
     target_return_temp: condenserConfig.defaults?.return_temp,
+    pumps_config: condenserConfig.defaults?.pumps_config || null,
     supply_return: supplyReturn,
     cooling_towers: towerData,
     pumps: condenserPumps
@@ -597,16 +688,29 @@ function buildHvacLayoutView (equipment, config) {
       pumps_running: (pumps || []).filter(p => p.fbk_run_out).length,
       pumps_total: (pumps || []).length
     },
+    legend: {
+      c1_supply_temp: circuit1.summary?.supply_temp,
+      c1_return_temp: circuit1.summary?.return_temp,
+      c2_condenser_cold: circuit2.target_supply_temp,
+      c2_condenser_hot: circuit2.target_return_temp
+    },
     circuit1: {
       name: circuit1.title,
+      summary: circuit1.summary,
       chiller: circuit1.chiller,
       supply_return: circuit1.supply_return,
+      condenser: circuit1.condenser,
       buffer_tank: circuit1.buffer_tank,
+      control_valves: circuit1.control_valves,
+      return_pumps_config: circuit1.return_pumps_config,
+      supply_pumps_config: circuit1.supply_pumps_config,
       return_pumps: circuit1.return_pumps,
-      supply_pumps: circuit1.supply_pumps
+      supply_pumps: circuit1.supply_pumps,
+      fan_coils: circuit1.fan_coils
     },
     circuit2: {
       name: circuit2.title,
+      pumps_config: circuit2.pumps_config,
       supply_return: circuit2.supply_return,
       cooling_towers: circuit2.cooling_towers,
       pumps: circuit2.pumps
