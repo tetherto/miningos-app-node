@@ -14,7 +14,8 @@ const {
   WORKER_TYPES,
   WORKER_TAGS,
   SITE_OVERVIEW_AGGR_FIELDS,
-  DCS_POWER_METER_FIELDS
+  DCS_POWER_METER_FIELDS,
+  DCS_EFFICIENCY_FIELDS
 } = require('../../constants')
 const {
   isCentralDCSEnabled,
@@ -312,8 +313,6 @@ function aggregateOverviewMinerStats (tailLogResults) {
     const entry = extractKeyEntry(orkResult, 0)
     if (!entry) continue
 
-    console.log("entry", entry)
-
     mergeGroupedField(aggregated.hashrateByGroup, entry.hashrate_mhs_5m_container_group_sum_aggr)
     mergeGroupedField(aggregated.hashrateByRack, entry.hashrate_mhs_5m_pdu_rack_group_avg_aggr)
     mergeGroupedField(aggregated.powerByGroup, entry.power_w_container_group_sum_aggr)
@@ -487,7 +486,169 @@ async function getSiteOverviewGroupsStats (ctx, req) {
   return composeGroupsStats(minerStats, dcsThing, totalGroups)
 }
 
+function composeSiteEfficiency (minerStats, dcsThing) {
+  const config = dcsThing?.last?.snap?.config || {}
+  const miningConfig = config.mining || {}
+  const energyLayout = config.energy_layout || {}
+  const powerMeters = dcsThing?.last?.snap?.stats?.dcs_specific?.equipment?.power_meters || []
+  const distributionBoards = dcsThing?.last?.snap?.stats?.dcs_specific?.equipment?.distribution_boards || []
+  const transformers = dcsThing?.last?.snap?.stats?.dcs_specific?.equipment?.transformers || []
+  const branches = energyLayout.branches || []
+
+  const minersPerGroup = (miningConfig.racks_per_group || 4) * (miningConfig.miners_per_rack || 20)
+  const siteMeter = powerMeters.find(pm => pm.equipment === energyLayout.site_meter) || powerMeters.find(pm => pm.role === 'site_main')
+  const siteTotalKw = siteMeter?.power?.value || 0
+  const powerUnit = siteMeter?.power?.unit
+
+  const efficiencyPerMeter = []
+  let totalMiningPowerKw = 0
+  let totalHashrateMhs = 0
+
+  for (const branch of branches) {
+    const meter = powerMeters.find(pm => pm.equipment === branch.meter)
+    if (!meter || meter.role !== 'rack') continue
+
+    const meterPower = meter.power?.value || 0
+    const coveredGroups = []
+    const feedsMatch = branch.feeds?.match(/Groups?\s+(\d+)-(\d+)/i)
+    if (feedsMatch) {
+      const start = parseInt(feedsMatch[1], 10)
+      const end = parseInt(feedsMatch[2], 10)
+      for (let i = start; i <= end; i++) {
+        coveredGroups.push(`group-${i}`)
+      }
+    }
+
+    let branchHashrateMhs = 0
+    for (const groupName of coveredGroups) {
+      branchHashrateMhs += minerStats.hashrateByGroup[groupName] || 0
+    }
+
+    const branchHashrateThs = mhsToThs(branchHashrateMhs)
+    const efficiency = branchHashrateThs > 0
+      ? Math.round(((meterPower * 1000) / branchHashrateThs) * 100) / 100
+      : 0
+
+    totalMiningPowerKw += meterPower
+    totalHashrateMhs += branchHashrateMhs
+
+    const board = distributionBoards.find(db => db.equipment === branch.board)
+    const transformer = transformers.find(tr => tr.equipment === branch.transformer)
+
+    efficiencyPerMeter.push({
+      board: branch.board,
+      board_name: board?.name || branch.board,
+      transformer: branch.transformer,
+      transformer_name: transformer?.name || branch.transformer,
+      feeds: branch.feeds,
+      meter: branch.meter,
+      efficiency: { value: efficiency, unit: 'W/THs' },
+      power: { value: Math.round(meterPower * 10) / 10, unit: powerUnit },
+      hashrate: { value: mhsToPhs(branchHashrateMhs), unit: 'PH/s' },
+      miners: coveredGroups.length * minersPerGroup
+    })
+  }
+
+  // Site-level efficiency
+  const totalHashrateThs = mhsToThs(totalHashrateMhs)
+  const siteEfficiency = totalHashrateThs > 0
+    ? Math.round(((siteTotalKw * 1000) / totalHashrateThs) * 100) / 100
+    : 0
+  const miningEfficiency = totalHashrateThs > 0
+    ? Math.round(((totalMiningPowerKw * 1000) / totalHashrateThs) * 100) / 100
+    : 0
+
+  // C&A overhead
+  const ccmBranch = branches.find(b => b.feeds && !b.feeds.match(/Groups?\s+/i))
+  const ccmMeter = ccmBranch ? powerMeters.find(pm => pm.equipment === ccmBranch.meter) : null
+  const ccmPowerKw = ccmMeter?.power?.value || 0
+  const caOverhead = siteTotalKw > 0
+    ? Math.round((ccmPowerKw / siteTotalKw) * 1000) / 10
+    : 0
+
+  // Consumption breakdown
+  const consumptionBreakdown = []
+
+  if (siteMeter) {
+    consumptionBreakdown.push({
+      source: siteMeter.name || siteMeter.equipment,
+      board: null,
+      meter: siteMeter.equipment,
+      consumption: { value: Math.round(siteTotalKw * 10) / 10, unit: powerUnit },
+      percent: 100
+    })
+  }
+
+  for (const branch of branches) {
+    const meter = powerMeters.find(pm => pm.equipment === branch.meter)
+    if (!meter) continue
+    const meterPower = meter.power?.value || 0
+    consumptionBreakdown.push({
+      source: branch.board,
+      board: branch.board,
+      feeds: branch.feeds,
+      meter: branch.meter,
+      consumption: { value: Math.round(meterPower * 10) / 10, unit: powerUnit },
+      percent: siteTotalKw > 0 ? Math.round((meterPower / siteTotalKw) * 1000) / 10 : 0
+    })
+  }
+
+  return {
+    summary: {
+      site_efficiency: { value: siteEfficiency, unit: 'W/THs' },
+      mining_efficiency: { value: miningEfficiency, unit: 'W/THs' },
+      total_consumption: { value: Math.round((siteTotalKw / 1000) * 1000) / 1000, unit: 'MW' },
+      ca_overhead: { value: caOverhead, unit: '%' }
+    },
+    efficiency_per_meter: efficiencyPerMeter,
+    consumption_breakdown: consumptionBreakdown
+  }
+}
+
+/**
+ * GET /auth/site/efficiency
+ *
+ * Returns site efficiency metrics combining:
+ * - Miner hashrate stats from tailLog (per group)
+ * - DCS power meters, distribution boards, transformers for branch-level power
+ */
+async function getSiteEfficiency (ctx, req) {
+  const tailLogPayload = {
+    keys: [
+      { key: LOG_KEYS.STAT_RTD, type: WORKER_TYPES.MINER, tag: WORKER_TAGS.MINER }
+    ],
+    limit: 1,
+    aggrFields: SITE_OVERVIEW_AGGR_FIELDS
+  }
+
+  const dcsEnabled = isCentralDCSEnabled(ctx)
+  let dcsPayload = null
+  if (dcsEnabled) {
+    const dcsTag = getDCSTag(ctx)
+    dcsPayload = {
+      query: { tags: { $in: [dcsTag] } },
+      status: 1,
+      fields: { id: 1, code: 1, type: 1, tags: 1, ...DCS_EFFICIENCY_FIELDS }
+    }
+  }
+
+  const [tailLogResults, dcsResults] = await Promise.all([
+    ctx.dataProxy.requestDataMap('tailLogMulti', tailLogPayload),
+    dcsEnabled ? ctx.dataProxy.requestDataMap('listThings', dcsPayload) : Promise.resolve(null)
+  ])
+
+  const minerStats = aggregateOverviewMinerStats(tailLogResults)
+  const dcsThing = dcsResults ? extractDcsThing(dcsResults) : null
+
+  if (!dcsThing) {
+    throw new Error('ERR_DCS_DATA_NOT_FOUND')
+  }
+
+  return composeSiteEfficiency(minerStats, dcsThing)
+}
+
 module.exports = {
   getSiteLiveStatus,
-  getSiteOverviewGroupsStats
+  getSiteOverviewGroupsStats,
+  getSiteEfficiency
 }
