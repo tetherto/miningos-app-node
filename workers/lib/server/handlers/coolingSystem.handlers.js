@@ -612,24 +612,30 @@ function buildHvacCircuit2View (equipment, config) {
   const pumps = equipment.pumps
   const temperatures = equipment.temperatures
   const flows = equipment.flows
+  const levels = equipment.levels
   const coolingTowers = equipment.cooling_towers
-  const vibrationSensors = equipment.vibration_sensors
   const condenserConfig = config?.cooling_system?.hvac_condenser || {}
   const viewConfig = config?.cooling_system?.view_metadata?.hvac?.circuit2 || {}
 
   const supplyReturnConfig = condenserConfig.supply_return || {}
+
+  const supplyTemp = getSensorReading(temperatures, supplyReturnConfig.supply_temp_sensor, condenserConfig.defaults?.supply_temp)
+  const returnTemp = getSensorReading(temperatures, supplyReturnConfig.return_temp_sensor, condenserConfig.defaults?.return_temp)
+  const supplyFlow = getSensorReading(flows, supplyReturnConfig.supply_flow_sensor)
+  const returnFlow = getSensorReading(flows, supplyReturnConfig.return_flow_sensor)
+
   const supplyReturn = {
     supply: {
-      temperature: getSensorReading(temperatures, supplyReturnConfig.supply_temp_sensor, condenserConfig.defaults?.supply_temp),
-      flow: getSensorReading(flows, supplyReturnConfig.supply_flow_sensor),
+      temperature: supplyTemp,
+      flow: supplyFlow,
       sensors: [
         getSensorWithTag(temperatures, supplyReturnConfig.supply_temp_sensor),
         getSensorWithTag(flows, supplyReturnConfig.supply_flow_sensor)
       ].filter(Boolean)
     },
     return: {
-      temperature: getSensorReading(temperatures, supplyReturnConfig.return_temp_sensor, condenserConfig.defaults?.return_temp),
-      flow: getSensorReading(flows, supplyReturnConfig.return_flow_sensor),
+      temperature: returnTemp,
+      flow: returnFlow,
       sensors: [
         getSensorWithTag(temperatures, supplyReturnConfig.return_temp_sensor),
         getSensorWithTag(flows, supplyReturnConfig.return_flow_sensor)
@@ -637,7 +643,19 @@ function buildHvacCircuit2View (equipment, config) {
     }
   }
 
+  const tempUnit = supplyTemp?.unit
+  const flowUnit = supplyFlow?.unit
+  const totalFlow = supplyFlow?.value != null && returnFlow?.value != null
+    ? Math.round(((supplyFlow.value + returnFlow.value) / 2) * 10) / 10
+    : (supplyFlow?.value || returnFlow?.value || null)
+  const deltaT = (supplyTemp?.value != null && returnTemp?.value != null)
+    ? Math.round((returnTemp.value - supplyTemp.value) * 10) / 10
+    : null
+
   const towerConfigRef = condenserConfig.tower || {}
+  const towerLevelSensorId = towerConfigRef.level_sensor
+  const towerLevel = getSensorReading(levels, towerLevelSensorId)
+
   const towerData = (coolingTowers || []).map(ct => {
     const isConfiguredTower = ct.equipment === towerConfigRef.equipment
     return {
@@ -664,6 +682,16 @@ function buildHvacCircuit2View (equipment, config) {
     description: condenserConfig.description || viewConfig.description,
     target_supply_temp: condenserConfig.defaults?.supply_temp,
     target_return_temp: condenserConfig.defaults?.return_temp,
+    summary: {
+      supply_temp: supplyTemp,
+      return_temp: returnTemp,
+      delta_t: deltaT != null ? { value: deltaT, unit: tempUnit } : null,
+      total_flow: totalFlow != null ? { value: totalFlow, unit: flowUnit } : null,
+      rated_flow: condenserConfig.defaults?.pumps_config?.rated_flow || null,
+      tower_level: towerLevel
+        ? { ...towerLevel, sensor: towerLevelSensorId }
+        : null
+    },
     pumps_config: condenserConfig.defaults?.pumps_config || null,
     supply_return: supplyReturn,
     cooling_towers: towerData,
@@ -710,6 +738,7 @@ function buildHvacLayoutView (equipment, config) {
     },
     circuit2: {
       name: circuit2.title,
+      summary: circuit2.summary,
       pumps_config: circuit2.pumps_config,
       supply_return: circuit2.supply_return,
       cooling_towers: circuit2.cooling_towers,
