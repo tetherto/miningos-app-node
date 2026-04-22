@@ -165,7 +165,9 @@ const ENDPOINTS = {
   // Site Overview endpoints
   SITE_OVERVIEW_GROUPS: '/auth/site/overview/groups',
   // Site Efficiency endpoint
-  SITE_EFFICIENCY: '/auth/site/efficiency'
+  SITE_EFFICIENCY: '/auth/site/efficiency',
+  // Explorer endpoints
+  EXPLORER_RACKS: '/auth/explorer/racks'
 }
 
 const HTTP_METHODS = {
@@ -612,6 +614,16 @@ const MINER_DEFAULT_FIELDS = {
 const MINER_MAX_LIMIT = 200
 const MINER_DEFAULT_LIMIT = 50
 
+// Explorer racks aggregation fields
+const EXPLORER_RACK_AGGR_FIELDS = {
+  hashrate_mhs_5m_pdu_rack_group_avg_aggr: 1,
+  power_w_pdu_rack_group_sum_aggr: 1,
+  efficiency_w_ths_pdu_rack_group_avg_aggr: 1
+}
+
+const EXPLORER_RACK_DEFAULT_LIMIT = 20
+const EXPLORER_RACK_MAX_LIMIT = 100
+
 module.exports = {
   SUPER_ADMIN_ROLE,
   GLOBAL_DATA_TYPES,
@@ -669,5 +681,8 @@ module.exports = {
   ENERGY_SYSTEM_PROJECTIONS,
   SITE_OVERVIEW_AGGR_FIELDS,
   DCS_POWER_METER_FIELDS,
-  DCS_EFFICIENCY_FIELDS
+  DCS_EFFICIENCY_FIELDS,
+  EXPLORER_RACK_AGGR_FIELDS,
+  EXPLORER_RACK_DEFAULT_LIMIT,
+  EXPLORER_RACK_MAX_LIMIT
 }
