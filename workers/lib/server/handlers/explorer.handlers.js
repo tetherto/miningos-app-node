@@ -113,7 +113,7 @@ function filterBySearch (racks, search) {
     .map(term => term.trim().toLowerCase())
     .filter(Boolean)
 
-  if (terms.length === 0) {
+  if (!terms?.length) {
     return racks
   }
 
