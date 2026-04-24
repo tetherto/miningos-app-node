@@ -1,10 +1,7 @@
 'use strict'
 
 const { extractIps, getAuthTokenFromHeaders } = require('../../utils')
-
-// Basic in-memory cache
-const tokenCache = new Map()
-const CACHE_TTL = 1 * 60 * 1000 // 1 minutes
+const { AUTH_CACHE_TTL } = require('../../constants')
 
 async function authCheck (ctx, req, rep, tokenFromQuery = null) {
   req._info = req._info || {}
@@ -23,11 +20,10 @@ async function authCheck (ctx, req, rep, tokenFromQuery = null) {
   const ips = extractIps(req)
 
   const cacheKey = `${token}:${ips.join(',')}`
-  const now = Date.now()
 
-  const cached = tokenCache.get(cacheKey)
-  if (cached && now - cached.timestamp < CACHE_TTL && (ctx.conf.ttl * 1000) > CACHE_TTL) {
-    req._info.user = cached.user
+  const cached = ctx.lru_1m?.get(cacheKey)
+  if (cached && (ctx.conf.ttl * 1000) > AUTH_CACHE_TTL) {
+    req._info.user = cached
     req._info.authToken = token
     return
   }
@@ -43,10 +39,7 @@ async function authCheck (ctx, req, rep, tokenFromQuery = null) {
       })
     }
 
-    tokenCache.set(cacheKey, {
-      user,
-      timestamp: now
-    })
+    ctx.lru_1m?.set(cacheKey, user)
 
     req._info.user = user
     req._info.authToken = token
