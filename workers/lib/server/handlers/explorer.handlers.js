@@ -105,11 +105,13 @@ function filterByGroups (racks, groups) {
  * Filters racks by search string (matches rack name or id, group name or id, case-insensitive).
  *
  * @param {Array} racks - Array of rack objects
- * @param {string} search - Search term
+ * @param {string?} search - Search term
  * @returns {Array} Filtered racks
  */
 function filterBySearch (racks, search) {
-  const terms = search.split(',').map(term => term.trim().toLowerCase()).filter(Boolean)
+  const terms = search?.split(',')
+    .map(term => term.trim().toLowerCase())
+    .filter(Boolean)
 
   if (terms.length === 0) {
     return racks
@@ -214,9 +216,7 @@ async function listExplorerRacks (ctx, req) {
     }
   }
 
-  if (req.query.search) {
-    racks = filterBySearch(racks, req.query.search)
-  }
+  racks = filterBySearch(racks, req.query.search)
 
   if (req.query.sort) {
     const sort = typeof req.query.sort === 'string' ? JSON.parse(req.query.sort) : req.query.sort
