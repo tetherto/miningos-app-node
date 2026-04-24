@@ -102,18 +102,29 @@ function filterByGroups (racks, groups) {
 }
 
 /**
- * Filters racks by search string (matches rack name or id, case-insensitive).
+ * Filters racks by search string (matches rack name or id, group name or id, case-insensitive).
  *
  * @param {Array} racks - Array of rack objects
- * @param {string} search - Search term
+ * @param {string?} search - Search term
  * @returns {Array} Filtered racks
  */
 function filterBySearch (racks, search) {
-  const term = search.toLowerCase()
-  return racks.filter(rack =>
-    rack.name.toLowerCase().includes(term) ||
-    rack.id.toLowerCase().includes(term)
-  )
+  const terms = search?.split(',')
+    .map(term => term.trim().toLowerCase())
+    .filter(Boolean)
+
+  if (!terms?.length) {
+    return racks
+  }
+
+  return racks.filter(rack => (
+    terms.some(term => [
+      rack.id,
+      rack.name,
+      rack.group?.id,
+      rack.group?.name
+    ].some(field => field?.toLowerCase().includes(term)))
+  ))
 }
 
 /**
@@ -205,9 +216,7 @@ async function listExplorerRacks (ctx, req) {
     }
   }
 
-  if (req.query.search) {
-    racks = filterBySearch(racks, req.query.search)
-  }
+  racks = filterBySearch(racks, req.query.search)
 
   if (req.query.sort) {
     const sort = typeof req.query.sort === 'string' ? JSON.parse(req.query.sort) : req.query.sort
