@@ -11,6 +11,7 @@ const { UserService } = require('./lib/users')
 const { AlertsService } = require('./lib/alerts')
 const { auditLogger } = require('./lib/server/lib/auditLogger')
 const { createDataProxy } = require('./lib/data.proxy')
+const { AUTH_CACHE_TTL } = require('./lib/constants')
 
 class WrkServerHttp extends TetherWrkBase {
   constructor (conf, ctx) {
@@ -44,6 +45,7 @@ class WrkServerHttp extends TetherWrkBase {
       ['fac', 'bfx-facs-lru', '10s', '10s', { max: 10000, maxAge: 10000 }],
       ['fac', 'bfx-facs-lru', '15s', '15s', { max: 10000, maxAge: 15000 }],
       ['fac', 'bfx-facs-lru', '30s', '30s', { max: 10000, maxAge: 30000 }],
+      ['fac', 'bfx-facs-lru', '1m', '1m', { max: 10000, maxAge: AUTH_CACHE_TTL }],
       ['fac', 'bfx-facs-lru', '15m', '15m', { max: 10000, maxAge: 60000 * 15 }],
       ['fac', 'bfx-facs-db-sqlite', 'auth', 'auth', { name: 'miningos-app-node', persist: true }],
       ['fac', 'bfx-facs-http', 'c0', 'c0', { timeout: 30000, debug: false }, 0],
