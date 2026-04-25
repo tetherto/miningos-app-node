@@ -286,7 +286,8 @@ const MINER_CATEGORIES = {
 const LOG_KEYS = {
   STAT_RTD: 'stat-rtd',
   STAT_3H: 'stat-3h',
-  STAT_5M: 'stat-5m'
+  STAT_5M: 'stat-5m',
+  STAT_1D: 'stat-1D'
 }
 
 const WORKER_TAGS = {
@@ -471,8 +472,15 @@ const DCS_EFFICIENCY_FIELDS = {
   'last.snap.config.energy_layout': 1
 }
 
+const LOG_FIELDS = {
+  HASHRATE_SUM_TYPE_GROUP: 'hashrate_mhs_5m_type_group_sum',
+  HASHRATE_SUM_CONTAINER_GROUP: 'hashrate_mhs_5m_container_group_sum'
+}
+
 const AGGR_FIELDS = {
   HASHRATE_SUM: 'hashrate_mhs_5m_sum_aggr',
+  HASHRATE_SUM_TYPE_GROUP_AGGR: 'hashrate_mhs_5m_type_group_sum_aggr',
+  HASHRATE_SUM_CONTAINER_GROUP_AGGR: 'hashrate_mhs_5m_container_group_sum_aggr',
   SITE_POWER: 'site_power_w',
   ENERGY_AGGR: 'energy_aggr',
   ACTIVE_ENERGY_IN: 'active_energy_in_aggr',
@@ -684,5 +692,6 @@ module.exports = {
   DCS_EFFICIENCY_FIELDS,
   EXPLORER_RACK_AGGR_FIELDS,
   EXPLORER_RACK_DEFAULT_LIMIT,
-  EXPLORER_RACK_MAX_LIMIT
+  EXPLORER_RACK_MAX_LIMIT,
+  LOG_FIELDS
 }

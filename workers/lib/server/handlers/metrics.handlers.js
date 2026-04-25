@@ -9,7 +9,8 @@ const {
   MINER_CATEGORIES,
   LOG_KEYS,
   WORKER_TAGS,
-  DEVICE_LIST_FIELDS
+  DEVICE_LIST_FIELDS,
+  LOG_FIELDS
 } = require('../../constants')
 const {
   getStartOfDay,
@@ -25,11 +26,14 @@ const {
   resolveInterval,
   getIntervalConfig
 } = require('../../metrics.utils')
+
 async function getHashrate (ctx, req) {
   const { start, end } = validateStartEnd(req)
 
   const startDate = new Date(start).toISOString()
   const endDate = new Date(end).toISOString()
+
+  if (req.query.groupBy) return getGoupedHashrate(ctx, req)
 
   const results = await ctx.dataProxy.requestData(RPC_METHODS.TAIL_LOG_RANGE_AGGR, {
     keys: [{
@@ -50,6 +54,35 @@ async function getHashrate (ctx, req) {
   const summary = calculateHashrateSummary(log)
 
   return { log, summary }
+}
+
+async function getGoupedHashrate (ctx, req) {
+  const { groupBy, start, end } = req.query
+
+  const field = groupBy === WORKER_TYPES.MINER
+    ? LOG_FIELDS.HASHRATE_SUM_TYPE_GROUP
+    : LOG_FIELDS.HASHRATE_SUM_CONTAINER_GROUP
+
+  const aggrField = groupBy === WORKER_TYPES.MINER
+    ? AGGR_FIELDS.HASHRATE_SUM_TYPE_GROUP_AGGR
+    : AGGR_FIELDS.HASHRATE_SUM_CONTAINER_GROUP_AGGR
+
+  const res = await ctx.dataProxy.requestData(RPC_METHODS.TAIL_LOG, {
+    type: WORKER_TYPES.MINER,
+    tag: WORKER_TAGS.MINER,
+    key: LOG_KEYS.STAT_1D,
+    start,
+    end,
+    fields: { [field]: 1 },
+    aggrFields: { [aggrField]: 1 }
+  })
+
+  const log = res[0].reduce((aggr, val) => {
+    aggr.push({ ts: val.ts, hashrateMhs: val[aggrField] })
+    return aggr
+  }, [])
+
+  return { log, summary: {} }
 }
 
 function processHashrateData (results) {
