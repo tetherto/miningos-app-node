@@ -66,6 +66,75 @@ test('getHashrate - happy path', async (t) => {
   t.pass()
 })
 
+test('getHashrate - grouped by miner uses type group aggregation', async (t) => {
+  let capturedPayload = null
+  const mockCtx = withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: {
+      jRequest: async (key, method, payload) => {
+        capturedPayload = payload
+        return [{
+          ts: 1700006400000,
+          hashrate_mhs_5m_type_group_sum_aggr: 123456
+        }]
+      }
+    }
+  })
+
+  const result = await getHashrate(mockCtx, {
+    query: { start: 1700000000000, end: 1700100000000, groupBy: 'miner' }
+  })
+
+  t.is(capturedPayload.fields.hashrate_mhs_5m_type_group_sum, 1, 'should request type-group source field')
+  t.is(capturedPayload.aggrFields.hashrate_mhs_5m_type_group_sum_aggr, 1, 'should request type-group aggregate field')
+  t.is(result.log.length, 1, 'should map one grouped row')
+  t.is(result.log[0].hashrateMhs, 123456, 'should map grouped hashrate value')
+  t.alike(result.summary, {}, 'grouped response should return empty summary')
+  t.pass()
+})
+
+test('getHashrate - grouped by container uses container group aggregation', async (t) => {
+  let capturedPayload = null
+  const mockCtx = withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: {
+      jRequest: async (key, method, payload) => {
+        capturedPayload = payload
+        return [{
+          ts: 1700006400000,
+          hashrate_mhs_5m_container_group_sum_aggr: 777
+        }]
+      }
+    }
+  })
+
+  const result = await getHashrate(mockCtx, {
+    query: { start: 1700000000000, end: 1700100000000, groupBy: 'container' }
+  })
+
+  t.is(capturedPayload.fields.hashrate_mhs_5m_container_group_sum, 1, 'should request container-group source field')
+  t.is(capturedPayload.aggrFields.hashrate_mhs_5m_container_group_sum_aggr, 1, 'should request container-group aggregate field')
+  t.is(result.log.length, 1, 'should map grouped row')
+  t.is(result.log[0].hashrateMhs, 777, 'should map container grouped hashrate value')
+  t.alike(result.summary, {}, 'grouped response should return empty summary')
+  t.pass()
+})
+
+test('getHashrate - grouped mode handles empty results', async (t) => {
+  const mockCtx = withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: { jRequest: async () => [] }
+  })
+
+  const result = await getHashrate(mockCtx, {
+    query: { start: 1700000000000, end: 1700100000000, groupBy: 'miner' }
+  })
+
+  t.is(result.log.length, 0, 'grouped log should be empty when no data is returned')
+  t.alike(result.summary, {}, 'grouped summary should still be empty object')
+  t.pass()
+})
+
 test('getHashrate - missing start throws', async (t) => {
   const mockCtx = withDataProxy({
     conf: { orks: [] },

@@ -32,7 +32,8 @@ module.exports = (ctx) => {
         (req) => [
           'metrics/hashrate',
           req.query.start,
-          req.query.end
+          req.query.end,
+          req.query.groupBy
         ],
         ENDPOINTS.METRICS_HASHRATE,
         getHashrate
