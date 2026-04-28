@@ -146,12 +146,10 @@ function calculateGroupedHashrateSummary (log, groupBy) {
     siteTotal += total
   }
 
-  const groupKey = groupBy === WORKER_TYPES.MINER ? 'byMiner' : 'byContainer'
-
   return {
     avgHashrateMhs: safeDiv(siteTotal, log.length),
     totalHashrateMhs: siteTotal,
-    [groupKey]: byGroup
+    groupedBy: byGroup
   }
 }
 
