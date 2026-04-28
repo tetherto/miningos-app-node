@@ -2,283 +2,130 @@
 
 const test = require('brittle')
 const {
-  getGroupStats,
-  composeGroupStats,
-  sumGroupedField
+  getGroupStats
 } = require('../../../workers/lib/server/handlers/groups.handlers')
-const { extractKeyEntry } = require('../../../workers/lib/metrics.utils')
-const { withDataProxy } = require('../helpers/mockHelpers')
 
-// ==================== extractKeyEntry Tests ====================
-
-test('extractKeyEntry - returns entry at index', (t) => {
-  const orkResult = [[{ hashrate: 100 }], [{ power: 200 }]]
-  const entry = extractKeyEntry(orkResult, 0)
-  t.alike(entry, { hashrate: 100 }, 'should return first key entry')
-  t.pass()
-})
-
-test('extractKeyEntry - returns null for non-array', (t) => {
-  t.is(extractKeyEntry(null, 0), null, 'null input returns null')
-  t.is(extractKeyEntry({}, 0), null, 'object input returns null')
-  t.pass()
-})
-
-test('extractKeyEntry - returns null for empty key result', (t) => {
-  t.is(extractKeyEntry([[]], 0), null, 'empty array returns null')
-  t.is(extractKeyEntry([], 0), null, 'missing index returns null')
-  t.pass()
-})
-
-// ==================== sumGroupedField Tests ====================
-
-test('sumGroupedField - sums values for matching racks', (t) => {
-  const grouped = { 'group-1': 100, 'group-2': 200, 'group-3': 300 }
-  t.is(sumGroupedField(grouped, ['group-1', 'group-3']), 400, 'should sum matching racks')
-  t.pass()
-})
-
-test('sumGroupedField - returns 0 for non-matching racks', (t) => {
-  const grouped = { 'group-1': 100 }
-  t.is(sumGroupedField(grouped, ['group-99']), 0, 'should return 0 for missing racks')
-  t.pass()
-})
-
-test('sumGroupedField - handles null/undefined input', (t) => {
-  t.is(sumGroupedField(null, ['group-1']), 0, 'null returns 0')
-  t.is(sumGroupedField(undefined, ['group-1']), 0, 'undefined returns 0')
-  t.pass()
-})
-
-// ==================== composeGroupStats Tests ====================
-
-test('composeGroupStats - aggregates rack-grouped data across orks', (t) => {
-  const results = [
-    [
-      [{
-        hashrate_mhs_1m_container_group_sum_aggr: { 'group-1': 50000, 'group-2': 30000 },
-        power_w_container_group_sum_aggr: { 'group-1': 5000, 'group-2': 3000 },
-        power_mode_low_cnt: { 'group-1': 2, 'group-2': 1 },
-        power_mode_normal_cnt: { 'group-1': 5, 'group-2': 4 },
-        power_mode_high_cnt: { 'group-1': 3, 'group-2': 3 },
-        offline_cnt: { 'group-1': 1, 'group-2': 0 },
-        error_cnt: { 'group-1': 0, 'group-2': 1 },
-        not_mining_cnt: { 'group-1': 0, 'group-2': 0 },
-        power_mode_sleep_cnt: { 'group-1': 1, 'group-2': 0 }
-      }]
-    ]
-  ]
-
-  const stats = composeGroupStats(results, ['group-1', 'group-2'])
-  t.is(stats.hashrateMhs, 80000, 'should sum hashrate for both racks')
-  t.is(stats.powerW, 8000, 'should sum power for both racks')
-  t.is(stats.onlineCount, 18, 'should sum online miners (low+normal+high)')
-  t.is(stats.minerCount, 21, 'should sum all miners across all statuses')
-  t.ok(typeof stats.efficiency === 'number', 'should have efficiency')
-  t.pass()
-})
-
-test('composeGroupStats - filters to requested racks only', (t) => {
-  const results = [
-    [
-      [{
-        hashrate_mhs_1m_container_group_sum_aggr: { 'group-1': 50000, 'group-2': 30000, 'group-3': 20000 },
-        power_w_container_group_sum_aggr: { 'group-1': 5000, 'group-2': 3000, 'group-3': 2000 },
-        power_mode_normal_cnt: { 'group-1': 10, 'group-2': 8, 'group-3': 6 },
-        power_mode_low_cnt: {},
-        power_mode_high_cnt: {},
-        offline_cnt: {},
-        error_cnt: {},
-        not_mining_cnt: {},
-        power_mode_sleep_cnt: {}
-      }]
-    ]
-  ]
-
-  const stats = composeGroupStats(results, ['group-1'])
-  t.is(stats.hashrateMhs, 50000, 'should only include group-1 hashrate')
-  t.is(stats.powerW, 5000, 'should only include group-1 power')
-  t.is(stats.onlineCount, 10, 'should only include group-1 miners')
-  t.pass()
-})
-
-test('composeGroupStats - empty results', (t) => {
-  const stats = composeGroupStats([], ['group-1'])
-  t.is(stats.hashrateMhs, 0, 'hashrate should be 0')
-  t.is(stats.powerW, 0, 'power should be 0')
-  t.is(stats.minerCount, 0, 'miner count should be 0')
-  t.is(stats.onlineCount, 0, 'online count should be 0')
-  t.is(stats.efficiency, 0, 'efficiency should be 0 when no hashrate')
-  t.pass()
-})
-
-test('composeGroupStats - zero hashrate gives zero efficiency', (t) => {
-  const results = [
-    [
-      [{
-        hashrate_mhs_1m_container_group_sum_aggr: { 'group-1': 0 },
-        power_w_container_group_sum_aggr: { 'group-1': 5000 },
-        power_mode_low_cnt: {},
-        power_mode_normal_cnt: {},
-        power_mode_high_cnt: {},
-        offline_cnt: { 'group-1': 2 },
-        error_cnt: {},
-        not_mining_cnt: {},
-        power_mode_sleep_cnt: {}
-      }]
-    ]
-  ]
-
-  const stats = composeGroupStats(results, ['group-1'])
-  t.is(stats.efficiency, 0, 'efficiency should be 0 with zero hashrate')
-  t.pass()
-})
-
-test('composeGroupStats - handles missing fields gracefully', (t) => {
-  const results = [
-    [
-      [{}]
-    ]
-  ]
-
-  const stats = composeGroupStats(results, ['group-1'])
-  t.is(stats.hashrateMhs, 0, 'missing fields default to 0')
-  t.is(stats.powerW, 0, 'missing power defaults to 0')
-  t.pass()
-})
-
-test('composeGroupStats - multi-ork aggregation', (t) => {
-  const results = [
-    [
-      [{
-        hashrate_mhs_1m_container_group_sum_aggr: { 'group-1': 40000 },
-        power_w_container_group_sum_aggr: { 'group-1': 4000 },
-        power_mode_normal_cnt: { 'group-1': 8 },
-        power_mode_low_cnt: {},
-        power_mode_high_cnt: {},
-        offline_cnt: { 'group-1': 1 },
-        error_cnt: {},
-        not_mining_cnt: {},
-        power_mode_sleep_cnt: {}
-      }]
-    ],
-    [
-      [{
-        hashrate_mhs_1m_container_group_sum_aggr: { 'group-1': 20000 },
-        power_w_container_group_sum_aggr: { 'group-1': 2000 },
-        power_mode_normal_cnt: { 'group-1': 4 },
-        power_mode_low_cnt: {},
-        power_mode_high_cnt: {},
-        offline_cnt: {},
-        error_cnt: {},
-        not_mining_cnt: {},
-        power_mode_sleep_cnt: {}
-      }]
-    ]
-  ]
-
-  const stats = composeGroupStats(results, ['group-1'])
-  t.is(stats.hashrateMhs, 60000, 'should sum hashrate across orks')
-  t.is(stats.powerW, 6000, 'should sum power across orks')
-  t.is(stats.onlineCount, 12, 'should sum online across orks')
-  t.is(stats.minerCount, 13, 'should sum all miners across orks')
-  t.pass()
-})
-
-// ==================== getGroupStats Tests ====================
-
-test('getGroupStats - happy path', async (t) => {
-  const mockCtx = withDataProxy({
-    conf: {
-      orks: [{ rpcPublicKey: 'key1' }]
+function createMockTailLogEntry () {
+  return {
+    hashrate_mhs_5m_pdu_rack_group_avg_aggr: {
+      'group-1_rack-1': 5000000000,
+      'group-1_rack-2': 4000000000,
+      'group-2_rack-1': 3000000000,
+      'group-2_rack-2': 6000000000
     },
-    net_r0: {
-      jRequest: async () => {
-        return [
-          [{
-            hashrate_mhs_1m_container_group_sum_aggr: { 'group-1': 60000, 'group-2': 40000 },
-            power_w_container_group_sum_aggr: { 'group-1': 6000, 'group-2': 4000 },
-            power_mode_normal_cnt: { 'group-1': 12, 'group-2': 8 },
-            power_mode_low_cnt: {},
-            power_mode_high_cnt: {},
-            offline_cnt: { 'group-1': 1 },
-            error_cnt: {},
-            not_mining_cnt: {},
-            power_mode_sleep_cnt: {}
-          }]
-        ]
+    power_w_pdu_rack_group_sum_aggr: {
+      'group-1_rack-1': 500000,
+      'group-1_rack-2': 400000,
+      'group-2_rack-1': 300000,
+      'group-2_rack-2': 600000
+    },
+    efficiency_w_ths_pdu_rack_group_avg_aggr: {
+      'group-1_rack-1': 6,
+      'group-1_rack-2': 6,
+      'group-2_rack-1': 6,
+      'group-2_rack-2': 6
+    }
+  }
+}
+
+function createMockDcsThing () {
+  return {
+    id: 'dcs-1',
+    type: 'wrk-dcs-siemens',
+    tags: ['t-dcs'],
+    last: {
+      snap: {
+        config: {
+          mining: { total_groups: 2, racks_per_group: 2, miners_per_rack: 20 }
+        }
       }
     }
-  })
+  }
+}
 
-  const mockReq = { query: { racks: 'group-1,group-2' } }
-  const result = await getGroupStats(mockCtx, mockReq)
+function createMockCtx ({ dcsEnabled = true, tailLogEntry = createMockTailLogEntry(), dcsThing = createMockDcsThing() } = {}) {
+  return {
+    conf: {
+      featureConfig: dcsEnabled ? { centralDCSSetup: { enabled: true, tag: 't-dcs' } } : {}
+    },
+    dataProxy: {
+      requestDataMap: async (method) => {
+        if (method === 'tailLogMulti') return [[[tailLogEntry]]]
+        if (method === 'listThings') return dcsEnabled ? [[dcsThing]] : [[]]
+        return []
+      }
+    }
+  }
+}
 
-  t.is(result.hashrateMhs, 100000, 'should have hashrate for both racks')
-  t.is(result.powerW, 10000, 'should have power for both racks')
-  t.is(result.minerCount, 21, 'should have miner count')
-  t.is(result.onlineCount, 20, 'should have online count')
-  t.ok(typeof result.efficiency === 'number', 'should have efficiency')
+test('getGroupStats - returns per-rack data matching PR #59 shape', async (t) => {
+  const ctx = createMockCtx()
+  const result = await getGroupStats(ctx, { query: { racks: 'group-1_rack-1,group-1_rack-2' } })
+
+  t.is(result.totalCount, 2, 'two racks returned')
+  t.is(result.data.length, 2)
+
+  const [first, second] = result.data
+  t.is(first.id, 'group-1_rack-1')
+  t.is(first.name, 'Rack 1')
+  t.alike(first.group, { id: 'group-1', name: 'Group 1' })
+  t.is(first.miners_count, 20)
+  t.is(first.hashrate.unit, 'PH/s')
+  t.is(first.consumption.unit, 'kW')
+  t.is(first.efficiency.unit, 'W/TH/s')
+  t.ok(first.hashrate.value > 0, 'hashrate is positive')
+  t.ok(first.consumption.value > 0, 'consumption is positive')
+  t.ok(first.efficiency.value > 0, 'efficiency is positive')
+
+  t.is(second.id, 'group-1_rack-2')
+  t.pass()
+})
+
+test('getGroupStats - filters across groups', async (t) => {
+  const ctx = createMockCtx()
+  const result = await getGroupStats(ctx, { query: { racks: 'group-1_rack-1,group-2_rack-2' } })
+
+  t.is(result.totalCount, 2)
+  const ids = result.data.map(r => r.id)
+  t.alike(ids, ['group-1_rack-1', 'group-2_rack-2'])
+  t.pass()
+})
+
+test('getGroupStats - ignores unknown rack ids', async (t) => {
+  const ctx = createMockCtx()
+  const result = await getGroupStats(ctx, { query: { racks: 'group-1_rack-1,group-99_rack-99' } })
+
+  t.is(result.totalCount, 1)
+  t.is(result.data[0].id, 'group-1_rack-1')
   t.pass()
 })
 
 test('getGroupStats - missing racks throws', async (t) => {
-  const mockCtx = withDataProxy({
-    conf: { orks: [] },
-    net_r0: { jRequest: async () => ({}) }
-  })
-
+  const ctx = createMockCtx()
   try {
-    await getGroupStats(mockCtx, { query: {} })
+    await getGroupStats(ctx, { query: {} })
     t.fail('should have thrown')
   } catch (err) {
-    t.is(err.message, 'ERR_MISSING_RACKS', 'should throw missing racks error')
+    t.is(err.message, 'ERR_MISSING_RACKS')
   }
   t.pass()
 })
 
 test('getGroupStats - empty racks string throws', async (t) => {
-  const mockCtx = withDataProxy({
-    conf: { orks: [] },
-    net_r0: { jRequest: async () => ({}) }
-  })
-
+  const ctx = createMockCtx()
   try {
-    await getGroupStats(mockCtx, { query: { racks: '' } })
+    await getGroupStats(ctx, { query: { racks: '' } })
     t.fail('should have thrown')
   } catch (err) {
-    t.is(err.message, 'ERR_MISSING_RACKS', 'should throw for empty racks')
+    t.is(err.message, 'ERR_MISSING_RACKS')
   }
   t.pass()
 })
 
-test('getGroupStats - filters to requested racks', async (t) => {
-  const mockCtx = withDataProxy({
-    conf: {
-      orks: [{ rpcPublicKey: 'key1' }]
-    },
-    net_r0: {
-      jRequest: async () => {
-        return [
-          [{
-            hashrate_mhs_1m_container_group_sum_aggr: { 'group-1': 50000, 'group-2': 30000, 'group-3': 20000 },
-            power_w_container_group_sum_aggr: { 'group-1': 5000, 'group-2': 3000, 'group-3': 2000 },
-            power_mode_normal_cnt: { 'group-1': 10, 'group-2': 8, 'group-3': 6 },
-            power_mode_low_cnt: {},
-            power_mode_high_cnt: {},
-            offline_cnt: {},
-            error_cnt: {},
-            not_mining_cnt: {},
-            power_mode_sleep_cnt: {}
-          }]
-        ]
-      }
-    }
-  })
-
-  const result = await getGroupStats(mockCtx, { query: { racks: 'group-1' } })
-  t.is(result.hashrateMhs, 50000, 'should only include group-1 hashrate')
-  t.is(result.powerW, 5000, 'should only include group-1 power')
-  t.is(result.onlineCount, 10, 'should only include group-1 miners')
+test('getGroupStats - returns empty data when DCS disabled', async (t) => {
+  const ctx = createMockCtx({ dcsEnabled: false })
+  const result = await getGroupStats(ctx, { query: { racks: 'group-1_rack-1' } })
+  t.is(result.totalCount, 0, 'no racks without mining config')
+  t.alike(result.data, [])
   t.pass()
 })
