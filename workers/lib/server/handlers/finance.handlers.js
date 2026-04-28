@@ -628,7 +628,8 @@ async function getSubsidyFees (ctx, req) {
     log.push({
       ts,
       blockReward: block.blockReward,
-      blockTotalFees: block.blockTotalFees
+      blockTotalFees: block.blockTotalFees,
+      blockSize: block.blockSize
     })
   }
 
@@ -643,22 +644,27 @@ function calculateSubsidyFeesSummary (log) {
     return {
       totalBlockReward: 0,
       totalBlockTotalFees: 0,
+      totalBlockSize: 0,
       avgBlockReward: null,
-      avgBlockTotalFees: null
+      avgBlockTotalFees: null,
+      avgBlockSize: null
     }
   }
 
   const totals = log.reduce((acc, entry) => {
     acc.blockReward += entry.blockReward || 0
     acc.blockTotalFees += entry.blockTotalFees || 0
+    acc.blockSize += entry.blockSize || 0
     return acc
-  }, { blockReward: 0, blockTotalFees: 0 })
+  }, { blockReward: 0, blockTotalFees: 0, blockSize: 0 })
 
   return {
     totalBlockReward: totals.blockReward,
     totalBlockTotalFees: totals.blockTotalFees,
+    totalBlockSize: totals.blockSize,
     avgBlockReward: safeDiv(totals.blockReward, log.length),
-    avgBlockTotalFees: safeDiv(totals.blockTotalFees, log.length)
+    avgBlockTotalFees: safeDiv(totals.blockTotalFees, log.length),
+    avgBlockSize: safeDiv(totals.blockSize, log.length)
   }
 }
 
@@ -879,6 +885,7 @@ async function getRevenueSummary (ctx, req) {
       hashRevenueUSDPerPHsPerDay: safeDiv(revenueUSD, hashratePhs),
       blockReward: block.blockReward || 0,
       blockTotalFees: block.blockTotalFees || 0,
+      blockSize: block.blockSize || 0,
       curtailmentMWh,
       curtailmentRate,
       operationalIssuesRate,
