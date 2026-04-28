@@ -3,13 +3,10 @@
 const test = require('brittle')
 const {
   getGroupStats,
-  mapSynthIdsToRealKeys,
-  withRealValues
+  mapRackIdToKeys,
+  formatRackValues
 } = require('../../../workers/lib/server/handlers/groups.handlers')
 
-// tailLog mocks use the real ORK key format ('group-1_1-1'), while the
-// public API still accepts PR #59 ids ('group-1_rack-1'). The handler maps
-// between them.
 function createMockTailLogEntry () {
   return {
     hashrate_mhs_5m_pdu_rack_group_avg_aggr: {
@@ -63,9 +60,9 @@ function createMockCtx ({ dcsEnabled = true, tailLogEntry = createMockTailLogEnt
   }
 }
 
-// ==================== mapSynthIdsToRealKeys ====================
+// ==================== mapRackIdToKeys ====================
 
-test('mapSynthIdsToRealKeys - maps synth rack-N ids to Nth real key per group', (t) => {
+test('mapRackIdToKeys - maps synth rack-N ids to Nth real key per group', (t) => {
   const racks = [
     { id: 'group-1_rack-1', group: { id: 'group-1' } },
     { id: 'group-1_rack-2', group: { id: 'group-1' } },
@@ -77,14 +74,14 @@ test('mapSynthIdsToRealKeys - maps synth rack-N ids to Nth real key per group', 
     efficiencyByRack: {}
   }
 
-  const map = mapSynthIdsToRealKeys(racks, stats)
+  const map = mapRackIdToKeys(racks, stats)
   t.is(map.get('group-1_rack-1'), 'group-1_1-1')
   t.is(map.get('group-1_rack-2'), 'group-1_2-1')
   t.is(map.get('group-2_rack-1'), 'group-2_1-1')
   t.pass()
 })
 
-test('mapSynthIdsToRealKeys - undefined when no real key at that position', (t) => {
+test('mapRackIdToKeys - undefined when no real key at that position', (t) => {
   const racks = [
     { id: 'group-1_rack-1', group: { id: 'group-1' } },
     { id: 'group-1_rack-2', group: { id: 'group-1' } }
@@ -95,22 +92,22 @@ test('mapSynthIdsToRealKeys - undefined when no real key at that position', (t) 
     efficiencyByRack: {}
   }
 
-  const map = mapSynthIdsToRealKeys(racks, stats)
+  const map = mapRackIdToKeys(racks, stats)
   t.is(map.get('group-1_rack-1'), 'group-1_1-1')
   t.is(map.get('group-1_rack-2'), undefined)
   t.pass()
 })
 
-// ==================== withRealValues ====================
+// ==================== formatRackValues ====================
 
-test('withRealValues - leaves rack unchanged when no real key', (t) => {
+test('formatRackValues - leaves rack unchanged when no real key', (t) => {
   const rack = { id: 'x', hashrate: { value: 0, unit: 'PH/s' } }
-  const out = withRealValues(rack, undefined, { hashrateByRack: {}, powerByRack: {}, efficiencyByRack: {} })
+  const out = formatRackValues(rack, undefined, { hashrateByRack: {}, powerByRack: {}, efficiencyByRack: {} })
   t.alike(out, rack)
   t.pass()
 })
 
-test('withRealValues - overrides stats with values from the real key', (t) => {
+test('formatRackValues - overrides stats with values from the real key', (t) => {
   const rack = { id: 'group-1_rack-1', hashrate: { value: 0, unit: 'PH/s' } }
   const stats = {
     hashrateByRack: { 'group-1_1-1': 5000000000 },
@@ -118,7 +115,7 @@ test('withRealValues - overrides stats with values from the real key', (t) => {
     efficiencyByRack: { 'group-1_1-1': 6 }
   }
 
-  const out = withRealValues(rack, 'group-1_1-1', stats)
+  const out = formatRackValues(rack, 'group-1_1-1', stats)
   t.is(out.id, 'group-1_rack-1', 'public id is preserved')
   t.ok(out.hashrate.value > 0)
   t.is(out.consumption.value, 500, '500000 W → 500 kW')
@@ -128,13 +125,13 @@ test('withRealValues - overrides stats with values from the real key', (t) => {
 
 // ==================== getGroupStats ====================
 
-test('getGroupStats - returns per-rack data with real values mapped to PR #59 ids', async (t) => {
+test('getGroupStats - returns per-rack data with real values mapped to synth ids', async (t) => {
   const ctx = createMockCtx()
   const result = await getGroupStats(ctx, { query: { racks: 'group-1_rack-1,group-1_rack-2' } })
 
   t.is(result.totalCount, 2)
   const [first, second] = result.data
-  t.is(first.id, 'group-1_rack-1', 'public id stays as PR #59 format')
+  t.is(first.id, 'group-1_rack-1')
   t.alike(first.group, { id: 'group-1', name: 'Group 1' })
   t.is(first.miners_count, 20)
   t.ok(first.hashrate.value > 0, 'mapped to group-1_1-1 real values')

@@ -11,7 +11,7 @@ const {
   aggregateRackStats,
   buildRackList
 } = require('./explorer.handlers')
-const { mhsToPhs, mhsToThs } = require('../../metrics.utils')
+const { mhsToPhs, mhsToThs, parseRackId } = require('../../metrics.utils')
 const {
   isCentralDCSEnabled,
   getDCSTag,
@@ -54,12 +54,12 @@ async function getGroupStats (ctx, req) {
   const miningConfig = dcsThing?.last?.snap?.config?.mining || {}
 
   const allRacks = buildRackList(miningConfig, rackStats)
-  const realKeyById = mapSynthIdsToRealKeys(allRacks, rackStats)
+  const realKeyById = mapRackIdToKeys(allRacks, rackStats)
 
   const requestedSet = new Set(requestedRacks)
   const data = allRacks
     .filter(rack => requestedSet.has(rack.id))
-    .map(rack => withRealValues(rack, realKeyById.get(rack.id), rackStats))
+    .map(rack => formatRackValues(rack, realKeyById.get(rack.id), rackStats))
 
   return {
     data,
@@ -67,11 +67,7 @@ async function getGroupStats (ctx, req) {
   }
 }
 
-// `*_pdu_rack_group_*` is keyed by physical position (e.g. 'group-1_1-1'),
-// but buildRackList synthesizes ids as 'group-X_rack-N' from the mining
-// config. Map each synth id to the Nth real key in its group (sorted) so
-// values align without changing PR #59's contract.
-function mapSynthIdsToRealKeys (racks, rackStats) {
+function mapRackIdToKeys (racks, rackStats) {
   const allRealKeys = new Set([
     ...Object.keys(rackStats.hashrateByRack),
     ...Object.keys(rackStats.powerByRack),
@@ -80,10 +76,9 @@ function mapSynthIdsToRealKeys (racks, rackStats) {
 
   const sortedByGroup = {}
   for (const key of allRealKeys) {
-    const idx = key.indexOf('_')
-    if (idx === -1) continue
-    const groupId = key.substring(0, idx)
-    ;(sortedByGroup[groupId] ||= []).push(key)
+    const parsed = parseRackId(key)
+    if (!parsed) continue
+    ;(sortedByGroup[parsed.group] ||= []).push(key)
   }
   for (const list of Object.values(sortedByGroup)) {
     list.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
@@ -99,7 +94,7 @@ function mapSynthIdsToRealKeys (racks, rackStats) {
   return map
 }
 
-function withRealValues (rack, realKey, rackStats) {
+function formatRackValues (rack, realKey, rackStats) {
   if (!realKey) return rack
 
   const hashrateMhs = rackStats.hashrateByRack[realKey] || 0
@@ -120,6 +115,6 @@ function withRealValues (rack, realKey, rackStats) {
 
 module.exports = {
   getGroupStats,
-  mapSynthIdsToRealKeys,
-  withRealValues
+  mapRackIdToKeys,
+  formatRackValues
 }
