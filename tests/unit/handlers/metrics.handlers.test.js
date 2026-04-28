@@ -75,7 +75,7 @@ test('getHashrate - grouped by miner uses type group aggregation', async (t) => 
         capturedPayload = payload
         return [{
           ts: 1700006400000,
-          hashrate_mhs_5m_type_group_sum_aggr: 123456
+          hashrate_mhs_5m_type_group_sum_aggr: { 'S19-Pro': 100000, 'S21': 23456 }
         }]
       }
     }
@@ -88,8 +88,12 @@ test('getHashrate - grouped by miner uses type group aggregation', async (t) => 
   t.is(capturedPayload.fields.hashrate_mhs_5m_type_group_sum, 1, 'should request type-group source field')
   t.is(capturedPayload.aggrFields.hashrate_mhs_5m_type_group_sum_aggr, 1, 'should request type-group aggregate field')
   t.is(result.log.length, 1, 'should map one grouped row')
-  t.is(result.log[0].hashrateMhs, 123456, 'should map grouped hashrate value')
-  t.alike(result.summary, {}, 'grouped response should return empty summary')
+  t.alike(result.log[0].hashrateMhs, { 'S19-Pro': 100000, 'S21': 23456 }, 'should map grouped hashrate value')
+  t.is(result.summary.totalHashrateMhs, 123456, 'should have site-wide total')
+  t.is(result.summary.avgHashrateMhs, 123456, 'should have site-wide average')
+  t.ok(result.summary.byMiner, 'should have per-miner breakdown')
+  t.is(result.summary.byMiner['S19-Pro'].totalHashrateMhs, 100000, 'should have per-miner total')
+  t.is(result.summary.byMiner['S21'].totalHashrateMhs, 23456, 'should have per-miner total')
   t.pass()
 })
 
@@ -102,7 +106,7 @@ test('getHashrate - grouped by container uses container group aggregation', asyn
         capturedPayload = payload
         return [{
           ts: 1700006400000,
-          hashrate_mhs_5m_container_group_sum_aggr: 777
+          hashrate_mhs_5m_container_group_sum_aggr: { 'container-A': 500, 'container-B': 277 }
         }]
       }
     }
@@ -115,8 +119,11 @@ test('getHashrate - grouped by container uses container group aggregation', asyn
   t.is(capturedPayload.fields.hashrate_mhs_5m_container_group_sum, 1, 'should request container-group source field')
   t.is(capturedPayload.aggrFields.hashrate_mhs_5m_container_group_sum_aggr, 1, 'should request container-group aggregate field')
   t.is(result.log.length, 1, 'should map grouped row')
-  t.is(result.log[0].hashrateMhs, 777, 'should map container grouped hashrate value')
-  t.alike(result.summary, {}, 'grouped response should return empty summary')
+  t.alike(result.log[0].hashrateMhs, { 'container-A': 500, 'container-B': 277 }, 'should map container grouped hashrate value')
+  t.is(result.summary.totalHashrateMhs, 777, 'should have site-wide total')
+  t.ok(result.summary.byContainer, 'should have per-container breakdown')
+  t.is(result.summary.byContainer['container-A'].totalHashrateMhs, 500, 'should have per-container total')
+  t.is(result.summary.byContainer['container-B'].totalHashrateMhs, 277, 'should have per-container total')
   t.pass()
 })
 
@@ -131,7 +138,8 @@ test('getHashrate - grouped mode handles empty results', async (t) => {
   })
 
   t.is(result.log.length, 0, 'grouped log should be empty when no data is returned')
-  t.alike(result.summary, {}, 'grouped summary should still be empty object')
+  t.is(result.summary.avgHashrateMhs, null, 'grouped empty summary should have null avg')
+  t.is(result.summary.totalHashrateMhs, 0, 'grouped empty summary should have zero total')
   t.pass()
 })
 
