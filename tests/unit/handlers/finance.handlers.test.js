@@ -1033,6 +1033,24 @@ test('processHashrateData - processes array data', (t) => {
   t.pass()
 })
 
+test('processHashrateData - drills into .val (production shape)', (t) => {
+  const results = [
+    [
+      {
+        type: 'miner',
+        data: [
+          { ts: 1700006400000, val: { hashrate_mhs_5m_sum_aggr: 500000 } },
+          { ts: 1700092800000, val: { hashrate_mhs_5m_sum_aggr: 600000 } }
+        ]
+      }
+    ]
+  ]
+  const daily = processHashrateData(results)
+  t.is(daily[1700006400000], 500000, 'extracts hashrate from .val on day 1')
+  t.is(daily[1700092800000], 600000, 'extracts hashrate from .val on day 2')
+  t.pass()
+})
+
 test('processHashrateData - handles error results', (t) => {
   const results = [{ error: 'timeout' }]
   const daily = processHashrateData(results)
@@ -1050,6 +1068,19 @@ test('processNetworkHashrateData - processes array data', (t) => {
   t.ok(Object.keys(daily).length > 0, 'should have entries')
   const key = Object.keys(daily)[0]
   t.is(daily[key], 500000000000000, 'should extract avgHashrateMHs')
+  t.pass()
+})
+
+test('processNetworkHashrateData - flat per-ork items (production shape)', (t) => {
+  const results = [
+    [
+      { ts: 1700006400000, avgHashrateMHs: 1019725948656278 },
+      { ts: 1700092800000, avgHashrateMHs: 1029591824888537 }
+    ]
+  ]
+  const daily = processNetworkHashrateData(results)
+  t.is(daily[1700006400000], 1019725948656278, 'extracts avgHashrateMHs day 1')
+  t.is(daily[1700092800000], 1029591824888537, 'extracts avgHashrateMHs day 2')
   t.pass()
 })
 

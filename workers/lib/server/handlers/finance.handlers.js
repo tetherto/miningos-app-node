@@ -1097,7 +1097,8 @@ function processHashrateData (results) {
           const ts = getStartOfDay(item.ts || item.timestamp)
           if (!ts) continue
           if (!daily[ts]) daily[ts] = 0
-          daily[ts] += (item[AGGR_FIELDS.HASHRATE_SUM] || 0)
+          const val = item.val || item
+          daily[ts] += (val[AGGR_FIELDS.HASHRATE_SUM] || 0)
         }
       }
     }
@@ -1113,18 +1114,19 @@ function processNetworkHashrateData (results) {
     if (!Array.isArray(data)) continue
     for (const entry of data) {
       if (!entry) continue
-      const items = entry.data || entry
+      const rawTs = entry.ts || entry.timestamp || entry.time
+      const items = rawTs ? [entry] : (entry.data || entry)
       if (Array.isArray(items)) {
         for (const item of items) {
           if (!item) continue
-          const rawTs = item.ts || item.timestamp || item.time
-          const ts = getStartOfDay(normalizeTimestampMs(rawTs))
+          const itemTs = item.ts || item.timestamp || item.time
+          const ts = getStartOfDay(normalizeTimestampMs(itemTs))
           if (!ts) continue
           if (item.avgHashrateMHs) {
             daily[ts] = item.avgHashrateMHs
           }
         }
-      } else if (typeof items === 'object' && !Array.isArray(items)) {
+      } else if (typeof items === 'object') {
         for (const [key, val] of Object.entries(items)) {
           const ts = getStartOfDay(Number(key))
           if (!ts) continue
