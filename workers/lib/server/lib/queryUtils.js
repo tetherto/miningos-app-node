@@ -172,10 +172,10 @@ function paginateResults (items, offset, limit) {
   }
 }
 
-function parseContainers (req) {
-  const raw = req.query.containers
+function parseRacks (req) {
+  const raw = req.query.racks
   if (!raw) return undefined
-  return raw.split(',').map(c => c.trim()).filter(Boolean)
+  return raw.split(',').map(r => r.trim()).filter(Boolean)
 }
 
 module.exports = {
@@ -186,5 +186,5 @@ module.exports = {
   flattenOrkResults,
   sortItems,
   paginateResults,
-  parseContainers
+  parseRacks
 }

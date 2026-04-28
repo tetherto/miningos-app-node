@@ -7,21 +7,21 @@ const {
   AGGR_FIELDS
 } = require('../../constants')
 const { extractKeyEntry } = require('../../metrics.utils')
-const { parseContainers } = require('../lib/queryUtils')
+const { parseRacks } = require('../lib/queryUtils')
 
-function sumGroupedField (grouped, containers) {
+function sumGroupedField (grouped, racks) {
   if (!grouped || typeof grouped !== 'object') return 0
   let total = 0
-  for (const id of containers) {
+  for (const id of racks) {
     total += grouped[id] || 0
   }
   return total
 }
 
 async function getGroupStats (ctx, req) {
-  const containers = parseContainers(req)
-  if (!containers || !containers.length) {
-    throw new Error('ERR_MISSING_CONTAINERS')
+  const racks = parseRacks(req)
+  if (!racks || !racks.length) {
+    throw new Error('ERR_MISSING_RACKS')
   }
 
   const tailLogPayload = {
@@ -43,10 +43,10 @@ async function getGroupStats (ctx, req) {
   }
 
   const results = await ctx.dataProxy.requestDataMap('tailLogMulti', tailLogPayload)
-  return composeGroupStats(results, containers)
+  return composeGroupStats(results, racks)
 }
 
-function composeGroupStats (results, containers) {
+function composeGroupStats (results, racks) {
   let hashrateMhs = 0
   let powerW = 0
   let onlineCount = 0
@@ -56,16 +56,16 @@ function composeGroupStats (results, containers) {
     const minerEntry = extractKeyEntry(orkResult, 0)
     if (!minerEntry) continue
 
-    hashrateMhs += sumGroupedField(minerEntry[AGGR_FIELDS.HASHRATE_1M_CONTAINER_GROUP_SUM], containers)
-    powerW += sumGroupedField(minerEntry[AGGR_FIELDS.POWER_W_CONTAINER_GROUP_SUM], containers)
+    hashrateMhs += sumGroupedField(minerEntry[AGGR_FIELDS.HASHRATE_1M_CONTAINER_GROUP_SUM], racks)
+    powerW += sumGroupedField(minerEntry[AGGR_FIELDS.POWER_W_CONTAINER_GROUP_SUM], racks)
 
-    const low = sumGroupedField(minerEntry[AGGR_FIELDS.POWER_MODE_LOW_CNT], containers)
-    const normal = sumGroupedField(minerEntry[AGGR_FIELDS.POWER_MODE_NORMAL_CNT], containers)
-    const high = sumGroupedField(minerEntry[AGGR_FIELDS.POWER_MODE_HIGH_CNT], containers)
-    const offline = sumGroupedField(minerEntry[AGGR_FIELDS.OFFLINE_CNT], containers)
-    const error = sumGroupedField(minerEntry[AGGR_FIELDS.ERROR_CNT], containers)
-    const notMining = sumGroupedField(minerEntry[AGGR_FIELDS.NOT_MINING_CNT], containers)
-    const sleep = sumGroupedField(minerEntry[AGGR_FIELDS.SLEEP_CNT], containers)
+    const low = sumGroupedField(minerEntry[AGGR_FIELDS.POWER_MODE_LOW_CNT], racks)
+    const normal = sumGroupedField(minerEntry[AGGR_FIELDS.POWER_MODE_NORMAL_CNT], racks)
+    const high = sumGroupedField(minerEntry[AGGR_FIELDS.POWER_MODE_HIGH_CNT], racks)
+    const offline = sumGroupedField(minerEntry[AGGR_FIELDS.OFFLINE_CNT], racks)
+    const error = sumGroupedField(minerEntry[AGGR_FIELDS.ERROR_CNT], racks)
+    const notMining = sumGroupedField(minerEntry[AGGR_FIELDS.NOT_MINING_CNT], racks)
+    const sleep = sumGroupedField(minerEntry[AGGR_FIELDS.SLEEP_CNT], racks)
 
     onlineCount += low + normal + high
     minerCount += low + normal + high + offline + error + notMining + sleep
