@@ -432,8 +432,10 @@ function processTailLogData (results) {
         for (const item of items) {
           const ts = getStartOfDay(item.ts || item.timestamp)
           if (!daily[ts]) daily[ts] = { powerW: 0, hashrateMhs: 0 }
-          daily[ts].powerW += (item[AGGR_FIELDS.SITE_POWER] || 0)
-          daily[ts].hashrateMhs += (item[AGGR_FIELDS.HASHRATE_SUM] || 0)
+          // Production response wraps measurements under .val; legacy shape was flat.
+          const val = item.val || item
+          daily[ts].powerW += (val[AGGR_FIELDS.SITE_POWER] || 0)
+          daily[ts].hashrateMhs += (val[AGGR_FIELDS.HASHRATE_SUM] || 0)
         }
       }
     }
