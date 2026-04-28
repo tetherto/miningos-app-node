@@ -569,16 +569,18 @@ test('getSubsidyFees - empty ork results', async (t) => {
 
 test('calculateSubsidyFeesSummary - calculates from log entries', (t) => {
   const log = [
-    { blockReward: 6.25, blockTotalFees: 0.5 },
-    { blockReward: 6.25, blockTotalFees: 0.3 }
+    { blockReward: 6.25, blockTotalFees: 0.5, blockSize: 1500000 },
+    { blockReward: 6.25, blockTotalFees: 0.3, blockSize: 1300000 }
   ]
 
   const summary = calculateSubsidyFeesSummary(log)
   t.is(summary.totalBlockReward, 12.5, 'should sum block rewards')
   t.is(summary.totalBlockTotalFees, 0.8, 'should sum block fees')
+  t.is(summary.totalBlockSize, 2800000, 'should sum block sizes')
   t.ok(summary.avgBlockReward !== null, 'should calculate avg block reward')
   t.is(summary.avgBlockReward, 6.25, 'should calculate correct avg block reward')
   t.ok(summary.avgBlockTotalFees !== null, 'should calculate avg block fees')
+  t.is(summary.avgBlockSize, 1400000, 'should calculate correct avg block size')
   t.pass()
 })
 
