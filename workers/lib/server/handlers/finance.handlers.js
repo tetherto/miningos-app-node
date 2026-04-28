@@ -449,19 +449,22 @@ function processEbitdaPrices (results) {
     if (!Array.isArray(data)) continue
     for (const entry of data) {
       if (!entry) continue
-      const items = entry.data || entry.prices || entry
+      // mempool returns a flat array of price records; entry IS the item.
+      const rawTs = entry.ts || entry.timestamp || entry.time
+      const items = rawTs ? [entry] : (entry.data || entry.prices || entry)
       if (Array.isArray(items)) {
         for (const item of items) {
           const ts = getStartOfDay(item.ts || item.timestamp || item.time)
-          if (ts && item.price) {
-            daily[ts] = item.price
+          const price = item.priceUSD || item.price
+          if (ts && price) {
+            daily[ts] = price
           }
         }
-      } else if (typeof items === 'object' && !Array.isArray(items)) {
+      } else if (typeof items === 'object') {
         for (const [key, val] of Object.entries(items)) {
           const ts = getStartOfDay(Number(key))
           if (ts) {
-            daily[ts] = typeof val === 'object' ? (val.USD || val.price || 0) : Number(val) || 0
+            daily[ts] = typeof val === 'object' ? (val.USD || val.priceUSD || val.price || 0) : Number(val) || 0
           }
         }
       }
@@ -518,7 +521,7 @@ async function getCostSummary (ctx, req) {
 
     (cb) => ctx.dataProxy.requestData(RPC_METHODS.GET_WRK_EXT_DATA, {
       type: WORKER_TYPES.MEMPOOL,
-      query: { key: 'prices', start, end }
+      query: { key: 'HISTORICAL_PRICES', start, end }
     }).then(r => cb(null, r)).catch(cb),
 
     (cb) => ctx.dataProxy.requestData(RPC_METHODS.TAIL_LOG_RANGE_AGGR, {
