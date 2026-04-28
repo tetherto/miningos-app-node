@@ -355,6 +355,34 @@ test('processTailLogData - processes power and hashrate', (t) => {
   t.pass()
 })
 
+test('processTailLogData - drills into .val (production shape)', (t) => {
+  const results = [
+    [
+      {
+        type: 'powermeter',
+        data: [
+          { ts: 1700006400000, val: { site_power_w: 5000 } },
+          { ts: 1700092800000, val: { site_power_w: 6000 } }
+        ]
+      },
+      {
+        type: 'miner',
+        data: [
+          { ts: 1700006400000, val: { hashrate_mhs_5m_sum_aggr: 100000 } },
+          { ts: 1700092800000, val: { hashrate_mhs_5m_sum_aggr: 120000 } }
+        ]
+      }
+    ]
+  ]
+
+  const daily = processTailLogData(results)
+  t.is(daily[1700006400000].powerW, 5000, 'extracts powerW from .val on day 1')
+  t.is(daily[1700006400000].hashrateMhs, 100000, 'extracts hashrateMhs from .val on day 1')
+  t.is(daily[1700092800000].powerW, 6000, 'extracts powerW from .val on day 2')
+  t.is(daily[1700092800000].hashrateMhs, 120000, 'extracts hashrateMhs from .val on day 2')
+  t.pass()
+})
+
 test('processTailLogData - handles error results', (t) => {
   const results = [{ error: 'timeout' }]
   const daily = processTailLogData(results)
