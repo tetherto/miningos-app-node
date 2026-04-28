@@ -11,6 +11,7 @@ const {
   aggregateRackStats,
   buildRackList
 } = require('./explorer.handlers')
+const { mhsToPhs, mhsToThs } = require('../../metrics.utils')
 const {
   isCentralDCSEnabled,
   getDCSTag,
@@ -53,8 +54,12 @@ async function getGroupStats (ctx, req) {
   const miningConfig = dcsThing?.last?.snap?.config?.mining || {}
 
   const allRacks = buildRackList(miningConfig, rackStats)
+  const realKeyById = mapSynthIdsToRealKeys(allRacks, rackStats)
+
   const requestedSet = new Set(requestedRacks)
-  const data = allRacks.filter(rack => requestedSet.has(rack.id))
+  const data = allRacks
+    .filter(rack => requestedSet.has(rack.id))
+    .map(rack => withRealValues(rack, realKeyById.get(rack.id), rackStats))
 
   return {
     data,
@@ -62,6 +67,59 @@ async function getGroupStats (ctx, req) {
   }
 }
 
+// `*_pdu_rack_group_*` is keyed by physical position (e.g. 'group-1_1-1'),
+// but buildRackList synthesizes ids as 'group-X_rack-N' from the mining
+// config. Map each synth id to the Nth real key in its group (sorted) so
+// values align without changing PR #59's contract.
+function mapSynthIdsToRealKeys (racks, rackStats) {
+  const allRealKeys = new Set([
+    ...Object.keys(rackStats.hashrateByRack),
+    ...Object.keys(rackStats.powerByRack),
+    ...Object.keys(rackStats.efficiencyByRack)
+  ])
+
+  const sortedByGroup = {}
+  for (const key of allRealKeys) {
+    const idx = key.indexOf('_')
+    if (idx === -1) continue
+    const groupId = key.substring(0, idx)
+    ;(sortedByGroup[groupId] ||= []).push(key)
+  }
+  for (const list of Object.values(sortedByGroup)) {
+    list.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+  }
+
+  const map = new Map()
+  const cursor = {}
+  for (const rack of racks) {
+    const groupId = rack.group.id
+    const pos = (cursor[groupId] = (cursor[groupId] ?? -1) + 1)
+    map.set(rack.id, sortedByGroup[groupId]?.[pos])
+  }
+  return map
+}
+
+function withRealValues (rack, realKey, rackStats) {
+  if (!realKey) return rack
+
+  const hashrateMhs = rackStats.hashrateByRack[realKey] || 0
+  const powerW = rackStats.powerByRack[realKey] || 0
+  const powerKw = Math.round(powerW / 10) / 100
+  const hashrateThs = mhsToThs(hashrateMhs)
+  const efficiency = hashrateThs > 0
+    ? Math.round((powerW / hashrateThs) * 10) / 10
+    : rackStats.efficiencyByRack[realKey] || 0
+
+  return {
+    ...rack,
+    efficiency: { value: efficiency, unit: 'W/TH/s' },
+    hashrate: { value: mhsToPhs(hashrateMhs), unit: 'PH/s' },
+    consumption: { value: powerKw, unit: 'kW' }
+  }
+}
+
 module.exports = {
-  getGroupStats
+  getGroupStats,
+  mapSynthIdsToRealKeys,
+  withRealValues
 }

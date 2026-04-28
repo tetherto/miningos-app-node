@@ -2,28 +2,33 @@
 
 const test = require('brittle')
 const {
-  getGroupStats
+  getGroupStats,
+  mapSynthIdsToRealKeys,
+  withRealValues
 } = require('../../../workers/lib/server/handlers/groups.handlers')
 
+// tailLog mocks use the real ORK key format ('group-1_1-1'), while the
+// public API still accepts PR #59 ids ('group-1_rack-1'). The handler maps
+// between them.
 function createMockTailLogEntry () {
   return {
     hashrate_mhs_5m_pdu_rack_group_avg_aggr: {
-      'group-1_rack-1': 5000000000,
-      'group-1_rack-2': 4000000000,
-      'group-2_rack-1': 3000000000,
-      'group-2_rack-2': 6000000000
+      'group-1_1-1': 5000000000,
+      'group-1_2-1': 4000000000,
+      'group-2_1-1': 3000000000,
+      'group-2_2-1': 6000000000
     },
     power_w_pdu_rack_group_sum_aggr: {
-      'group-1_rack-1': 500000,
-      'group-1_rack-2': 400000,
-      'group-2_rack-1': 300000,
-      'group-2_rack-2': 600000
+      'group-1_1-1': 500000,
+      'group-1_2-1': 400000,
+      'group-2_1-1': 300000,
+      'group-2_2-1': 600000
     },
     efficiency_w_ths_pdu_rack_group_avg_aggr: {
-      'group-1_rack-1': 6,
-      'group-1_rack-2': 6,
-      'group-2_rack-1': 6,
-      'group-2_rack-2': 6
+      'group-1_1-1': 6,
+      'group-1_2-1': 6,
+      'group-2_1-1': 6,
+      'group-2_2-1': 6
     }
   }
 }
@@ -58,40 +63,101 @@ function createMockCtx ({ dcsEnabled = true, tailLogEntry = createMockTailLogEnt
   }
 }
 
-test('getGroupStats - returns per-rack data matching PR #59 shape', async (t) => {
-  const ctx = createMockCtx()
-  const result = await getGroupStats(ctx, { query: { racks: 'group-1_rack-1,group-1_rack-2' } })
+// ==================== mapSynthIdsToRealKeys ====================
 
-  t.is(result.totalCount, 2, 'two racks returned')
-  t.is(result.data.length, 2)
+test('mapSynthIdsToRealKeys - maps synth rack-N ids to Nth real key per group', (t) => {
+  const racks = [
+    { id: 'group-1_rack-1', group: { id: 'group-1' } },
+    { id: 'group-1_rack-2', group: { id: 'group-1' } },
+    { id: 'group-2_rack-1', group: { id: 'group-2' } }
+  ]
+  const stats = {
+    hashrateByRack: { 'group-1_1-1': 1, 'group-1_2-1': 1, 'group-2_1-1': 1 },
+    powerByRack: {},
+    efficiencyByRack: {}
+  }
 
-  const [first, second] = result.data
-  t.is(first.id, 'group-1_rack-1')
-  t.is(first.name, 'Rack 1')
-  t.alike(first.group, { id: 'group-1', name: 'Group 1' })
-  t.is(first.miners_count, 20)
-  t.is(first.hashrate.unit, 'PH/s')
-  t.is(first.consumption.unit, 'kW')
-  t.is(first.efficiency.unit, 'W/TH/s')
-  t.ok(first.hashrate.value > 0, 'hashrate is positive')
-  t.ok(first.consumption.value > 0, 'consumption is positive')
-  t.ok(first.efficiency.value > 0, 'efficiency is positive')
-
-  t.is(second.id, 'group-1_rack-2')
+  const map = mapSynthIdsToRealKeys(racks, stats)
+  t.is(map.get('group-1_rack-1'), 'group-1_1-1')
+  t.is(map.get('group-1_rack-2'), 'group-1_2-1')
+  t.is(map.get('group-2_rack-1'), 'group-2_1-1')
   t.pass()
 })
 
-test('getGroupStats - filters across groups', async (t) => {
+test('mapSynthIdsToRealKeys - undefined when no real key at that position', (t) => {
+  const racks = [
+    { id: 'group-1_rack-1', group: { id: 'group-1' } },
+    { id: 'group-1_rack-2', group: { id: 'group-1' } }
+  ]
+  const stats = {
+    hashrateByRack: { 'group-1_1-1': 1 },
+    powerByRack: {},
+    efficiencyByRack: {}
+  }
+
+  const map = mapSynthIdsToRealKeys(racks, stats)
+  t.is(map.get('group-1_rack-1'), 'group-1_1-1')
+  t.is(map.get('group-1_rack-2'), undefined)
+  t.pass()
+})
+
+// ==================== withRealValues ====================
+
+test('withRealValues - leaves rack unchanged when no real key', (t) => {
+  const rack = { id: 'x', hashrate: { value: 0, unit: 'PH/s' } }
+  const out = withRealValues(rack, undefined, { hashrateByRack: {}, powerByRack: {}, efficiencyByRack: {} })
+  t.alike(out, rack)
+  t.pass()
+})
+
+test('withRealValues - overrides stats with values from the real key', (t) => {
+  const rack = { id: 'group-1_rack-1', hashrate: { value: 0, unit: 'PH/s' } }
+  const stats = {
+    hashrateByRack: { 'group-1_1-1': 5000000000 },
+    powerByRack: { 'group-1_1-1': 500000 },
+    efficiencyByRack: { 'group-1_1-1': 6 }
+  }
+
+  const out = withRealValues(rack, 'group-1_1-1', stats)
+  t.is(out.id, 'group-1_rack-1', 'public id is preserved')
+  t.ok(out.hashrate.value > 0)
+  t.is(out.consumption.value, 500, '500000 W → 500 kW')
+  t.ok(out.efficiency.value > 0)
+  t.pass()
+})
+
+// ==================== getGroupStats ====================
+
+test('getGroupStats - returns per-rack data with real values mapped to PR #59 ids', async (t) => {
+  const ctx = createMockCtx()
+  const result = await getGroupStats(ctx, { query: { racks: 'group-1_rack-1,group-1_rack-2' } })
+
+  t.is(result.totalCount, 2)
+  const [first, second] = result.data
+  t.is(first.id, 'group-1_rack-1', 'public id stays as PR #59 format')
+  t.alike(first.group, { id: 'group-1', name: 'Group 1' })
+  t.is(first.miners_count, 20)
+  t.ok(first.hashrate.value > 0, 'mapped to group-1_1-1 real values')
+  t.ok(first.consumption.value > 0)
+  t.ok(first.efficiency.value > 0)
+
+  t.is(second.id, 'group-1_rack-2')
+  t.ok(second.hashrate.value > 0, 'mapped to group-1_2-1 real values')
+  t.pass()
+})
+
+test('getGroupStats - cross-group selection', async (t) => {
   const ctx = createMockCtx()
   const result = await getGroupStats(ctx, { query: { racks: 'group-1_rack-1,group-2_rack-2' } })
 
   t.is(result.totalCount, 2)
   const ids = result.data.map(r => r.id)
   t.alike(ids, ['group-1_rack-1', 'group-2_rack-2'])
+  result.data.forEach(rack => t.ok(rack.hashrate.value > 0))
   t.pass()
 })
 
-test('getGroupStats - ignores unknown rack ids', async (t) => {
+test('getGroupStats - unknown rack ids are dropped', async (t) => {
   const ctx = createMockCtx()
   const result = await getGroupStats(ctx, { query: { racks: 'group-1_rack-1,group-99_rack-99' } })
 
@@ -125,7 +191,7 @@ test('getGroupStats - empty racks string throws', async (t) => {
 test('getGroupStats - returns empty data when DCS disabled', async (t) => {
   const ctx = createMockCtx({ dcsEnabled: false })
   const result = await getGroupStats(ctx, { query: { racks: 'group-1_rack-1' } })
-  t.is(result.totalCount, 0, 'no racks without mining config')
+  t.is(result.totalCount, 0)
   t.alike(result.data, [])
   t.pass()
 })
