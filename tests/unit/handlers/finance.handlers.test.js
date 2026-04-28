@@ -371,6 +371,19 @@ test('processEbitdaPrices - processes valid data', (t) => {
   t.pass()
 })
 
+test('processEbitdaPrices - flat per-ork items with priceUSD (production shape)', (t) => {
+  const results = [
+    [
+      { ts: 1700006400000, priceUSD: 40000 },
+      { ts: 1700092800000, priceUSD: 41500 }
+    ]
+  ]
+  const daily = processEbitdaPrices(results)
+  t.is(daily[1700006400000], 40000, 'should extract priceUSD for first day')
+  t.is(daily[1700092800000], 41500, 'should extract priceUSD for second day')
+  t.pass()
+})
+
 test('calculateEbitdaSummary - calculates from log entries', (t) => {
   const log = [
     { revenueBTC: 0.5, revenueUSD: 20000, totalCostsUSD: 5000, ebitdaSelling: 15000, ebitdaHodl: 15000 },
