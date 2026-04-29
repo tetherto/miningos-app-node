@@ -283,7 +283,9 @@ function buildMinersCircuit2View (equipment, config) {
     level: ct.level,
     level_sensor: towerLevelSensor,
     vibration: ct.vibration,
-    vibration_sensor: towerVibrationSensorId
+    vibration_sensor: towerVibrationSensorId,
+    capacity_flow: towerConfig.defaults?.tower_capacity || null,
+    capacity_gcal: towerConfig.defaults?.tower_capacity_gcal || null
   }))
 
   // Makeup water system
@@ -624,22 +626,23 @@ function buildHvacCircuit2View (equipment, config) {
   const supplyFlow = getSensorReading(flows, supplyReturnConfig.supply_flow_sensor)
   const returnFlow = getSensorReading(flows, supplyReturnConfig.return_flow_sensor)
 
+  const supplyTempSensor = getSensorWithTag(temperatures, supplyReturnConfig.supply_temp_sensor)
+  const supplyFlowSensor = getSensorWithTag(flows, supplyReturnConfig.supply_flow_sensor)
+  const returnTempSensor = getSensorWithTag(temperatures, supplyReturnConfig.return_temp_sensor)
+  const returnFlowSensor = getSensorWithTag(flows, supplyReturnConfig.return_flow_sensor)
+
   const supplyReturn = {
     supply: {
+      name: 'Supply To Tower',
       temperature: supplyTemp,
       flow: supplyFlow,
-      sensors: [
-        getSensorWithTag(temperatures, supplyReturnConfig.supply_temp_sensor),
-        getSensorWithTag(flows, supplyReturnConfig.supply_flow_sensor)
-      ].filter(Boolean)
+      sensors: [supplyTempSensor, supplyFlowSensor].filter(Boolean)
     },
     return: {
+      name: 'Return From Tower',
       temperature: returnTemp,
       flow: returnFlow,
-      sensors: [
-        getSensorWithTag(temperatures, supplyReturnConfig.return_temp_sensor),
-        getSensorWithTag(flows, supplyReturnConfig.return_flow_sensor)
-      ].filter(Boolean)
+      sensors: [returnTempSensor, returnFlowSensor].filter(Boolean)
     }
   }
 
@@ -655,25 +658,24 @@ function buildHvacCircuit2View (equipment, config) {
   const towerConfigRef = condenserConfig.tower || {}
   const towerLevelSensorId = towerConfigRef.level_sensor
   const towerLevel = getSensorReading(levels, towerLevelSensorId)
+  const towerVibrationSensorId = towerConfigRef.vibration_sensor
+  const towerFanId = towerConfigRef.fan
 
-  const towerData = (coolingTowers || []).map(ct => {
-    const isConfiguredTower = ct.equipment === towerConfigRef.equipment
-    return {
-      id: ct.equipment,
-      name: ct.equipment,
-      is_running: ct.is_running,
-      fan_status: ct.fan_status,
-      fan_speed: ct.fan_speed,
-      fan_power: ct.fan_power,
-      fan_id: isConfiguredTower ? towerConfigRef.fan : null,
-      level: ct.level,
-      level_sensor: isConfiguredTower ? towerConfigRef.level_sensor : null,
-      vibration: ct.vibration,
-      vibration_sensor: isConfiguredTower ? towerConfigRef.vibration_sensor : null,
-      capacity_mcal: condenserConfig.defaults?.tower_capacity_mcal || null,
-      capacity_flow: condenserConfig.defaults?.tower_flow || null
-    }
-  })
+  const towerData = (coolingTowers || []).map(ct => ({
+    id: ct.equipment,
+    name: ct.equipment,
+    is_running: ct.is_running,
+    fan_status: ct.fan_status,
+    fan_speed: ct.fan_speed,
+    fan_power: ct.fan_power,
+    fan_id: towerFanId || null,
+    level: ct.level,
+    level_sensor: towerLevelSensorId || null,
+    vibration: ct.vibration,
+    vibration_sensor: towerVibrationSensorId || null,
+    capacity_mcal: condenserConfig.defaults?.tower_capacity_mcal || null,
+    capacity_flow: condenserConfig.defaults?.tower_flow || null
+  }))
 
   const condenserPumps = filterPumpsByCircuit(pumps, 'HVAC_CONDENSER').map(formatPump)
 
