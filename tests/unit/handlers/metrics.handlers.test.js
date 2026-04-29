@@ -8,6 +8,7 @@ const {
   getConsumption,
   processConsumptionData,
   calculateConsumptionSummary,
+  calculateGroupedConsumptionSummary,
   getEfficiency,
   processEfficiencyData,
   calculateEfficiencySummary,
@@ -401,6 +402,106 @@ test('calculateConsumptionSummary - handles empty log', (t) => {
   const summary = calculateConsumptionSummary([])
   t.is(summary.totalConsumptionMWh, 0, 'should be zero')
   t.is(summary.avgPowerW, null, 'should be null')
+  t.pass()
+})
+
+test('getConsumption - grouped by miner uses type group aggregation', async (t) => {
+  let capturedPayload = null
+  const mockCtx = withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: {
+      jRequest: async (key, method, payload) => {
+        capturedPayload = payload
+        return [{
+          ts: 1700006400000,
+          power_w_type_group_sum_aggr: { 'S19-Pro': 3000000, 'S21': 2000000 }
+        }]
+      }
+    }
+  })
+
+  const result = await getConsumption(mockCtx, {
+    query: { start: 1700000000000, end: 1700100000000, groupBy: 'miner' }
+  })
+
+  t.is(capturedPayload.fields.power_w_type_group_sum, 1, 'should request type-group source field')
+  t.is(capturedPayload.aggrFields.power_w_type_group_sum_aggr, 1, 'should request type-group aggregate field')
+  t.is(result.log.length, 1, 'should map one grouped row')
+  t.alike(result.log[0].powerW, { 'S19-Pro': 3000000, 'S21': 2000000 }, 'should map grouped power value')
+  t.ok(result.log[0].consumptionMWh, 'should have consumptionMWh object')
+  t.is(result.summary.totalConsumptionMWh, (5000000 * 24) / 1000000, 'should have site-wide total consumption')
+  t.ok(result.summary.groupedBy, 'should have per-miner breakdown')
+  t.is(result.summary.groupedBy['S19-Pro'].totalConsumptionMWh, (3000000 * 24) / 1000000, 'should have per-miner total')
+  t.is(result.summary.groupedBy['S21'].totalConsumptionMWh, (2000000 * 24) / 1000000, 'should have per-miner total')
+  t.pass()
+})
+
+test('getConsumption - grouped by container uses container group aggregation', async (t) => {
+  let capturedPayload = null
+  const mockCtx = withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: {
+      jRequest: async (key, method, payload) => {
+        capturedPayload = payload
+        return [{
+          ts: 1700006400000,
+          power_w_container_group_sum_aggr: { 'container-A': 4000000, 'container-B': 1000000 }
+        }]
+      }
+    }
+  })
+
+  const result = await getConsumption(mockCtx, {
+    query: { start: 1700000000000, end: 1700100000000, groupBy: 'container' }
+  })
+
+  t.is(capturedPayload.fields.power_w_container_group_sum, 1, 'should request container-group source field')
+  t.is(capturedPayload.aggrFields.power_w_container_group_sum_aggr, 1, 'should request container-group aggregate field')
+  t.is(result.log.length, 1, 'should map grouped row')
+  t.alike(result.log[0].powerW, { 'container-A': 4000000, 'container-B': 1000000 }, 'should map container grouped power value')
+  t.is(result.summary.totalConsumptionMWh, (5000000 * 24) / 1000000, 'should have site-wide total consumption')
+  t.ok(result.summary.groupedBy, 'should have per-container breakdown')
+  t.is(result.summary.groupedBy['container-A'].totalConsumptionMWh, (4000000 * 24) / 1000000, 'should have per-container total')
+  t.is(result.summary.groupedBy['container-B'].totalConsumptionMWh, (1000000 * 24) / 1000000, 'should have per-container total')
+  t.pass()
+})
+
+test('getConsumption - grouped mode handles empty results', async (t) => {
+  const mockCtx = withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: { jRequest: async () => [] }
+  })
+
+  const result = await getConsumption(mockCtx, {
+    query: { start: 1700000000000, end: 1700100000000, groupBy: 'miner' }
+  })
+
+  t.is(result.log.length, 0, 'grouped log should be empty when no data is returned')
+  t.is(result.summary.avgPowerW, null, 'grouped empty summary should have null avg')
+  t.is(result.summary.totalConsumptionMWh, 0, 'grouped empty summary should have zero total')
+  t.pass()
+})
+
+test('calculateGroupedConsumptionSummary - calculates per-group and site-wide stats', (t) => {
+  const log = [
+    { ts: 1700006400000, powerW: { 'S19-Pro': 3000000, 'S21': 2000000 } },
+    { ts: 1700092800000, powerW: { 'S19-Pro': 3500000, 'S21': 1500000 } }
+  ]
+
+  const summary = calculateGroupedConsumptionSummary(log, 'miner')
+  t.is(summary.totalConsumptionMWh, (10000000 * 24) / 1000000, 'should have site-wide total')
+  t.is(summary.avgPowerW, 5000000, 'should have site-wide average')
+  t.ok(summary.groupedBy, 'should have per-group breakdown')
+  t.is(summary.groupedBy['S19-Pro'].avgPowerW, 3250000, 'should average per-group power')
+  t.is(summary.groupedBy['S19-Pro'].totalConsumptionMWh, (6500000 * 24) / 1000000, 'should sum per-group consumption')
+  t.is(summary.groupedBy['S21'].avgPowerW, 1750000, 'should average per-group power')
+  t.pass()
+})
+
+test('calculateGroupedConsumptionSummary - handles empty log', (t) => {
+  const summary = calculateGroupedConsumptionSummary([], 'miner')
+  t.is(summary.avgPowerW, null, 'should be null')
+  t.is(summary.totalConsumptionMWh, 0, 'should be zero')
   t.pass()
 })
 

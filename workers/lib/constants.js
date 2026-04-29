@@ -474,7 +474,9 @@ const DCS_EFFICIENCY_FIELDS = {
 
 const LOG_FIELDS = {
   HASHRATE_SUM_TYPE_GROUP: 'hashrate_mhs_5m_type_group_sum',
-  HASHRATE_SUM_CONTAINER_GROUP: 'hashrate_mhs_5m_container_group_sum'
+  HASHRATE_SUM_CONTAINER_GROUP: 'hashrate_mhs_5m_container_group_sum',
+  POWER_W_TYPE_GROUP_SUM: 'power_w_type_group_sum',
+  POWER_W_CONTAINER_GROUP_SUM: 'power_w_container_group_sum'
 }
 
 const AGGR_FIELDS = {
@@ -494,7 +496,15 @@ const AGGR_FIELDS = {
   OFFLINE_CNT: 'offline_cnt',
   SLEEP_CNT: 'power_mode_sleep_cnt',
   MAINTENANCE_CNT: 'maintenance_type_cnt',
-  CONTAINER_SPECIFIC_STATS: 'container_specific_stats_group_aggr'
+  CONTAINER_SPECIFIC_STATS: 'container_specific_stats_group_aggr',
+  HASHRATE_1M_CONTAINER_GROUP_SUM: 'hashrate_mhs_1m_container_group_sum_aggr',
+  POWER_W_CONTAINER_GROUP_SUM: 'power_w_container_group_sum_aggr',
+  POWER_W_TYPE_GROUP_SUM: 'power_w_type_group_sum_aggr',
+  POWER_MODE_LOW_CNT: 'power_mode_low_cnt',
+  POWER_MODE_NORMAL_CNT: 'power_mode_normal_cnt',
+  POWER_MODE_HIGH_CNT: 'power_mode_high_cnt',
+  ERROR_CNT: 'error_cnt',
+  NOT_MINING_CNT: 'not_mining_cnt'
 }
 
 const PERIOD_TYPES = {

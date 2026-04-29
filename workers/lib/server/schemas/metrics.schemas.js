@@ -17,6 +17,7 @@ const schemas = {
       properties: {
         start: { type: 'integer', minimum: 0 },
         end: { type: 'integer', minimum: 0 },
+        groupBy: { type: 'string', enum: ['miner', 'container'] },
         overwriteCache: { type: 'boolean' }
       },
       required: ['start', 'end']

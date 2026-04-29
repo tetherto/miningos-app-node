@@ -50,7 +50,8 @@ module.exports = (ctx) => {
         (req) => [
           'metrics/consumption',
           req.query.start,
-          req.query.end
+          req.query.end,
+          req.query.groupBy
         ],
         ENDPOINTS.METRICS_CONSUMPTION,
         getConsumption
