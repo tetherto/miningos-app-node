@@ -76,7 +76,7 @@ test('getHashrate - grouped by miner uses type group aggregation', async (t) => 
         capturedPayload = payload
         return [{
           ts: 1700006400000,
-          hashrate_mhs_5m_type_group_sum_aggr: { 'S19-Pro': 100000, 'S21': 23456 }
+          hashrate_mhs_5m_type_group_sum_aggr: { 'S19-Pro': 100000, S21: 23456 }
         }]
       }
     }
@@ -89,12 +89,12 @@ test('getHashrate - grouped by miner uses type group aggregation', async (t) => 
   t.is(capturedPayload.fields.hashrate_mhs_5m_type_group_sum, 1, 'should request type-group source field')
   t.is(capturedPayload.aggrFields.hashrate_mhs_5m_type_group_sum_aggr, 1, 'should request type-group aggregate field')
   t.is(result.log.length, 1, 'should map one grouped row')
-  t.alike(result.log[0].hashrateMhs, { 'S19-Pro': 100000, 'S21': 23456 }, 'should map grouped hashrate value')
+  t.alike(result.log[0].hashrateMhs, { 'S19-Pro': 100000, S21: 23456 }, 'should map grouped hashrate value')
   t.is(result.summary.totalHashrateMhs, 123456, 'should have site-wide total')
   t.is(result.summary.avgHashrateMhs, 123456, 'should have site-wide average')
   t.ok(result.summary.groupedBy, 'should have per-miner breakdown')
   t.is(result.summary.groupedBy['S19-Pro'].totalHashrateMhs, 100000, 'should have per-miner total')
-  t.is(result.summary.groupedBy['S21'].totalHashrateMhs, 23456, 'should have per-miner total')
+  t.is(result.summary.groupedBy.S21.totalHashrateMhs, 23456, 'should have per-miner total')
   t.pass()
 })
 
@@ -414,7 +414,7 @@ test('getConsumption - grouped by miner uses type group aggregation', async (t) 
         capturedPayload = payload
         return [{
           ts: 1700006400000,
-          power_w_type_group_sum_aggr: { 'S19-Pro': 3000000, 'S21': 2000000 }
+          power_w_type_group_sum_aggr: { 'S19-Pro': 3000000, S21: 2000000 }
         }]
       }
     }
@@ -427,12 +427,12 @@ test('getConsumption - grouped by miner uses type group aggregation', async (t) 
   t.is(capturedPayload.fields.power_w_type_group_sum, 1, 'should request type-group source field')
   t.is(capturedPayload.aggrFields.power_w_type_group_sum_aggr, 1, 'should request type-group aggregate field')
   t.is(result.log.length, 1, 'should map one grouped row')
-  t.alike(result.log[0].powerW, { 'S19-Pro': 3000000, 'S21': 2000000 }, 'should map grouped power value')
+  t.alike(result.log[0].powerW, { 'S19-Pro': 3000000, S21: 2000000 }, 'should map grouped power value')
   t.ok(result.log[0].consumptionMWh, 'should have consumptionMWh object')
   t.is(result.summary.totalConsumptionMWh, (5000000 * 24) / 1000000, 'should have site-wide total consumption')
   t.ok(result.summary.groupedBy, 'should have per-miner breakdown')
   t.is(result.summary.groupedBy['S19-Pro'].totalConsumptionMWh, (3000000 * 24) / 1000000, 'should have per-miner total')
-  t.is(result.summary.groupedBy['S21'].totalConsumptionMWh, (2000000 * 24) / 1000000, 'should have per-miner total')
+  t.is(result.summary.groupedBy.S21.totalConsumptionMWh, (2000000 * 24) / 1000000, 'should have per-miner total')
   t.pass()
 })
 
@@ -484,8 +484,8 @@ test('getConsumption - grouped mode handles empty results', async (t) => {
 
 test('calculateGroupedConsumptionSummary - calculates per-group and site-wide stats', (t) => {
   const log = [
-    { ts: 1700006400000, powerW: { 'S19-Pro': 3000000, 'S21': 2000000 } },
-    { ts: 1700092800000, powerW: { 'S19-Pro': 3500000, 'S21': 1500000 } }
+    { ts: 1700006400000, powerW: { 'S19-Pro': 3000000, S21: 2000000 } },
+    { ts: 1700092800000, powerW: { 'S19-Pro': 3500000, S21: 1500000 } }
   ]
 
   const summary = calculateGroupedConsumptionSummary(log, 'miner')
@@ -494,7 +494,7 @@ test('calculateGroupedConsumptionSummary - calculates per-group and site-wide st
   t.ok(summary.groupedBy, 'should have per-group breakdown')
   t.is(summary.groupedBy['S19-Pro'].avgPowerW, 3250000, 'should average per-group power')
   t.is(summary.groupedBy['S19-Pro'].totalConsumptionMWh, (6500000 * 24) / 1000000, 'should sum per-group consumption')
-  t.is(summary.groupedBy['S21'].avgPowerW, 1750000, 'should average per-group power')
+  t.is(summary.groupedBy.S21.avgPowerW, 1750000, 'should average per-group power')
   t.pass()
 })
 
