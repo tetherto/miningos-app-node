@@ -62,8 +62,8 @@ const createMockEquipment = () => ({
     { equipment: 'TC-7501', is_active: true, miner_side_out_temp: { value: 37.1, unit: '°C' }, tower_side_in_temp: { value: 29.2, unit: '°C' }, tower_side_out_temp: { value: 36.9, unit: '°C' }, tcv_position: { value: 55, unit: '%' } }
   ],
   cooling_towers: [
-    { equipment: 'TR-7501', is_running: true, fan_status: 'Running', fan_power: { value: 60, unit: 'kW' }, level: { value: 82, unit: '%' }, vibration: { value: 0.8, unit: 'mm/s', status: 'Normal' } },
-    { equipment: 'TR-7502', is_running: true, fan_status: 'Running', fan_power: { value: 45, unit: 'kW' }, level: { value: 85, unit: '%' }, vibration: { value: 0.6, unit: 'mm/s', status: 'Normal' } }
+    { equipment: 'TR-7501', is_running: true, fan_status: 'Running', fan_cv: { value: 60, unit: 'CV' }, level: { value: 82, unit: '%' }, vibration: { value: 0.8, unit: 'mm/s', status: 'Normal' } },
+    { equipment: 'TR-7502', is_running: true, fan_status: 'Running', fan_cv: { value: 45, unit: 'CV' }, level: { value: 85, unit: '%' }, vibration: { value: 0.6, unit: 'mm/s', status: 'Normal' } }
   ],
   valves: [
     { equipment: 'PCV-7502', position: { value: 12, unit: '%' } },
@@ -408,7 +408,7 @@ test('buildMinersCircuit2View - builds view from enriched equipment', (t) => {
   t.ok(view.heat_exchangers, 'should have heat_exchangers')
   t.ok(view.summary, 'should have summary')
   // Check enriched data with units
-  t.ok(view.cooling_towers[0].fan_power.unit, 'fan_power should have unit')
+  t.ok(view.cooling_towers[0].fan_cv.unit, 'fan_cv should have unit')
   t.ok(view.cooling_towers[0].level.unit, 'level should have unit')
   // Check tower sensor refs
   t.ok(view.cooling_towers[0].level_sensor, 'should have level_sensor ref')

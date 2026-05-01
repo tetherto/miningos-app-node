@@ -278,12 +278,13 @@ function buildMinersCircuit2View (equipment, config) {
     is_running: ct.is_running,
     fan_status: ct.fan_status,
     fan_speed: ct.fan_speed,
-    fan_power: ct.fan_power,
+    fan_cv: ct.fan_cv,
     fan_id: towerFanId,
     level: ct.level,
     level_sensor: towerLevelSensor,
     vibration: ct.vibration,
     vibration_sensor: towerVibrationSensorId,
+    vibration_threshold: ct.vibration_threshold || null,
     capacity_flow: towerConfig.defaults?.tower_capacity || null,
     capacity_gcal: towerConfig.defaults?.tower_capacity_gcal || null
   }))
@@ -667,12 +668,13 @@ function buildHvacCircuit2View (equipment, config) {
     is_running: ct.is_running,
     fan_status: ct.fan_status,
     fan_speed: ct.fan_speed,
-    fan_power: ct.fan_power,
+    fan_cv: ct.fan_cv,
     fan_id: towerFanId || null,
     level: ct.level,
     level_sensor: towerLevelSensorId || null,
     vibration: ct.vibration,
     vibration_sensor: towerVibrationSensorId || null,
+    vibration_threshold: ct.vibration_threshold || null,
     capacity_mcal: condenserConfig.defaults?.tower_capacity_mcal || null,
     capacity_flow: condenserConfig.defaults?.tower_flow || null
   }))
