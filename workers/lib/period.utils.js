@@ -26,12 +26,13 @@ const PERIOD_CALCULATORS = {
   }
 }
 
-const aggregateByPeriod = (log, period, nonMetricKeys = []) => {
+const aggregateByPeriod = (log, period, nonMetricKeys = [], options = {}) => {
   if (period === PERIOD_TYPES.DAILY) {
     return log
   }
 
   const allNonMetricKeys = new Set([...NON_METRIC_KEYS, ...nonMetricKeys])
+  const meanKeys = new Set(options.meanKeys || [])
 
   const grouped = log.reduce((acc, entry) => {
     let date
@@ -68,11 +69,17 @@ const aggregateByPeriod = (log, period, nonMetricKeys = []) => {
   }, {})
 
   const aggregatedResults = Object.entries(grouped).map(([groupKey, entries]) => {
+    const meanCounts = {}
     const aggregated = entries.reduce((acc, entry) => {
       Object.entries(entry).forEach(([key, val]) => {
         if (allNonMetricKeys.has(key)) {
           if (!acc[key] || acc[key] === null || acc[key] === undefined) {
             acc[key] = val
+          }
+        } else if (meanKeys.has(key)) {
+          if (val !== null && val !== undefined && !isNaN(Number(val))) {
+            acc[key] = (acc[key] || 0) + Number(val)
+            meanCounts[key] = (meanCounts[key] || 0) + 1
           }
         } else {
           const numVal = Number(val) || 0
@@ -81,6 +88,10 @@ const aggregateByPeriod = (log, period, nonMetricKeys = []) => {
       })
       return acc
     }, {})
+
+    for (const key of meanKeys) {
+      aggregated[key] = meanCounts[key] ? aggregated[key] / meanCounts[key] : null
+    }
 
     try {
       if (period === PERIOD_TYPES.MONTHLY) {

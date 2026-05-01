@@ -102,6 +102,7 @@ async function getEnergyBalance (ctx, req) {
 
     const powerW = consumption.powerW || 0
     const powerMWh = (powerW * 24) / 1000000
+    const sitePowerMW = powerW / 1000000
     const revenueBTC = transactions.revenueBTC || 0
     const revenueUSD = revenueBTC * btcPrice
 
@@ -133,6 +134,7 @@ async function getEnergyBalance (ctx, req) {
     log.push({
       ts,
       powerW,
+      sitePowerMW,
       consumptionMWh,
       revenueBTC,
       revenueUSD,
@@ -149,7 +151,16 @@ async function getEnergyBalance (ctx, req) {
     })
   }
 
-  const aggregated = aggregateByPeriod(log, period)
+  const aggregated = aggregateByPeriod(log, period, [], {
+    meanKeys: ['sitePowerMW', 'btcPrice', 'curtailmentRate', 'operationalIssuesRate', 'powerUtilization']
+  })
+
+  for (const entry of aggregated) {
+    entry.energyRevenueBTC_MW = entry.sitePowerMW > 0 ? entry.revenueBTC / entry.sitePowerMW : 0
+    entry.energyRevenueUSD_MW = entry.sitePowerMW > 0 ? entry.revenueUSD / entry.sitePowerMW : 0
+  }
+  aggregated.sort((a, b) => Number(a.ts) - Number(b.ts))
+
   const summary = calculateSummary(aggregated)
 
   return { log: aggregated, summary }
@@ -250,7 +261,10 @@ function calculateSummary (log) {
       totalCostUSD: 0,
       totalProfitUSD: 0,
       avgCostPerMWh: null,
+      avgEnergyCostPerMWh: null,
+      avgOperationalCostPerMWh: null,
       avgRevenuePerMWh: null,
+      avgPowerConsumption: 0,
       totalConsumptionMWh: 0,
       avgCurtailmentRate: null,
       avgOperationalIssuesRate: null,
@@ -261,9 +275,14 @@ function calculateSummary (log) {
   const totals = log.reduce((acc, entry) => {
     acc.revenueBTC += entry.revenueBTC || 0
     acc.revenueUSD += entry.revenueUSD || 0
+    acc.energyCostUSD += entry.energyCostUSD || 0
     acc.costUSD += entry.totalCostUSD || 0
     acc.profitUSD += entry.profitUSD || 0
     acc.consumptionMWh += entry.consumptionMWh || 0
+    if (entry.sitePowerMW !== null && entry.sitePowerMW !== undefined) {
+      acc.sitePowerMWSum += entry.sitePowerMW
+      acc.sitePowerMWCount++
+    }
     if (entry.curtailmentRate !== null && entry.curtailmentRate !== undefined) {
       acc.curtailmentRateSum += entry.curtailmentRate
       acc.curtailmentRateCount++
@@ -280,9 +299,12 @@ function calculateSummary (log) {
   }, {
     revenueBTC: 0,
     revenueUSD: 0,
+    energyCostUSD: 0,
     costUSD: 0,
     profitUSD: 0,
     consumptionMWh: 0,
+    sitePowerMWSum: 0,
+    sitePowerMWCount: 0,
     curtailmentRateSum: 0,
     curtailmentRateCount: 0,
     operationalIssuesRateSum: 0,
@@ -297,7 +319,10 @@ function calculateSummary (log) {
     totalCostUSD: totals.costUSD,
     totalProfitUSD: totals.profitUSD,
     avgCostPerMWh: safeDiv(totals.costUSD, totals.consumptionMWh),
+    avgEnergyCostPerMWh: safeDiv(totals.energyCostUSD, totals.consumptionMWh),
+    avgOperationalCostPerMWh: safeDiv(totals.costUSD - totals.energyCostUSD, totals.consumptionMWh),
     avgRevenuePerMWh: safeDiv(totals.revenueUSD, totals.consumptionMWh),
+    avgPowerConsumption: safeDiv(totals.sitePowerMWSum, totals.sitePowerMWCount),
     totalConsumptionMWh: totals.consumptionMWh,
     avgCurtailmentRate: safeDiv(totals.curtailmentRateSum, totals.curtailmentRateCount),
     avgOperationalIssuesRate: safeDiv(totals.operationalIssuesRateSum, totals.operationalIssuesRateCount),
