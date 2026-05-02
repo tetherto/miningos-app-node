@@ -2,7 +2,7 @@
 
 const async = require('async')
 const WebsocketPlugin = require('@fastify/websocket')
-const TetherWrkBase = require('tether-wrk-base/workers/base.wrk.tether')
+const TetherWrkBase = require('@tetherto/tether-wrk-base/workers/base.wrk.tether')
 const AuthLib = require('./lib/auth')
 const debug = require('debug')('store:aggr')
 const libServer = require('./lib/server')
@@ -41,15 +41,15 @@ class WrkServerHttp extends TetherWrkBase {
     this._loadOptionalConfig()
 
     this.setInitFacs([
-      ['fac', 'bfx-facs-interval', '0', '0', {}, -10],
-      ['fac', 'bfx-facs-lru', '10s', '10s', { max: 10000, maxAge: 10000 }],
-      ['fac', 'bfx-facs-lru', '15s', '15s', { max: 10000, maxAge: 15000 }],
-      ['fac', 'bfx-facs-lru', '30s', '30s', { max: 10000, maxAge: 30000 }],
-      ['fac', 'bfx-facs-lru', '1m', '1m', { max: 10000, maxAge: AUTH_CACHE_TTL }],
-      ['fac', 'bfx-facs-lru', '15m', '15m', { max: 10000, maxAge: 60000 * 15 }],
-      ['fac', 'bfx-facs-db-sqlite', 'auth', 'auth', { name: 'miningos-app-node', persist: true }],
-      ['fac', 'bfx-facs-http', 'c0', 'c0', { timeout: 30000, debug: false }, 0],
-      ['fac', 'svc-facs-httpd', 'h0', 'h0', {
+      ['fac', '@bitfinex/bfx-facs-interval', '0', '0', {}, -10],
+      ['fac', '@bitfinex/bfx-facs-lru', '10s', '10s', { max: 10000, maxAge: 10000 }],
+      ['fac', '@bitfinex/bfx-facs-lru', '15s', '15s', { max: 10000, maxAge: 15000 }],
+      ['fac', '@bitfinex/bfx-facs-lru', '30s', '30s', { max: 10000, maxAge: 30000 }],
+      ['fac', '@bitfinex/bfx-facs-lru', '1m', '1m', { max: 10000, maxAge: AUTH_CACHE_TTL }],
+      ['fac', '@bitfinex/bfx-facs-lru', '15m', '15m', { max: 10000, maxAge: 60000 * 15 }],
+      ['fac', '@bitfinex/bfx-facs-db-sqlite', 'auth', 'auth', { name: 'miningos-app-node', persist: true }],
+      ['fac', '@bitfinex/bfx-facs-http', 'c0', 'c0', { timeout: 30000, debug: false }, 0],
+      ['fac', '@tetherto/svc-facs-httpd', 'h0', 'h0', {
         staticRootPath: this.conf.staticRootPath,
         staticOn404File: 'index.html',
         port: this.ctx.port,
@@ -57,9 +57,9 @@ class WrkServerHttp extends TetherWrkBase {
         addDefaultRoutes: true,
         trustProxy: true
       }, 0],
-      ['fac', 'svc-facs-httpd-oauth2', 'h0', 'h0', {}, 0],
-      ['fac', 'svc-facs-httpd-oauth2', 'h1', 'h1', {}, 0],
-      ['fac', 'svc-facs-auth', 'a0', 'a0', () => ({
+      ['fac', '@tetherto/svc-facs-httpd-oauth2', 'h0', 'h0', {}, 0],
+      ['fac', '@tetherto/svc-facs-httpd-oauth2', 'h1', 'h1', {}, 0],
+      ['fac', '@tetherto/svc-facs-auth', 'a0', 'a0', () => ({
         sqlite: this.dbSqlite_auth,
         lru: this.lru_15m
       }), 3]

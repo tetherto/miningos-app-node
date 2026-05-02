@@ -94,24 +94,21 @@ test('ws routes - handler adds client to wsClients', async (t) => {
 
   const wsRoute = routes.find(r => r.websocket === true)
   if (wsRoute?.handler) {
-    const mockConn = {
-      socket: {
-        subscriptions: new Set(),
-        on: function (event, handler) {
-          if (event === 'close' || event === 'error') {
-            // Store handlers for testing
-            this._closeHandler = handler
-            this._errorHandler = handler
-          } else if (event === 'message') {
-            this._messageHandler = handler
-          }
-        },
-        send: function () {}
-      }
+    const mockSocket = {
+      subscriptions: new Set(),
+      on: function (event, handler) {
+        if (event === 'close' || event === 'error') {
+          this._closeHandler = handler
+          this._errorHandler = handler
+        } else if (event === 'message') {
+          this._messageHandler = handler
+        }
+      },
+      send: function () {}
     }
 
-    await wsRoute.handler(mockConn)
-    t.ok(mockCtx.wsClients.has(mockConn.socket), 'should add socket to wsClients')
+    await wsRoute.handler(mockSocket)
+    t.ok(mockCtx.wsClients.has(mockSocket), 'should add socket to wsClients')
   }
 
   t.pass()

@@ -4,7 +4,7 @@ const test = require('brittle')
 const fs = require('fs')
 const { createWorker } = require('tether-svc-test-helper').worker
 const { setTimeout: sleep } = require('timers/promises')
-const HttpFacility = require('bfx-facs-http')
+const HttpFacility = require('@bitfinex/bfx-facs-http')
 const { ENDPOINTS } = require('../../workers/lib/constants')
 const { MOCK_MINERS: mockMiners } = require('./helpers/mock-data')
 
@@ -1007,7 +1007,8 @@ test('Api', { timeout: 90000 }, async (main) => {
 
   await main.test('Api: delete actions/voting/cancel', async (n) => {
     const api = `${appNodeBaseUrl}${ENDPOINTS.ACTIONS_CANCEL}?ids=1`
-    await testDeleteEndpointSecurityWithPermissions(n, httpClient, api, invalidToken, readonlyUser, 'ERR_WRITE_PERM_REQUIRED', siteOperatorUser, {}, encoding)
+    // Fastify rejects application/json with an empty body; send {} so json encoding is valid
+    await testDeleteEndpointSecurityWithPermissions(n, httpClient, api, invalidToken, readonlyUser, 'ERR_WRITE_PERM_REQUIRED', siteOperatorUser, { body: {} }, encoding)
   })
 
   await main.test('Api: post users', async (n) => {
