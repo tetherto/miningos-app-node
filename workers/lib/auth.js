@@ -1,18 +1,18 @@
 'use strict'
 const { SUPER_ADMIN_ID, MIGRATED_USER_ROLES } = require('./constants')
 
-function _permsMatch (perms, perm) {
-  const [key, required] = perm.split(':')
-  const av = perms.find(p => p.startsWith(`${key}:`))?.split(':')[1] ?? ''
-  return [...required].every(c => av.includes(c))
-}
-
 class AuthLib {
   constructor ({ httpc, httpd, userService, auth }) {
     this._httpc = httpc
     this._httpd = httpd
     this._userService = userService
     this._auth = auth
+  }
+
+  _permsMatch (perms, perm) {
+    const [key, required] = perm.split(':')
+    const av = perms.find(p => p.startsWith(`${key}:`))?.split(':')[1] ?? ''
+    return [...required].every(c => av.includes(c))
   }
 
   async migrateUsers (httpdAuth) {
@@ -70,7 +70,7 @@ class AuthLib {
 
   async getTokenPerms (token) {
     const { superadmin: superAdmin, perms = [] } = this._auth.getTokenPerms(token)
-    const write = superAdmin || _permsMatch(perms, 'actions:w')
+    const write = superAdmin || this._permsMatch(perms, 'actions:w')
     const applicablePerms = superAdmin ? (this._auth.conf.superAdminPerms ?? []) : perms
     const caps = applicablePerms.map(perm => perm.split(':')[0])
 
@@ -87,7 +87,7 @@ class AuthLib {
       return false
     }
 
-    const resolved = requestedPerms.map(perm => _permsMatch(perms.permissions, perm))
+    const resolved = requestedPerms.map(perm => this._permsMatch(perms.permissions, perm))
 
     return matchAll
       ? resolved.every(res => res)
