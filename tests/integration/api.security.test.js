@@ -4,7 +4,7 @@ const test = require('brittle')
 const fs = require('fs')
 const { createWorker } = require('tether-svc-test-helper').worker
 const { setTimeout: sleep } = require('timers/promises')
-const HttpFacility = require('bfx-facs-http')
+const HttpFacility = require('@bitfinex/bfx-facs-http')
 const { ENDPOINTS } = require('../../workers/lib/constants')
 
 test('Api security', { timeout: 90000 }, async (main) => {
@@ -48,7 +48,10 @@ test('Api security', { timeout: 90000 }, async (main) => {
     const commonConf = { dir_log: 'logs', debug: 0, orks: { 'cluster-1': { rpcPublicKey: '' } }, cacheTiming: {}, featureConfig: {} }
     const netConf = { r0: {} }
     const httpdConf = { h0: {} }
-    const httpdOauthConf = { h0: { method: 'google', credentials: { client: { id: 'i', secret: 's' } }, users: [{ email: readonlyUser }, { email: tokenExpiredUser }, { email: siteOperatorUser, write: true }] } }
+    const httpdOauthConf = {
+      h0: { method: 'google', credentials: { client: { id: 'i', secret: 's' } }, users: [{ email: readonlyUser }, { email: tokenExpiredUser }, { email: siteOperatorUser, write: true }] },
+      h1: { method: 'microsoft', credentials: { client: { id: 'i', secret: 's' }, tenant: 'test-tenant' }, users: [] }
+    }
     const authConf = require('../../config/facs/auth.config.json')
     superadminUser = authConf.a0.superAdmin
 

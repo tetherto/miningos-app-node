@@ -107,8 +107,8 @@ test('ws routes - handler adds client to wsClients', async (t) => {
       send: function () {}
     }
 
-    await wsRoute.handler(mockConn.socket, {})
-    t.ok(mockCtx.wsClients.has(mockConn.socket), 'should add socket to wsClients')
+    await wsRoute.handler(mockSocket, {})
+    t.ok(mockCtx.wsClients.has(mockSocket), 'should add socket to wsClients')
   }
 
   t.pass()
