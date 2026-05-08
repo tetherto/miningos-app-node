@@ -1,6 +1,6 @@
 'use strict'
 
-const gLibUtilBase = require('lib-js-util-base')
+const gLibUtilBase = require('@bitfinex/lib-js-util-base')
 const { parseJsonQueryParam, requestRpcMapLimit, getAuthTokenFromHeaders } = require('../../utils')
 
 async function getUserInfo (ctx, req) {

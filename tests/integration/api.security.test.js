@@ -2,9 +2,9 @@
 
 const test = require('brittle')
 const fs = require('fs')
-const { createWorker } = require('tether-svc-test-helper').worker
+const { createWorker } = require('@tetherto/tether-svc-test-helper').worker
 const { setTimeout: sleep } = require('timers/promises')
-const HttpFacility = require('bfx-facs-http')
+const HttpFacility = require('@bitfinex/bfx-facs-http')
 const { ENDPOINTS } = require('../../workers/lib/constants')
 
 test('Api security', { timeout: 90000 }, async (main) => {
