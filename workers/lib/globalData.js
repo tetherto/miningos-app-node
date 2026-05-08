@@ -1,9 +1,9 @@
 'use strict'
 
-const utilsStore = require('hp-svc-facs-store/utils')
+const utilsStore = require('@tetherto/hp-svc-facs-store/utils')
 const mingo = require('mingo')
 const { GLOBAL_DATA_TYPES, USER_SETTINGS_TYPE } = require('./constants')
-const gLibUtilBase = require('lib-js-util-base')
+const gLibUtilBase = require('@bitfinex/lib-js-util-base')
 const { isValidJsonObject } = require('./utils')
 
 class GlobalDataLib {

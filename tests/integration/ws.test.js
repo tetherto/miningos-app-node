@@ -3,7 +3,7 @@
 const test = require('brittle')
 const fs = require('fs')
 const WebSocket = require('ws')
-const { createWorker } = require('tether-svc-test-helper').worker
+const { createWorker } = require('@tetherto/tether-svc-test-helper').worker
 const { setTimeout: sleep } = require('timers/promises')
 const { ENDPOINTS } = require('../../workers/lib/constants')
 
