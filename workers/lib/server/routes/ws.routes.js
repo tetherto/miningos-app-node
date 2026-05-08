@@ -10,7 +10,7 @@ module.exports = (ctx) => [{
   onRequest: async (req, rep) => {
     await authCheck(ctx, req, rep, req.query.token)
   },
-  handler: async (socket) => {
+  handler: async (socket, _request) => {
     socket.subscriptions = new Set()
 
     ctx.wsClients.add(socket)

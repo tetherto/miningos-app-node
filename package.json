@@ -1,7 +1,8 @@
 {
-  "name": "miningos-app-node",
-  "version": "0.0.1",
-  "description": "MiningOS App Node",
+  "name": "@tetherto/miningos-app-node",
+  "version": "1.0.0",
+  "description": "MiningOS App Node service",
+  "main": "worker.js",
   "keywords": [
     "tether"
   ],
@@ -11,15 +12,27 @@
     "type": "git",
     "url": "git+https://github.com/tetherto/miningos-app-node.git"
   },
-  "engine": {
-    "node": ">=20.0"
+  "homepage": "https://github.com/tetherto/miningos-app-node#readme",
+  "bugs": {
+    "url": "https://github.com/tetherto/miningos-app-node/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "worker.js",
+    "workers/"
+  ],
+  "type": "commonjs",
+  "bin": {
+    "miningos-app-node": "worker.js"
   },
   "scripts": {
     "lint": "standard",
     "lint:fix": "standard --fix",
     "test": "npm run lint && npm run test:unit && npm run test:integration",
     "test:unit": "NODE_ENV=test brittle tests/unit/**/*.test.js",
-    "test:integration": "NODE_ENV=test npx brittle tests/integration/*.test.js",
+    "test:integration": "NODE_ENV=test npx brittle tests/integration/api.security.test.js && NODE_ENV=test npx brittle tests/integration/api.test.js && NODE_ENV=test npx brittle tests/integration/ws.test.js",
     "test:api": "NODE_ENV=test npx brittle tests/integration/api.test.js",
     "test:ws": "NODE_ENV=test npx brittle tests/integration/ws.test.js",
     "test:watch": "brittle tests/unit/**/*.js --watch",
