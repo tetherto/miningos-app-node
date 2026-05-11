@@ -5,10 +5,10 @@ const schemas = {
     groupsStats: {
       type: 'object',
       properties: {
-        containers: { type: 'string' },
+        racks: { type: 'string' },
         overwriteCache: { type: 'boolean' }
       },
-      required: ['containers']
+      required: ['racks']
     }
   }
 }

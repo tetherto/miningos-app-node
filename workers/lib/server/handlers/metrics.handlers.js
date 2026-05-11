@@ -9,7 +9,8 @@ const {
   MINER_CATEGORIES,
   LOG_KEYS,
   WORKER_TAGS,
-  DEVICE_LIST_FIELDS
+  DEVICE_LIST_FIELDS,
+  LOG_FIELDS
 } = require('../../constants')
 const {
   getStartOfDay,
@@ -25,11 +26,14 @@ const {
   resolveInterval,
   getIntervalConfig
 } = require('../../metrics.utils')
+
 async function getHashrate (ctx, req) {
   const { start, end } = validateStartEnd(req)
 
   const startDate = new Date(start).toISOString()
   const endDate = new Date(end).toISOString()
+
+  if (req.query.groupBy) return getGoupedHashrate(ctx, req)
 
   const results = await ctx.dataProxy.requestData(RPC_METHODS.TAIL_LOG_RANGE_AGGR, {
     keys: [{
@@ -48,6 +52,37 @@ async function getHashrate (ctx, req) {
   }))
 
   const summary = calculateHashrateSummary(log)
+
+  return { log, summary }
+}
+
+async function getGoupedHashrate (ctx, req) {
+  const { groupBy, start, end } = req.query
+
+  const field = groupBy === WORKER_TYPES.MINER
+    ? LOG_FIELDS.HASHRATE_SUM_TYPE_GROUP
+    : LOG_FIELDS.HASHRATE_SUM_CONTAINER_GROUP
+
+  const aggrField = groupBy === WORKER_TYPES.MINER
+    ? AGGR_FIELDS.HASHRATE_SUM_TYPE_GROUP_AGGR
+    : AGGR_FIELDS.HASHRATE_SUM_CONTAINER_GROUP_AGGR
+
+  const res = await ctx.dataProxy.requestData(RPC_METHODS.TAIL_LOG, {
+    type: WORKER_TYPES.MINER,
+    tag: WORKER_TAGS.MINER,
+    key: LOG_KEYS.STAT_1D,
+    start,
+    end,
+    fields: { [field]: 1 },
+    aggrFields: { [aggrField]: 1 }
+  })
+
+  const log = res[0].reduce((aggr, val) => {
+    aggr.push({ ts: val.ts, hashrateMhs: val[aggrField] })
+    return aggr
+  }, [])
+
+  const summary = calculateGroupedHashrateSummary(log, groupBy)
 
   return { log, summary }
 }
@@ -79,8 +114,49 @@ function calculateHashrateSummary (log) {
   }
 }
 
+function calculateGroupedHashrateSummary (log, groupBy) {
+  if (!log.length) {
+    return {
+      avgHashrateMhs: null,
+      totalHashrateMhs: 0
+    }
+  }
+
+  const groupTotals = {}
+  const groupCounts = {}
+
+  for (const entry of log) {
+    const hashrate = entry.hashrateMhs
+    if (typeof hashrate === 'object' && hashrate !== null) {
+      for (const [name, val] of Object.entries(hashrate)) {
+        const v = Number(val) || 0
+        groupTotals[name] = (groupTotals[name] || 0) + v
+        groupCounts[name] = (groupCounts[name] || 0) + 1
+      }
+    }
+  }
+
+  const byGroup = {}
+  let siteTotal = 0
+  for (const [name, total] of Object.entries(groupTotals)) {
+    byGroup[name] = {
+      avgHashrateMhs: safeDiv(total, groupCounts[name]),
+      totalHashrateMhs: total
+    }
+    siteTotal += total
+  }
+
+  return {
+    avgHashrateMhs: safeDiv(siteTotal, log.length),
+    totalHashrateMhs: siteTotal,
+    groupedBy: byGroup
+  }
+}
+
 async function getConsumption (ctx, req) {
   const { start, end } = validateStartEnd(req)
+
+  if (req.query.groupBy) return getGroupedConsumption(ctx, req)
 
   const startDate = new Date(start).toISOString()
   const endDate = new Date(end).toISOString()
@@ -136,6 +212,88 @@ function calculateConsumptionSummary (log) {
   return {
     avgPowerW: safeDiv(totalPower, log.length),
     totalConsumptionMWh: totalConsumption
+  }
+}
+
+async function getGroupedConsumption (ctx, req) {
+  const { groupBy, start, end } = req.query
+
+  const isMinerGroup = groupBy === WORKER_TYPES.MINER
+
+  const field = isMinerGroup
+    ? LOG_FIELDS.POWER_W_TYPE_GROUP_SUM
+    : LOG_FIELDS.POWER_W_CONTAINER_GROUP_SUM
+
+  const aggrField = isMinerGroup
+    ? AGGR_FIELDS.POWER_W_TYPE_GROUP_SUM
+    : AGGR_FIELDS.POWER_W_CONTAINER_GROUP_SUM
+
+  const res = await ctx.dataProxy.requestData(RPC_METHODS.TAIL_LOG, {
+    type: WORKER_TYPES.MINER,
+    tag: WORKER_TAGS.MINER,
+    key: LOG_KEYS.STAT_1D,
+    start,
+    end,
+    fields: { [field]: 1 },
+    aggrFields: { [aggrField]: 1 }
+  })
+
+  const log = res[0].reduce((aggr, val) => {
+    const powerW = val[aggrField]
+    aggr.push({
+      ts: val.ts,
+      powerW,
+      consumptionMWh: typeof powerW === 'object' && powerW !== null
+        ? Object.fromEntries(
+          Object.entries(powerW).map(([k, v]) => [k, (Number(v) || 0) * 24 / 1000000])
+        )
+        : null
+    })
+    return aggr
+  }, [])
+
+  const summary = calculateGroupedConsumptionSummary(log, groupBy)
+
+  return { log, summary }
+}
+
+function calculateGroupedConsumptionSummary (log, groupBy) {
+  if (!log.length) {
+    return {
+      avgPowerW: null,
+      totalConsumptionMWh: 0
+    }
+  }
+
+  const groupTotals = {}
+  const groupCounts = {}
+
+  for (const entry of log) {
+    const powerW = entry.powerW
+    if (typeof powerW === 'object' && powerW !== null) {
+      for (const [name, val] of Object.entries(powerW)) {
+        const v = Number(val) || 0
+        groupTotals[name] = (groupTotals[name] || 0) + v
+        groupCounts[name] = (groupCounts[name] || 0) + 1
+      }
+    }
+  }
+
+  const byGroup = {}
+  let siteTotal = 0
+  for (const [name, total] of Object.entries(groupTotals)) {
+    const avgPowerW = safeDiv(total, groupCounts[name])
+    byGroup[name] = {
+      avgPowerW,
+      totalConsumptionMWh: (total * 24) / 1000000
+    }
+    siteTotal += total
+  }
+
+  return {
+    avgPowerW: safeDiv(siteTotal, log.length),
+    totalConsumptionMWh: (siteTotal * 24) / 1000000,
+    groupedBy: byGroup
   }
 }
 
@@ -695,9 +853,11 @@ module.exports = {
   getHashrate,
   processHashrateData,
   calculateHashrateSummary,
+  calculateGroupedHashrateSummary,
   getConsumption,
   processConsumptionData,
   calculateConsumptionSummary,
+  calculateGroupedConsumptionSummary,
   getEfficiency,
   processEfficiencyData,
   calculateEfficiencySummary,

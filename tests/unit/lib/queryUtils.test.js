@@ -8,7 +8,7 @@ const {
   buildSearchQuery,
   flattenOrkResults,
   sortItems,
-  parseContainers,
+  parseRacks,
   paginateResults
 } = require('../../../workers/lib/server/lib/queryUtils')
 
@@ -277,28 +277,28 @@ test('paginateResults - offset beyond total', (t) => {
   t.pass()
 })
 
-// ==================== parseContainers Tests ====================
+// ==================== parseRacks Tests ====================
 
-test('parseContainers - parses comma-separated containers', (t) => {
-  const result = parseContainers({ query: { containers: 'C-01,C-02,C-03' } })
-  t.alike(result, ['C-01', 'C-02', 'C-03'], 'should split on commas')
+test('parseRacks - parses comma-separated racks', (t) => {
+  const result = parseRacks({ query: { racks: 'group-1,group-2,group-3' } })
+  t.alike(result, ['group-1', 'group-2', 'group-3'], 'should split on commas')
   t.pass()
 })
 
-test('parseContainers - trims whitespace', (t) => {
-  const result = parseContainers({ query: { containers: 'C-01 , C-02 , C-03' } })
-  t.alike(result, ['C-01', 'C-02', 'C-03'], 'should trim spaces')
+test('parseRacks - trims whitespace', (t) => {
+  const result = parseRacks({ query: { racks: 'group-1 , group-2 , group-3' } })
+  t.alike(result, ['group-1', 'group-2', 'group-3'], 'should trim spaces')
   t.pass()
 })
 
-test('parseContainers - returns undefined when no containers', (t) => {
-  t.is(parseContainers({ query: {} }), undefined, 'missing containers returns undefined')
-  t.is(parseContainers({ query: { containers: '' } }), undefined, 'empty string returns undefined')
+test('parseRacks - returns undefined when no racks', (t) => {
+  t.is(parseRacks({ query: {} }), undefined, 'missing racks returns undefined')
+  t.is(parseRacks({ query: { racks: '' } }), undefined, 'empty string returns undefined')
   t.pass()
 })
 
-test('parseContainers - single container', (t) => {
-  const result = parseContainers({ query: { containers: 'C-01' } })
-  t.alike(result, ['C-01'], 'single container returns array with one element')
+test('parseRacks - single rack', (t) => {
+  const result = parseRacks({ query: { racks: 'group-1' } })
+  t.alike(result, ['group-1'], 'single rack returns array with one element')
   t.pass()
 })

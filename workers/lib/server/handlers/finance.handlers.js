@@ -102,6 +102,7 @@ async function getEnergyBalance (ctx, req) {
 
     const powerW = consumption.powerW || 0
     const powerMWh = (powerW * 24) / 1000000
+    const sitePowerMW = powerW / 1000000
     const revenueBTC = transactions.revenueBTC || 0
     const revenueUSD = revenueBTC * btcPrice
 
@@ -133,6 +134,7 @@ async function getEnergyBalance (ctx, req) {
     log.push({
       ts,
       powerW,
+      sitePowerMW,
       consumptionMWh,
       revenueBTC,
       revenueUSD,
@@ -149,7 +151,16 @@ async function getEnergyBalance (ctx, req) {
     })
   }
 
-  const aggregated = aggregateByPeriod(log, period)
+  const aggregated = aggregateByPeriod(log, period, [], {
+    meanKeys: ['sitePowerMW', 'btcPrice', 'curtailmentRate', 'operationalIssuesRate', 'powerUtilization']
+  })
+
+  for (const entry of aggregated) {
+    entry.energyRevenueBTC_MW = entry.sitePowerMW > 0 ? entry.revenueBTC / entry.sitePowerMW : 0
+    entry.energyRevenueUSD_MW = entry.sitePowerMW > 0 ? entry.revenueUSD / entry.sitePowerMW : 0
+  }
+  aggregated.sort((a, b) => Number(a.ts) - Number(b.ts))
+
   const summary = calculateSummary(aggregated)
 
   return { log: aggregated, summary }
@@ -250,7 +261,10 @@ function calculateSummary (log) {
       totalCostUSD: 0,
       totalProfitUSD: 0,
       avgCostPerMWh: null,
+      avgEnergyCostPerMWh: null,
+      avgOperationalCostPerMWh: null,
       avgRevenuePerMWh: null,
+      avgPowerConsumption: 0,
       totalConsumptionMWh: 0,
       avgCurtailmentRate: null,
       avgOperationalIssuesRate: null,
@@ -261,9 +275,14 @@ function calculateSummary (log) {
   const totals = log.reduce((acc, entry) => {
     acc.revenueBTC += entry.revenueBTC || 0
     acc.revenueUSD += entry.revenueUSD || 0
+    acc.energyCostUSD += entry.energyCostUSD || 0
     acc.costUSD += entry.totalCostUSD || 0
     acc.profitUSD += entry.profitUSD || 0
     acc.consumptionMWh += entry.consumptionMWh || 0
+    if (entry.sitePowerMW !== null && entry.sitePowerMW !== undefined) {
+      acc.sitePowerMWSum += entry.sitePowerMW
+      acc.sitePowerMWCount++
+    }
     if (entry.curtailmentRate !== null && entry.curtailmentRate !== undefined) {
       acc.curtailmentRateSum += entry.curtailmentRate
       acc.curtailmentRateCount++
@@ -280,9 +299,12 @@ function calculateSummary (log) {
   }, {
     revenueBTC: 0,
     revenueUSD: 0,
+    energyCostUSD: 0,
     costUSD: 0,
     profitUSD: 0,
     consumptionMWh: 0,
+    sitePowerMWSum: 0,
+    sitePowerMWCount: 0,
     curtailmentRateSum: 0,
     curtailmentRateCount: 0,
     operationalIssuesRateSum: 0,
@@ -297,7 +319,10 @@ function calculateSummary (log) {
     totalCostUSD: totals.costUSD,
     totalProfitUSD: totals.profitUSD,
     avgCostPerMWh: safeDiv(totals.costUSD, totals.consumptionMWh),
+    avgEnergyCostPerMWh: safeDiv(totals.energyCostUSD, totals.consumptionMWh),
+    avgOperationalCostPerMWh: safeDiv(totals.costUSD - totals.energyCostUSD, totals.consumptionMWh),
     avgRevenuePerMWh: safeDiv(totals.revenueUSD, totals.consumptionMWh),
+    avgPowerConsumption: safeDiv(totals.sitePowerMWSum, totals.sitePowerMWCount),
     totalConsumptionMWh: totals.consumptionMWh,
     avgCurtailmentRate: safeDiv(totals.curtailmentRateSum, totals.curtailmentRateCount),
     avgOperationalIssuesRate: safeDiv(totals.operationalIssuesRateSum, totals.operationalIssuesRateCount),
@@ -432,8 +457,9 @@ function processTailLogData (results) {
         for (const item of items) {
           const ts = getStartOfDay(item.ts || item.timestamp)
           if (!daily[ts]) daily[ts] = { powerW: 0, hashrateMhs: 0 }
-          daily[ts].powerW += (item[AGGR_FIELDS.SITE_POWER] || 0)
-          daily[ts].hashrateMhs += (item[AGGR_FIELDS.HASHRATE_SUM] || 0)
+          const val = item.val || item
+          daily[ts].powerW += (val[AGGR_FIELDS.SITE_POWER] || 0)
+          daily[ts].hashrateMhs += (val[AGGR_FIELDS.HASHRATE_SUM] || 0)
         }
       }
     }
@@ -449,19 +475,21 @@ function processEbitdaPrices (results) {
     if (!Array.isArray(data)) continue
     for (const entry of data) {
       if (!entry) continue
-      const items = entry.data || entry.prices || entry
+      const rawTs = entry.ts || entry.timestamp || entry.time
+      const items = rawTs ? [entry] : (entry.data || entry.prices || entry)
       if (Array.isArray(items)) {
         for (const item of items) {
           const ts = getStartOfDay(item.ts || item.timestamp || item.time)
-          if (ts && item.price) {
-            daily[ts] = item.price
+          const price = item.priceUSD || item.price
+          if (ts && price) {
+            daily[ts] = price
           }
         }
-      } else if (typeof items === 'object' && !Array.isArray(items)) {
+      } else if (typeof items === 'object') {
         for (const [key, val] of Object.entries(items)) {
           const ts = getStartOfDay(Number(key))
           if (ts) {
-            daily[ts] = typeof val === 'object' ? (val.USD || val.price || 0) : Number(val) || 0
+            daily[ts] = typeof val === 'object' ? (val.USD || val.priceUSD || val.price || 0) : Number(val) || 0
           }
         }
       }
@@ -518,7 +546,7 @@ async function getCostSummary (ctx, req) {
 
     (cb) => ctx.dataProxy.requestData(RPC_METHODS.GET_WRK_EXT_DATA, {
       type: WORKER_TYPES.MEMPOOL,
-      query: { key: 'prices', start, end }
+      query: { key: 'HISTORICAL_PRICES', start, end }
     }).then(r => cb(null, r)).catch(cb),
 
     (cb) => ctx.dataProxy.requestData(RPC_METHODS.TAIL_LOG_RANGE_AGGR, {
@@ -628,7 +656,8 @@ async function getSubsidyFees (ctx, req) {
     log.push({
       ts,
       blockReward: block.blockReward,
-      blockTotalFees: block.blockTotalFees
+      blockTotalFees: block.blockTotalFees,
+      blockSize: block.blockSize
     })
   }
 
@@ -643,22 +672,27 @@ function calculateSubsidyFeesSummary (log) {
     return {
       totalBlockReward: 0,
       totalBlockTotalFees: 0,
+      totalBlockSize: 0,
       avgBlockReward: null,
-      avgBlockTotalFees: null
+      avgBlockTotalFees: null,
+      avgBlockSize: null
     }
   }
 
   const totals = log.reduce((acc, entry) => {
     acc.blockReward += entry.blockReward || 0
     acc.blockTotalFees += entry.blockTotalFees || 0
+    acc.blockSize += entry.blockSize || 0
     return acc
-  }, { blockReward: 0, blockTotalFees: 0 })
+  }, { blockReward: 0, blockTotalFees: 0, blockSize: 0 })
 
   return {
     totalBlockReward: totals.blockReward,
     totalBlockTotalFees: totals.blockTotalFees,
+    totalBlockSize: totals.blockSize,
     avgBlockReward: safeDiv(totals.blockReward, log.length),
-    avgBlockTotalFees: safeDiv(totals.blockTotalFees, log.length)
+    avgBlockTotalFees: safeDiv(totals.blockTotalFees, log.length),
+    avgBlockSize: safeDiv(totals.blockSize, log.length)
   }
 }
 
@@ -879,6 +913,7 @@ async function getRevenueSummary (ctx, req) {
       hashRevenueUSDPerPHsPerDay: safeDiv(revenueUSD, hashratePhs),
       blockReward: block.blockReward || 0,
       blockTotalFees: block.blockTotalFees || 0,
+      blockSize: block.blockSize || 0,
       curtailmentMWh,
       curtailmentRate,
       operationalIssuesRate,
@@ -1087,7 +1122,8 @@ function processHashrateData (results) {
           const ts = getStartOfDay(item.ts || item.timestamp)
           if (!ts) continue
           if (!daily[ts]) daily[ts] = 0
-          daily[ts] += (item[AGGR_FIELDS.HASHRATE_SUM] || 0)
+          const val = item.val || item
+          daily[ts] += (val[AGGR_FIELDS.HASHRATE_SUM] || 0)
         }
       }
     }
@@ -1103,18 +1139,19 @@ function processNetworkHashrateData (results) {
     if (!Array.isArray(data)) continue
     for (const entry of data) {
       if (!entry) continue
-      const items = entry.data || entry
+      const rawTs = entry.ts || entry.timestamp || entry.time
+      const items = rawTs ? [entry] : (entry.data || entry)
       if (Array.isArray(items)) {
         for (const item of items) {
           if (!item) continue
-          const rawTs = item.ts || item.timestamp || item.time
-          const ts = getStartOfDay(normalizeTimestampMs(rawTs))
+          const itemTs = item.ts || item.timestamp || item.time
+          const ts = getStartOfDay(normalizeTimestampMs(itemTs))
           if (!ts) continue
           if (item.avgHashrateMHs) {
             daily[ts] = item.avgHashrateMHs
           }
         }
-      } else if (typeof items === 'object' && !Array.isArray(items)) {
+      } else if (typeof items === 'object') {
         for (const [key, val] of Object.entries(items)) {
           const ts = getStartOfDay(Number(key))
           if (!ts) continue

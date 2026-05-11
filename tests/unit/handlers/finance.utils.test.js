@@ -205,7 +205,8 @@ test('processBlockData - array items', (t) => {
       blocks: [{
         ts: 1700006400000,
         blockReward: 6.25,
-        blockTotalFees: 0.5
+        blockTotalFees: 0.5,
+        blockSize: 1500000
       }]
     }]
   ]
@@ -213,6 +214,22 @@ test('processBlockData - array items', (t) => {
   const key = Object.keys(daily)[0]
   t.is(daily[key].blockReward, 6.25, 'should extract blockReward')
   t.is(daily[key].blockTotalFees, 0.5, 'should extract blockTotalFees')
+  t.is(daily[key].blockSize, 1500000, 'should extract blockSize')
+  t.pass()
+})
+
+test('processBlockData - flat per-ork items (production shape)', (t) => {
+  const results = [
+    [
+      { ts: 1700006400000, blockSize: 1500000, blockHash: 'abc', blockReward: 6.25, blockTotalFees: 0.5 },
+      { ts: 1700006400000, blockSize: 1200000, blockHash: 'def', blockReward: 6.25, blockTotalFees: 0.3 }
+    ]
+  ]
+  const daily = processBlockData(results)
+  const key = Object.keys(daily)[0]
+  t.is(daily[key].blockReward, 12.5, 'should sum blockReward across same-day items')
+  t.is(daily[key].blockTotalFees, 0.8, 'should sum blockTotalFees across same-day items')
+  t.is(daily[key].blockSize, 2700000, 'should sum blockSize across same-day items')
   t.pass()
 })
 

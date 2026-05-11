@@ -117,6 +117,7 @@ function buildLayoutView (equipment, config, stats) {
 
   return {
     title: 'Energy Layout',
+    source_label: energyLayout.source_label || null,
     site_total: siteTotal,
     site_pm: siteMeter || null,
     main_protection: mainRelay || null,

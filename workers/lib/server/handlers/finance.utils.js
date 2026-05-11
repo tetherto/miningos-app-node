@@ -94,25 +94,28 @@ function processBlockData (results) {
     if (!Array.isArray(data)) continue
     for (const entry of data) {
       if (!entry) continue
-      const items = entry.data || entry.blocks || entry
+      const rawTs = entry.ts || entry.timestamp || entry.time
+      const items = rawTs ? [entry] : (entry.data || entry.blocks || entry)
       if (Array.isArray(items)) {
         for (const item of items) {
           if (!item) continue
-          const rawTs = item.ts || item.timestamp || item.time
-          const ts = getStartOfDay(normalizeTimestampMs(rawTs))
+          const itemTs = item.ts || item.timestamp || item.time
+          const ts = getStartOfDay(normalizeTimestampMs(itemTs))
           if (!ts) continue
-          if (!daily[ts]) daily[ts] = { blockReward: 0, blockTotalFees: 0 }
+          if (!daily[ts]) daily[ts] = { blockReward: 0, blockTotalFees: 0, blockSize: 0 }
           daily[ts].blockReward += (item.blockReward || item.block_reward || item.subsidy || 0)
           daily[ts].blockTotalFees += (item.blockTotalFees || item.block_total_fees || item.totalFees || item.total_fees || 0)
+          daily[ts].blockSize += (item.blockSize || item.block_size || item.size || 0)
         }
-      } else if (typeof items === 'object' && !Array.isArray(items)) {
+      } else if (typeof items === 'object') {
         for (const [key, val] of Object.entries(items)) {
           const ts = getStartOfDay(Number(key))
           if (!ts) continue
-          if (!daily[ts]) daily[ts] = { blockReward: 0, blockTotalFees: 0 }
+          if (!daily[ts]) daily[ts] = { blockReward: 0, blockTotalFees: 0, blockSize: 0 }
           if (typeof val === 'object') {
             daily[ts].blockReward += (val.blockReward || val.block_reward || val.subsidy || 0)
             daily[ts].blockTotalFees += (val.blockTotalFees || val.block_total_fees || val.totalFees || val.total_fees || 0)
+            daily[ts].blockSize += (val.blockSize || val.block_size || val.size || 0)
           }
         }
       }

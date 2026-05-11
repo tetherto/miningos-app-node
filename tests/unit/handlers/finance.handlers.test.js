@@ -234,8 +234,8 @@ test('processCostsData - handles non-array input', (t) => {
 
 test('calculateSummary - calculates from log entries', (t) => {
   const log = [
-    { revenueBTC: 0.5, revenueUSD: 20000, totalCostUSD: 5000, profitUSD: 15000, consumptionMWh: 100 },
-    { revenueBTC: 0.3, revenueUSD: 12000, totalCostUSD: 3000, profitUSD: 9000, consumptionMWh: 60 }
+    { revenueBTC: 0.5, revenueUSD: 20000, energyCostUSD: 4000, totalCostUSD: 5000, profitUSD: 15000, consumptionMWh: 100, sitePowerMW: 4 },
+    { revenueBTC: 0.3, revenueUSD: 12000, energyCostUSD: 2400, totalCostUSD: 3000, profitUSD: 9000, consumptionMWh: 60, sitePowerMW: 2 }
   ]
 
   const summary = calculateSummary(log)
@@ -244,7 +244,10 @@ test('calculateSummary - calculates from log entries', (t) => {
   t.is(summary.totalCostUSD, 8000, 'should sum costs')
   t.is(summary.totalProfitUSD, 24000, 'should sum profit')
   t.is(summary.totalConsumptionMWh, 160, 'should sum consumption')
+  t.is(summary.avgPowerConsumption, 3, 'avgPowerConsumption averages sitePowerMW (4+2)/2')
   t.ok(summary.avgCostPerMWh !== null, 'should calculate avg cost per MWh')
+  t.ok(summary.avgEnergyCostPerMWh !== null, 'should calculate avg energy cost per MWh')
+  t.ok(summary.avgOperationalCostPerMWh !== null, 'should calculate avg operational cost per MWh')
   t.ok(summary.avgRevenuePerMWh !== null, 'should calculate avg revenue per MWh')
   t.pass()
 })
@@ -255,6 +258,86 @@ test('calculateSummary - handles empty log', (t) => {
   t.is(summary.totalRevenueUSD, 0, 'should be zero')
   t.is(summary.avgCostPerMWh, null, 'should be null')
   t.pass()
+})
+
+function makeMockCtx (days) {
+  return withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: {
+      jRequest: async (_key, method, payload) => {
+        if (method === 'tailLogCustomRangeAggr') {
+          return [{
+            type: 'powermeter',
+            data: days.map(d => ({ ts: d.ts, val: { site_power_w: d.powerW } })),
+            error: null
+          }]
+        }
+        if (method === 'getWrkExtData') {
+          if (payload.query && payload.query.key === 'transactions') {
+            return days.map(d => ({ ts: d.ts, transactions: [{ ts: d.ts, changed_balance: d.btc }] }))
+          }
+          if (payload.query && payload.query.key === 'HISTORICAL_PRICES') {
+            return days.map(d => ({ ts: d.ts, priceUSD: d.price }))
+          }
+          if (payload.query && payload.query.key === 'current_price') {
+            return [{ currentPrice: days[0].price }]
+          }
+          if (payload.query && payload.query.key === 'stats-history') {
+            return []
+          }
+        }
+        if (method === 'getGlobalConfig') {
+          return { nominalPowerAvailability_MW: 10 }
+        }
+        return {}
+      }
+    },
+    globalDataLib: { getGlobalData: async () => [] }
+  })
+}
+
+test('getEnergyBalance daily - per-day entries carry sitePowerMW and per-MW revenue', async (t) => {
+  const day1 = Date.UTC(2024, 0, 15)
+  const day2 = Date.UTC(2024, 0, 16)
+  const days = [
+    { ts: day1, powerW: 5_000_000, btc: 0.5, price: 40000 },
+    { ts: day2, powerW: 3_000_000, btc: 0.3, price: 40000 }
+  ]
+
+  const result = await getEnergyBalance(makeMockCtx(days), {
+    query: { start: day1 - 1000, end: day2 + 86400000, period: 'daily' }
+  }, {})
+
+  t.is(result.log.length, 2, 'one entry per day')
+  for (const e of result.log) {
+    t.ok(e.sitePowerMW > 0, 'sitePowerMW present')
+    t.ok('energyRevenueBTC_MW' in e && 'energyRevenueUSD_MW' in e, 'per-MW revenue fields present')
+  }
+  t.is(result.log[0].sitePowerMW, 5, 'first day sitePowerMW = 5')
+  t.is(result.log[1].sitePowerMW, 3, 'second day sitePowerMW = 3')
+})
+
+test('getEnergyBalance monthly - rates use MEAN, totals use SUM, per-MW is RECOMPUTED', async (t) => {
+  const day1 = Date.UTC(2024, 0, 15)
+  const day2 = Date.UTC(2024, 0, 16)
+  const day3 = Date.UTC(2024, 0, 17)
+  const days = [
+    { ts: day1, powerW: 5_000_000, btc: 0.5, price: 40000 },
+    { ts: day2, powerW: 3_000_000, btc: 0.3, price: 40000 },
+    { ts: day3, powerW: 4_000_000, btc: 0.4, price: 40000 }
+  ]
+
+  const result = await getEnergyBalance(makeMockCtx(days), {
+    query: { start: day1 - 1000, end: day3 + 86400000, period: 'monthly' }
+  }, {})
+
+  t.is(result.log.length, 1, 'three days collapse to one monthly bucket')
+  const m = result.log[0]
+  t.ok(Math.abs(m.revenueBTC - 1.2) < 1e-9, 'revenueBTC summed (~1.2)')
+  t.ok(Math.abs(m.revenueUSD - 48000) < 1e-6, 'revenueUSD summed (~48000)')
+  t.is(m.sitePowerMW, 4, 'sitePowerMW averaged: (5+3+4)/3')
+  t.ok(Math.abs(m.energyRevenueUSD_MW - 12000) < 1e-6, 'per-MW recomputed from sum / mean, not summed daily values')
+  t.ok(Math.abs(m.energyRevenueBTC_MW - 0.3) < 1e-9, 'BTC per-MW recomputed')
 })
 
 // ==================== EBITDA Tests ====================
@@ -355,6 +438,34 @@ test('processTailLogData - processes power and hashrate', (t) => {
   t.pass()
 })
 
+test('processTailLogData - drills into .val (production shape)', (t) => {
+  const results = [
+    [
+      {
+        type: 'powermeter',
+        data: [
+          { ts: 1700006400000, val: { site_power_w: 5000 } },
+          { ts: 1700092800000, val: { site_power_w: 6000 } }
+        ]
+      },
+      {
+        type: 'miner',
+        data: [
+          { ts: 1700006400000, val: { hashrate_mhs_5m_sum_aggr: 100000 } },
+          { ts: 1700092800000, val: { hashrate_mhs_5m_sum_aggr: 120000 } }
+        ]
+      }
+    ]
+  ]
+
+  const daily = processTailLogData(results)
+  t.is(daily[1700006400000].powerW, 5000, 'extracts powerW from .val on day 1')
+  t.is(daily[1700006400000].hashrateMhs, 100000, 'extracts hashrateMhs from .val on day 1')
+  t.is(daily[1700092800000].powerW, 6000, 'extracts powerW from .val on day 2')
+  t.is(daily[1700092800000].hashrateMhs, 120000, 'extracts hashrateMhs from .val on day 2')
+  t.pass()
+})
+
 test('processTailLogData - handles error results', (t) => {
   const results = [{ error: 'timeout' }]
   const daily = processTailLogData(results)
@@ -368,6 +479,19 @@ test('processEbitdaPrices - processes valid data', (t) => {
   ]
   const daily = processEbitdaPrices(results)
   t.ok(typeof daily === 'object', 'should return object')
+  t.pass()
+})
+
+test('processEbitdaPrices - flat per-ork items with priceUSD (production shape)', (t) => {
+  const results = [
+    [
+      { ts: 1700006400000, priceUSD: 40000 },
+      { ts: 1700092800000, priceUSD: 41500 }
+    ]
+  ]
+  const daily = processEbitdaPrices(results)
+  t.is(daily[1700006400000], 40000, 'should extract priceUSD for first day')
+  t.is(daily[1700092800000], 41500, 'should extract priceUSD for second day')
   t.pass()
 })
 
@@ -569,16 +693,18 @@ test('getSubsidyFees - empty ork results', async (t) => {
 
 test('calculateSubsidyFeesSummary - calculates from log entries', (t) => {
   const log = [
-    { blockReward: 6.25, blockTotalFees: 0.5 },
-    { blockReward: 6.25, blockTotalFees: 0.3 }
+    { blockReward: 6.25, blockTotalFees: 0.5, blockSize: 1500000 },
+    { blockReward: 6.25, blockTotalFees: 0.3, blockSize: 1300000 }
   ]
 
   const summary = calculateSubsidyFeesSummary(log)
   t.is(summary.totalBlockReward, 12.5, 'should sum block rewards')
   t.is(summary.totalBlockTotalFees, 0.8, 'should sum block fees')
+  t.is(summary.totalBlockSize, 2800000, 'should sum block sizes')
   t.ok(summary.avgBlockReward !== null, 'should calculate avg block reward')
   t.is(summary.avgBlockReward, 6.25, 'should calculate correct avg block reward')
   t.ok(summary.avgBlockTotalFees !== null, 'should calculate avg block fees')
+  t.is(summary.avgBlockSize, 1400000, 'should calculate correct avg block size')
   t.pass()
 })
 
@@ -990,6 +1116,24 @@ test('processHashrateData - processes array data', (t) => {
   t.pass()
 })
 
+test('processHashrateData - drills into .val (production shape)', (t) => {
+  const results = [
+    [
+      {
+        type: 'miner',
+        data: [
+          { ts: 1700006400000, val: { hashrate_mhs_5m_sum_aggr: 500000 } },
+          { ts: 1700092800000, val: { hashrate_mhs_5m_sum_aggr: 600000 } }
+        ]
+      }
+    ]
+  ]
+  const daily = processHashrateData(results)
+  t.is(daily[1700006400000], 500000, 'extracts hashrate from .val on day 1')
+  t.is(daily[1700092800000], 600000, 'extracts hashrate from .val on day 2')
+  t.pass()
+})
+
 test('processHashrateData - handles error results', (t) => {
   const results = [{ error: 'timeout' }]
   const daily = processHashrateData(results)
@@ -1007,6 +1151,19 @@ test('processNetworkHashrateData - processes array data', (t) => {
   t.ok(Object.keys(daily).length > 0, 'should have entries')
   const key = Object.keys(daily)[0]
   t.is(daily[key], 500000000000000, 'should extract avgHashrateMHs')
+  t.pass()
+})
+
+test('processNetworkHashrateData - flat per-ork items (production shape)', (t) => {
+  const results = [
+    [
+      { ts: 1700006400000, avgHashrateMHs: 1019725948656278 },
+      { ts: 1700092800000, avgHashrateMHs: 1029591824888537 }
+    ]
+  ]
+  const daily = processNetworkHashrateData(results)
+  t.is(daily[1700006400000], 1019725948656278, 'extracts avgHashrateMHs day 1')
+  t.is(daily[1700092800000], 1029591824888537, 'extracts avgHashrateMHs day 2')
   t.pass()
 })
 

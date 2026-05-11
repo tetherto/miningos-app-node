@@ -76,6 +76,49 @@ test('aggregateByPeriod - handles invalid timestamps', (t) => {
   t.pass()
 })
 
+test('aggregateByPeriod - meanKeys option averages instead of summing', (t) => {
+  const ts = Date.UTC(2024, 0, 15)
+  const log = [
+    { ts, total: 10, rate: 0.1 },
+    { ts: ts + 86400000, total: 20, rate: 0.3 }
+  ]
+  const result = aggregateByPeriod(log, 'monthly', [], { meanKeys: ['rate'] })
+  t.is(result.length, 1, 'one monthly bucket')
+  t.is(result[0].total, 30, 'sum keys still summed')
+  t.is(result[0].rate, 0.2, 'mean key averaged: (0.1+0.3)/2')
+})
+
+test('aggregateByPeriod - meanKeys skip null/undefined values when averaging', (t) => {
+  const ts = Date.UTC(2024, 0, 15)
+  const log = [
+    { ts, rate: 0.1 },
+    { ts: ts + 86400000, rate: null },
+    { ts: ts + 2 * 86400000, rate: 0.3 }
+  ]
+  const result = aggregateByPeriod(log, 'monthly', [], { meanKeys: ['rate'] })
+  t.is(result[0].rate, 0.2, 'null skipped: (0.1+0.3)/2')
+})
+
+test('aggregateByPeriod - meanKeys returns null when no entries have the value', (t) => {
+  const ts = Date.UTC(2024, 0, 15)
+  const log = [
+    { ts, rate: null },
+    { ts: ts + 86400000, rate: undefined }
+  ]
+  const result = aggregateByPeriod(log, 'monthly', [], { meanKeys: ['rate'] })
+  t.is(result[0].rate, null, 'all-null group yields null')
+})
+
+test('aggregateByPeriod - omitting options preserves legacy sum-everything behaviour', (t) => {
+  const ts = Date.UTC(2024, 0, 15)
+  const log = [
+    { ts, rate: 0.1 },
+    { ts: ts + 86400000, rate: 0.3 }
+  ]
+  const result = aggregateByPeriod(log, 'monthly')
+  t.is(result[0].rate, 0.4, 'rate is summed when meanKeys not provided')
+})
+
 test('getPeriodKey - daily returns start of day', (t) => {
   const ts = 1700050000000
   const result = getPeriodKey(ts, 'daily')

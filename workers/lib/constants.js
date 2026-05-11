@@ -67,6 +67,7 @@ const COMMENT_ACTION = {
 const ENDPOINTS = {
   // OAuth endpoints
   OAUTH_GOOGLE_CALLBACK: '/oauth/google/callback',
+  OAUTH_MICROSOFT_CALLBACK: '/oauth/microsoft/callback',
 
   // Auth endpoints
   USERINFO: '/auth/userinfo',
@@ -160,7 +161,13 @@ const ENDPOINTS = {
   // Cooling System endpoints
   COOLING_SYSTEM: '/auth/dcs/cooling-system',
   // Energy System endpoints
-  ENERGY_SYSTEM: '/auth/dcs/energy-system'
+  ENERGY_SYSTEM: '/auth/dcs/energy-system',
+  // Site Overview endpoints
+  SITE_OVERVIEW_GROUPS: '/auth/site/overview/groups',
+  // Site Efficiency endpoint
+  SITE_EFFICIENCY: '/auth/site/efficiency',
+  // Explorer endpoints
+  EXPLORER_RACKS: '/auth/explorer/racks'
 }
 
 const HTTP_METHODS = {
@@ -279,7 +286,8 @@ const MINER_CATEGORIES = {
 const LOG_KEYS = {
   STAT_RTD: 'stat-rtd',
   STAT_3H: 'stat-3h',
-  STAT_5M: 'stat-5m'
+  STAT_5M: 'stat-5m',
+  STAT_1D: 'stat-1D'
 }
 
 const WORKER_TAGS = {
@@ -337,6 +345,7 @@ const COOLING_SYSTEM_PROJECTIONS = {
       'last.snap.stats.dcs_specific.equipment.valves': 1,
       'last.snap.stats.dcs_specific.equipment.tanks': 1,
       'last.snap.stats.dcs_specific.equipment.vibration_sensors': 1,
+      'last.snap.stats.dcs_specific.equipment.fans': 1,
       'last.snap.config.cooling_system': 1
     },
     layout: {
@@ -349,8 +358,11 @@ const COOLING_SYSTEM_PROJECTIONS = {
       'last.snap.stats.dcs_specific.equipment.cooling_towers': 1,
       'last.snap.stats.dcs_specific.equipment.valves': 1,
       'last.snap.stats.dcs_specific.equipment.tanks': 1,
+      'last.snap.stats.dcs_specific.equipment.vibration_sensors': 1,
+      'last.snap.stats.dcs_specific.equipment.fans': 1,
       'last.snap.stats.flow': 1,
-      'last.snap.config.cooling_system': 1
+      'last.snap.config.cooling_system': 1,
+      'last.snap.config.mining': 1
     }
   },
   hvac: {
@@ -362,6 +374,7 @@ const COOLING_SYSTEM_PROJECTIONS = {
       'last.snap.stats.dcs_specific.equipment.levels': 1,
       'last.snap.stats.dcs_specific.equipment.chillers': 1,
       'last.snap.stats.dcs_specific.equipment.fan_coils': 1,
+      'last.snap.stats.dcs_specific.equipment.fans': 1,
       'last.snap.stats.dcs_specific.equipment.valves': 1,
       'last.snap.stats.dcs_specific.equipment.tanks': 1,
       'last.snap.stats.dcs_specific.equipment.flow_switches': 1,
@@ -385,9 +398,11 @@ const COOLING_SYSTEM_PROJECTIONS = {
       'last.snap.stats.dcs_specific.equipment.chillers': 1,
       'last.snap.stats.dcs_specific.equipment.cooling_towers': 1,
       'last.snap.stats.dcs_specific.equipment.fan_coils': 1,
+      'last.snap.stats.dcs_specific.equipment.fans': 1,
       'last.snap.stats.dcs_specific.equipment.valves': 1,
       'last.snap.stats.dcs_specific.equipment.tanks': 1,
       'last.snap.stats.dcs_specific.equipment.flow_switches': 1,
+      'last.snap.stats.dcs_specific.equipment.vibration_sensors': 1,
       'last.snap.config.cooling_system': 1
     },
     ambient: {
@@ -421,8 +436,53 @@ const ENERGY_SYSTEM_PROJECTIONS = {
   }
 }
 
+// Site Overview aggregation fields for group-level stats
+const SITE_OVERVIEW_AGGR_FIELDS = {
+  hashrate_mhs_5m_container_group_sum_aggr: 1,
+  hashrate_mhs_5m_rack_group_sum_aggr: 1,
+  power_w_container_group_sum_aggr: 1,
+  power_w_rack_group_sum_aggr: 1,
+  efficiency_w_ths_container_group_avg_aggr: 1,
+  efficiency_w_ths_pdu_rack_group_avg_aggr: 1,
+  hashrate_mhs_5m_pdu_rack_group_avg_aggr: 1,
+  power_w_pdu_rack_group_sum_aggr: 1,
+  offline_cnt: 1,
+  error_cnt: 1,
+  not_mining_cnt: 1,
+  power_mode_sleep_cnt: 1,
+  power_mode_low_cnt: 1,
+  power_mode_normal_cnt: 1,
+  power_mode_high_cnt: 1,
+  hashrate_mhs_5m_active_container_group_cnt: 1
+}
+
+// DCS power meter field projections for site overview
+const DCS_POWER_METER_FIELDS = {
+  'last.snap.stats.dcs_specific.equipment.power_meters': 1,
+  'last.snap.config.mining': 1,
+  'last.snap.config.energy_layout': 1
+}
+
+// DCS field projections for site efficiency
+const DCS_EFFICIENCY_FIELDS = {
+  'last.snap.stats.dcs_specific.equipment.power_meters': 1,
+  'last.snap.stats.dcs_specific.equipment.distribution_boards': 1,
+  'last.snap.stats.dcs_specific.equipment.transformers': 1,
+  'last.snap.config.mining': 1,
+  'last.snap.config.energy_layout': 1
+}
+
+const LOG_FIELDS = {
+  HASHRATE_SUM_TYPE_GROUP: 'hashrate_mhs_5m_type_group_sum',
+  HASHRATE_SUM_CONTAINER_GROUP: 'hashrate_mhs_5m_container_group_sum',
+  POWER_W_TYPE_GROUP_SUM: 'power_w_type_group_sum',
+  POWER_W_CONTAINER_GROUP_SUM: 'power_w_container_group_sum'
+}
+
 const AGGR_FIELDS = {
   HASHRATE_SUM: 'hashrate_mhs_5m_sum_aggr',
+  HASHRATE_SUM_TYPE_GROUP_AGGR: 'hashrate_mhs_5m_type_group_sum_aggr',
+  HASHRATE_SUM_CONTAINER_GROUP_AGGR: 'hashrate_mhs_5m_container_group_sum_aggr',
   SITE_POWER: 'site_power_w',
   ENERGY_AGGR: 'energy_aggr',
   ACTIVE_ENERGY_IN: 'active_energy_in_aggr',
@@ -439,6 +499,7 @@ const AGGR_FIELDS = {
   CONTAINER_SPECIFIC_STATS: 'container_specific_stats_group_aggr',
   HASHRATE_1M_CONTAINER_GROUP_SUM: 'hashrate_mhs_1m_container_group_sum_aggr',
   POWER_W_CONTAINER_GROUP_SUM: 'power_w_container_group_sum_aggr',
+  POWER_W_TYPE_GROUP_SUM: 'power_w_type_group_sum_aggr',
   POWER_MODE_LOW_CNT: 'power_mode_low_cnt',
   POWER_MODE_NORMAL_CNT: 'power_mode_normal_cnt',
   POWER_MODE_HIGH_CNT: 'power_mode_high_cnt',
@@ -478,6 +539,8 @@ const RANGE_BUCKETS = {
 const RPC_TIMEOUT = 15000
 const RPC_CONCURRENCY_LIMIT = 2
 const RPC_PAGE_LIMIT = 100
+
+const AUTH_CACHE_TTL = 60 * 1000
 
 const ACTIONS_MAX_QUERIES = 10
 const ACTIONS_QUERIES_MAX_LENGTH = 1000
@@ -564,6 +627,16 @@ const MINER_DEFAULT_FIELDS = {
 const MINER_MAX_LIMIT = 200
 const MINER_DEFAULT_LIMIT = 50
 
+// Explorer racks aggregation fields
+const EXPLORER_RACK_AGGR_FIELDS = {
+  hashrate_mhs_5m_pdu_rack_group_avg_aggr: 1,
+  power_w_pdu_rack_group_sum_aggr: 1,
+  efficiency_w_ths_pdu_rack_group_avg_aggr: 1
+}
+
+const EXPLORER_RACK_DEFAULT_LIMIT = 20
+const EXPLORER_RACK_MAX_LIMIT = 100
+
 module.exports = {
   SUPER_ADMIN_ROLE,
   GLOBAL_DATA_TYPES,
@@ -581,6 +654,7 @@ module.exports = {
   RPC_TIMEOUT,
   RPC_CONCURRENCY_LIMIT,
   RPC_PAGE_LIMIT,
+  AUTH_CACHE_TTL,
   ACTIONS_MAX_QUERIES,
   ACTIONS_QUERIES_MAX_LENGTH,
   USER_SETTINGS_TYPE,
@@ -618,5 +692,12 @@ module.exports = {
   MINER_MAX_LIMIT,
   MINER_DEFAULT_LIMIT,
   COOLING_SYSTEM_PROJECTIONS,
-  ENERGY_SYSTEM_PROJECTIONS
+  ENERGY_SYSTEM_PROJECTIONS,
+  SITE_OVERVIEW_AGGR_FIELDS,
+  DCS_POWER_METER_FIELDS,
+  DCS_EFFICIENCY_FIELDS,
+  EXPLORER_RACK_AGGR_FIELDS,
+  EXPLORER_RACK_DEFAULT_LIMIT,
+  EXPLORER_RACK_MAX_LIMIT,
+  LOG_FIELDS
 }

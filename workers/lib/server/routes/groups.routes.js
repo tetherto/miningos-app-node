@@ -23,7 +23,7 @@ module.exports = (ctx) => {
         ctx,
         (req) => [
           'miners/groups/stats',
-          req.query.containers
+          req.query.racks
         ],
         ENDPOINTS.MINERS_GROUPS_STATS,
         getGroupStats,

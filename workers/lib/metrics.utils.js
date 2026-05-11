@@ -107,6 +107,99 @@ function extractKeyEntry (orkResult, keyIndex) {
   return keyResult[0] || null
 }
 
+// Hashrate conversion utilities
+function mhsToPhs (mhs) {
+  return Math.round((mhs / 1000000000) * 100) / 100
+}
+
+function mhsToThs (mhs) {
+  return mhs / 1000000
+}
+
+// Rack/Group parsing utilities
+function parseRackId (rackKey) {
+  if (!rackKey || typeof rackKey !== 'string') return null
+  const idx = rackKey.indexOf('_')
+  if (idx === -1) return null
+  return {
+    group: rackKey.substring(0, idx),
+    rack: rackKey.substring(idx + 1)
+  }
+}
+
+function getGroupNumber (groupName) {
+  const match = groupName.match(/group-(\d+)/i)
+  return match ? parseInt(match[1], 10) : null
+}
+
+function mergeGroupedField (target, source, isAverage = false) {
+  if (!source || typeof source !== 'object') return
+
+  for (const [key, value] of Object.entries(source)) {
+    if (isAverage) {
+      if (!target[key] || value > target[key]) {
+        target[key] = value
+      }
+    } else {
+      target[key] = (target[key] || 0) + (value || 0)
+    }
+  }
+}
+
+// DCS power meter utilities
+function getMeterGroupMapping (meterId, energyLayout) {
+  const branches = energyLayout?.branches || []
+
+  for (const branch of branches) {
+    if (branch.meter === meterId && branch.feeds) {
+      const match = branch.feeds.match(/Groups?\s+(\d+)-(\d+)/i)
+      if (match) {
+        const start = parseInt(match[1], 10)
+        const end = parseInt(match[2], 10)
+        const groups = []
+        for (let i = start; i <= end; i++) {
+          groups.push(`group-${i}`)
+        }
+        return groups
+      }
+    }
+  }
+  return []
+}
+
+function buildGroupPowerFromDCS (powerMeters, hashrateByGroup, energyLayout, miningConfig) {
+  const groupPower = {}
+
+  const rackMeters = (powerMeters || []).filter(pm => pm.role === 'rack')
+
+  for (const meter of rackMeters) {
+    const meterPower = meter.power?.value || 0
+    const coveredGroups = getMeterGroupMapping(meter.equipment, energyLayout)
+
+    if (coveredGroups.length === 0 || meterPower === 0) continue
+
+    let totalHashrate = 0
+    for (const groupName of coveredGroups) {
+      totalHashrate += hashrateByGroup[groupName] || 0
+    }
+
+    if (totalHashrate > 0) {
+      for (const groupName of coveredGroups) {
+        const groupHashrate = hashrateByGroup[groupName] || 0
+        const proportion = groupHashrate / totalHashrate
+        groupPower[groupName] = (groupPower[groupName] || 0) + (meterPower * proportion)
+      }
+    } else {
+      const perGroup = meterPower / coveredGroups.length
+      for (const groupName of coveredGroups) {
+        groupPower[groupName] = (groupPower[groupName] || 0) + perGroup
+      }
+    }
+  }
+
+  return groupPower
+}
+
 module.exports = {
   parseEntryTs,
   validateStartEnd,
@@ -116,5 +209,12 @@ module.exports = {
   extractContainerFromMinerKey,
   extractKeyEntry,
   resolveInterval,
-  getIntervalConfig
+  getIntervalConfig,
+  mhsToPhs,
+  mhsToThs,
+  parseRackId,
+  getGroupNumber,
+  mergeGroupedField,
+  getMeterGroupMapping,
+  buildGroupPowerFromDCS
 }
