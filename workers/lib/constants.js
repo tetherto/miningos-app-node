@@ -45,6 +45,13 @@ const AUTH_PERMISSIONS = {
 
 const WORK_ORDER_THING_TYPE = 'inventory-work_order'
 
+const WORK_ORDER_FILE_MAX_BYTES_DEFAULT = 10 * 1024 * 1024
+const WORK_ORDER_FILE_COUNT_CAP_DEFAULT = 20
+const WORK_ORDER_FILE_MIME_ALLOWLIST_DEFAULT = [
+  'image/png', 'image/jpeg', 'image/webp', 'image/gif',
+  'application/pdf', 'text/plain', 'text/csv', 'application/json'
+]
+
 const AUTH_LEVELS = {
   READ: 'r',
   WRITE: 'w'
@@ -175,6 +182,9 @@ const ENDPOINTS = {
   WORK_ORDERS: '/auth/work-orders',
   WORK_ORDER_BY_ID: '/auth/work-orders/:id',
   WORK_ORDER_AUDIT: '/auth/work-orders/:id/audit',
+  WORK_ORDER_LOG: '/auth/work-orders/:id/log',
+  WORK_ORDER_FILES: '/auth/work-orders/:id/files',
+  WORK_ORDER_FILE_BY_ID: '/auth/work-orders/:id/files/:fileId',
   WORK_ORDER_ASSIGN: '/auth/work-orders/:id/assign',
   WORK_ORDER_CLOSE: '/auth/work-orders/:id/close',
   WORK_ORDER_CANCEL: '/auth/work-orders/:id/cancel',
@@ -720,5 +730,8 @@ module.exports = {
   EXPLORER_RACK_DEFAULT_LIMIT,
   EXPLORER_RACK_MAX_LIMIT,
   LOG_FIELDS,
-  WORK_ORDER_THING_TYPE
+  WORK_ORDER_THING_TYPE,
+  WORK_ORDER_FILE_MAX_BYTES_DEFAULT,
+  WORK_ORDER_FILE_COUNT_CAP_DEFAULT,
+  WORK_ORDER_FILE_MIME_ALLOWLIST_DEFAULT
 }

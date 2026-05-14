@@ -94,6 +94,16 @@ const assign = {
   }
 }
 
+const log = {
+  params: byId.params,
+  body: {
+    type: 'object',
+    required: ['text'],
+    additionalProperties: false,
+    properties: { text: { type: 'string', minLength: 1, maxLength: 4000 } }
+  }
+}
+
 const audit = {
   params: byId.params,
   querystring: {
@@ -108,4 +118,4 @@ const audit = {
   }
 }
 
-module.exports = { create, list, byId, update, close, cancel, assign, audit }
+module.exports = { create, list, byId, update, close, cancel, assign, audit, log }

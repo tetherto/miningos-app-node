@@ -85,6 +85,36 @@ async function getWorkOrder (ctx, req) {
   return flat[0]
 }
 
+async function appendWorkLogEntry (ctx, req) {
+  const rackId = ctx.conf.workOrderRackId
+  if (!rackId) throw new Error('ERR_WORK_ORDER_RACK_ID_NOT_CONFIGURED')
+
+  const wo = await ctx.dataProxy.requestData('listThings', {
+    query: { id: req.params.id, type: WORK_ORDER_THING_TYPE }
+  })
+  const found = flattenRpcResults(wo)[0]
+  if (!found) {
+    const err = new Error('ERR_WORK_ORDER_NOT_FOUND')
+    err.statusCode = 404
+    throw err
+  }
+  if (['closed', 'cancelled'].includes(found.info?.status)) {
+    const err = new Error('ERR_WO_INVALID_STATUS_TRANSITION')
+    err.statusCode = 400
+    throw err
+  }
+
+  return ctx.dataProxy.requestData('saveThingComment', {
+    rackId,
+    thingId: req.params.id,
+    comment: req.body.text,
+    user: req._info.user.metadata.email
+  }, (res, arr) => {
+    if (res?.error) arr.push({ error: res.error })
+    else arr.push(res)
+  })
+}
+
 async function getWorkOrderAudit (ctx, req) {
   const payload = {
     logType: 'info',
@@ -106,5 +136,6 @@ module.exports = {
   closeWorkOrder,
   cancelWorkOrder,
   assignWorkOrder,
+  appendWorkLogEntry,
   getWorkOrderAudit
 }

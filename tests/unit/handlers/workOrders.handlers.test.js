@@ -168,6 +168,56 @@ test('handlers: getWorkOrder filters by id+type and 404s when nothing found', as
   )
 })
 
+test('handlers: appendWorkLogEntry rejects when WO is closed/cancelled', async (t) => {
+  const ctx = createMockCtxWithOrks(
+    [{ rpcPublicKey: 'k' }],
+    async (_k, method) => method === 'listThings' ? [{ id: 'wo-1', info: { status: 'closed' } }] : null
+  )
+  ctx.conf = { workOrderRackId: RACK }
+  await t.exception(
+    () => handlers.appendWorkLogEntry(ctx, {
+      ...userMeta(), params: { id: 'wo-1' }, body: { text: 'late entry' }
+    }),
+    /ERR_WO_INVALID_STATUS_TRANSITION/
+  )
+})
+
+test('handlers: appendWorkLogEntry 404s when WO is missing', async (t) => {
+  const ctx = createMockCtxWithOrks(
+    [{ rpcPublicKey: 'k' }],
+    async (_k, method) => method === 'listThings' ? [] : null
+  )
+  ctx.conf = { workOrderRackId: RACK }
+  await t.exception(
+    () => handlers.appendWorkLogEntry(ctx, {
+      ...userMeta(), params: { id: 'wo-missing' }, body: { text: 'x' }
+    }),
+    /ERR_WORK_ORDER_NOT_FOUND/
+  )
+})
+
+test('handlers: appendWorkLogEntry calls saveThingComment with the right rack/thingId/user', async (t) => {
+  let captured
+  const ctx = createMockCtxWithOrks(
+    [{ rpcPublicKey: 'k' }],
+    async (_k, method, params) => {
+      if (method === 'listThings') return [{ id: 'wo-1', info: { status: 'open' } }]
+      if (method === 'saveThingComment') { captured = params; return 1 }
+      return null
+    }
+  )
+  ctx.conf = { workOrderRackId: RACK }
+  await handlers.appendWorkLogEntry(ctx, {
+    ...userMeta(),
+    params: { id: 'wo-1' },
+    body: { text: 'replaced PSU' }
+  })
+  t.is(captured.rackId, RACK)
+  t.is(captured.thingId, 'wo-1')
+  t.is(captured.comment, 'replaced PSU')
+  t.is(captured.user, 'op@test')
+})
+
 test('handlers: getWorkOrderAudit calls getHistoricalLogs filtered by id', async (t) => {
   let received
   const ctx = createMockCtxWithOrks(

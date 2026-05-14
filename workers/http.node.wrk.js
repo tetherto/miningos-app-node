@@ -2,6 +2,8 @@
 
 const async = require('async')
 const WebsocketPlugin = require('@fastify/websocket')
+const MultipartPlugin = require('@fastify/multipart')
+const { WORK_ORDER_FILE_MAX_BYTES_DEFAULT } = require('./lib/constants')
 const TetherWrkBase = require('@tetherto/tether-wrk-base/workers/base.wrk.tether')
 const AuthLib = require('./lib/auth')
 const debug = require('debug')('store:aggr')
@@ -99,6 +101,9 @@ class WrkServerHttp extends TetherWrkBase {
         }
 
         httpd.addPlugin([WebsocketPlugin, {}])
+        httpd.addPlugin([MultipartPlugin, {
+          limits: { fileSize: this.conf.workOrderFileMaxBytes || WORK_ORDER_FILE_MAX_BYTES_DEFAULT, files: 1 }
+        }])
 
         libServer.routes(this).forEach(r => {
           httpd.addRoute(r)
