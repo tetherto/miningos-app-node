@@ -43,5 +43,6 @@
   },
   "ttl": 300,
   "site": "SITE_NAME",
-  "rpcTimeout" : 15000
+  "rpcTimeout" : 15000,
+  "workOrderRackId": "inventory-work_order-rack-0"
 }

@@ -39,8 +39,11 @@ const AUTH_PERMISSIONS = {
   TICKETS: 'tickets',
   POWER_SPOT_FORECAST: 'power_spot_forecast',
   POOL_CONFIG: 'pool_config',
-  POOL_CONFIG_APPROVE: 'pool_config_approve'
+  POOL_CONFIG_APPROVE: 'pool_config_approve',
+  WORK_ORDER: 'work_order'
 }
+
+const WORK_ORDER_THING_TYPE = 'inventory-work_order'
 
 const AUTH_LEVELS = {
   READ: 'r',
@@ -167,7 +170,14 @@ const ENDPOINTS = {
   // Site Efficiency endpoint
   SITE_EFFICIENCY: '/auth/site/efficiency',
   // Explorer endpoints
-  EXPLORER_RACKS: '/auth/explorer/racks'
+  EXPLORER_RACKS: '/auth/explorer/racks',
+
+  WORK_ORDERS: '/auth/work-orders',
+  WORK_ORDER_BY_ID: '/auth/work-orders/:id',
+  WORK_ORDER_AUDIT: '/auth/work-orders/:id/audit',
+  WORK_ORDER_ASSIGN: '/auth/work-orders/:id/assign',
+  WORK_ORDER_CLOSE: '/auth/work-orders/:id/close',
+  WORK_ORDER_CANCEL: '/auth/work-orders/:id/cancel'
 }
 
 const HTTP_METHODS = {
@@ -195,7 +205,14 @@ const OPERATIONS = {
   ACTIONS_CANCEL: 'actions.cancel',
 
   // Things operations
-  THING_COMMENT_WRITE: 'thing.comment.write'
+  THING_COMMENT_WRITE: 'thing.comment.write',
+
+  WORK_ORDER_CREATE: 'work_order.create',
+  WORK_ORDER_READ: 'work_order.read',
+  WORK_ORDER_UPDATE: 'work_order.update',
+  WORK_ORDER_CLOSE: 'work_order.close',
+  WORK_ORDER_CANCEL: 'work_order.cancel',
+  WORK_ORDER_ASSIGN: 'work_order.assign'
 }
 
 const DEFAULTS = {
@@ -699,5 +716,6 @@ module.exports = {
   EXPLORER_RACK_AGGR_FIELDS,
   EXPLORER_RACK_DEFAULT_LIMIT,
   EXPLORER_RACK_MAX_LIMIT,
-  LOG_FIELDS
+  LOG_FIELDS,
+  WORK_ORDER_THING_TYPE
 }

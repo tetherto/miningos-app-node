@@ -1,0 +1,103 @@
+'use strict'
+
+const types = { type: 'integer', enum: [1, 2] }
+
+const create = {
+  body: {
+    type: 'object',
+    required: ['type', 'deviceType', 'deviceModel', 'deviceIdentifier', 'issue'],
+    additionalProperties: false,
+    properties: {
+      type: types,
+      deviceType: { type: 'string', minLength: 1, maxLength: 100 },
+      deviceModel: { type: 'string', minLength: 1, maxLength: 100 },
+      deviceIdentifier: { type: 'string', minLength: 1, maxLength: 200 },
+      issue: { type: 'string', minLength: 1, maxLength: 2000 },
+      assignedTo: { type: ['string', 'null'], maxLength: 200 }
+    }
+  }
+}
+
+const list = {
+  querystring: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      query: { type: 'string' },
+      sort: { type: 'string' },
+      fields: { type: 'string' },
+      offset: { type: 'integer', minimum: 0 },
+      limit: { type: 'integer', minimum: 1, maximum: 200 },
+      overwriteCache: { type: 'boolean' }
+    }
+  }
+}
+
+const byId = {
+  params: {
+    type: 'object',
+    required: ['id'],
+    properties: { id: { type: 'string', minLength: 1 } }
+  }
+}
+
+const update = {
+  params: byId.params,
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    minProperties: 1,
+    properties: {
+      issue: { type: 'string', minLength: 1, maxLength: 2000 },
+      deviceType: { type: 'string', minLength: 1, maxLength: 100 },
+      deviceModel: { type: 'string', minLength: 1, maxLength: 100 },
+      deviceIdentifier: { type: 'string', minLength: 1, maxLength: 200 },
+      assignedTo: { type: ['string', 'null'], maxLength: 200 },
+      finalResult: { type: ['string', 'null'], maxLength: 4000 }
+    }
+  }
+}
+
+const close = {
+  params: byId.params,
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    properties: { finalResult: { type: 'string', minLength: 1, maxLength: 4000 } }
+  }
+}
+
+const cancel = {
+  params: byId.params,
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    properties: { reason: { type: 'string', minLength: 1, maxLength: 2000 } }
+  }
+}
+
+const assign = {
+  params: byId.params,
+  body: {
+    type: 'object',
+    required: ['assignedTo'],
+    additionalProperties: false,
+    properties: { assignedTo: { type: ['string', 'null'], maxLength: 200 } }
+  }
+}
+
+const audit = {
+  params: byId.params,
+  querystring: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      limit: { type: 'integer', minimum: 1, maximum: 500 },
+      offset: { type: 'integer', minimum: 0 },
+      start: { type: 'integer' },
+      end: { type: 'integer' }
+    }
+  }
+}
+
+module.exports = { create, list, byId, update, close, cancel, assign, audit }

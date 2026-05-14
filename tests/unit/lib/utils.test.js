@@ -8,7 +8,8 @@ const {
   isValidEmail,
   getRpcTimeout,
   getAuthTokenFromHeaders,
-  parseJsonQueryParam
+  parseJsonQueryParam,
+  submitWorkOrderAction
 } = require('../../../workers/lib/utils')
 
 const randomIPv4 = () => {
@@ -436,4 +437,64 @@ test('parseJsonQueryParam - with custom error code', (t) => {
   }
 
   t.pass()
+})
+
+const woReq = (email = 'op@test') => ({
+  _info: { authToken: 'tok', user: { metadata: { email } } }
+})
+
+const woCtx = ({ rackId = 'inventory-work_order-rack-x', captured } = {}) => ({
+  conf: { workOrderRackId: rackId },
+  authLib: {
+    getTokenPerms: async () => ({ permissions: ['inventory:rw', 'work_order:rw', 'actions:rw'] })
+  },
+  dataProxy: {
+    requestData: async (method, payload, errorHandler) => {
+      if (captured) captured.method = method
+      if (captured) captured.payload = payload
+      const arr = []
+      if (errorHandler) errorHandler({ id: 'action-1', errors: [] }, arr)
+      return arr
+    }
+  }
+})
+
+test('submitWorkOrderAction - submits pushAction with rackId from ctx.conf', async (t) => {
+  const captured = {}
+  const ctx = woCtx({ captured })
+  const out = await submitWorkOrderAction(ctx, woReq(), 'registerThing', { info: { foo: 'bar' } })
+
+  t.is(captured.method, 'pushAction', 'calls pushAction')
+  t.is(captured.payload.action, 'registerThing')
+  t.is(captured.payload.params[0].rackId, 'inventory-work_order-rack-x')
+  t.is(captured.payload.params[0].info.foo, 'bar')
+  t.is(captured.payload.voter, 'op@test')
+  t.alike(captured.payload.authPerms, ['inventory:rw', 'work_order:rw', 'actions:rw'])
+  t.alike(out, [{ id: 'action-1', errors: [] }])
+})
+
+test('submitWorkOrderAction - throws when workOrderRackId is not configured', async (t) => {
+  const ctx = woCtx()
+  delete ctx.conf.workOrderRackId
+  await t.exception(
+    () => submitWorkOrderAction(ctx, woReq(), 'registerThing', {}),
+    /ERR_WORK_ORDER_RACK_ID_NOT_CONFIGURED/
+  )
+})
+
+test('submitWorkOrderAction - maps rpc error into result array', async (t) => {
+  const ctx = {
+    conf: { workOrderRackId: 'r' },
+    authLib: { getTokenPerms: async () => ({ permissions: [] }) },
+    dataProxy: {
+      requestData: async (_method, _payload, errorHandler) => {
+        const arr = []
+        errorHandler({ error: 'boom' }, arr)
+        return arr
+      }
+    }
+  }
+  const out = await submitWorkOrderAction(ctx, woReq(), 'updateThing', { id: 'wo-1' })
+  t.is(out[0].id, null)
+  t.is(out[0].errors[0], 'boom')
 })

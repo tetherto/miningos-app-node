@@ -123,6 +123,24 @@ function deduplicateAlerts (alerts) {
   return result
 }
 
+async function submitWorkOrderAction (ctx, req, action, paramObj) {
+  const rackId = ctx.conf.workOrderRackId
+  if (!rackId) throw new Error('ERR_WORK_ORDER_RACK_ID_NOT_CONFIGURED')
+
+  const { permissions } = await ctx.authLib.getTokenPerms(req._info.authToken)
+
+  return ctx.dataProxy.requestData('pushAction', {
+    action,
+    query: { rack: rackId },
+    params: [{ rackId, ...paramObj }],
+    voter: req._info.user.metadata.email,
+    authPerms: permissions || []
+  }, (res, arr) => {
+    if (res?.error) arr.push({ id: null, errors: [res.error] })
+    else arr.push(res)
+  })
+}
+
 function matchesFilter (item, filter, allowedFields) {
   if (!filter) return true
   for (const key of allowedFields) {
@@ -151,5 +169,6 @@ module.exports = {
   safeDiv,
   runParallel,
   deduplicateAlerts,
-  matchesFilter
+  matchesFilter,
+  submitWorkOrderAction
 }
