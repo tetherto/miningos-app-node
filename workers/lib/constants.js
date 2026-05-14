@@ -177,7 +177,10 @@ const ENDPOINTS = {
   WORK_ORDER_AUDIT: '/auth/work-orders/:id/audit',
   WORK_ORDER_ASSIGN: '/auth/work-orders/:id/assign',
   WORK_ORDER_CLOSE: '/auth/work-orders/:id/close',
-  WORK_ORDER_CANCEL: '/auth/work-orders/:id/cancel'
+  WORK_ORDER_CANCEL: '/auth/work-orders/:id/cancel',
+
+  SPARE_PART_BY_ID: '/auth/spare-parts/:id',
+  SPARE_PART_REPAIR_HISTORY: '/auth/spare-parts/:id/repair-history'
 }
 
 const HTTP_METHODS = {
