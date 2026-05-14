@@ -37,7 +37,15 @@ module.exports = (ctx) => [
         req.query.sort,
         req.query.fields,
         req.query.offset,
-        req.query.limit
+        req.query.limit,
+        req.query.q,
+        req.query.assignee,
+        req.query.creator,
+        req.query.partId,
+        req.query.status,
+        req.query.type,
+        req.query.from,
+        req.query.to
       ],
       ENDPOINTS.WORK_ORDERS,
       listWorkOrders,

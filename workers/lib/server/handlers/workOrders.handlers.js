@@ -30,18 +30,47 @@ async function assignWorkOrder (ctx, req) {
   })
 }
 
+function _buildWorkOrderQuery (qs) {
+  const query = qs.query
+    ? parseJsonQueryParam(qs.query, 'ERR_QUERY_INVALID_JSON')
+    : {}
+  query.type = WORK_ORDER_THING_TYPE
+  if (qs.assignee) query['info.assignedTo'] = qs.assignee
+  if (qs.creator) query['info.createdBy'] = qs.creator
+  if (qs.partId) query['info.partsMoves.partCode'] = qs.partId
+  if (qs.status) query['info.status'] = qs.status
+  if (qs.type != null) query['info.type'] = qs.type
+  if (qs.from || qs.to) {
+    query['info.createdAt'] = {}
+    if (qs.from) query['info.createdAt'].$gte = qs.from
+    if (qs.to) query['info.createdAt'].$lte = qs.to
+  }
+  if (qs.q) {
+    const escaped = String(qs.q).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    query.$or = [
+      { code: { $regex: escaped } },
+      { 'info.issue': { $regex: escaped, $options: 'i' } }
+    ]
+  }
+  return query
+}
+
 async function listWorkOrders (ctx, req) {
-  const params = {}
-  if (req.query.query) params.query = parseJsonQueryParam(req.query.query, 'ERR_QUERY_INVALID_JSON')
+  const offset = req.query.offset ?? 0
+  const limit = req.query.limit ?? 100
+  const query = _buildWorkOrderQuery(req.query)
+  const params = { query, offset, limit }
   if (req.query.sort) params.sort = parseJsonQueryParam(req.query.sort, 'ERR_SORT_INVALID_JSON')
   if (req.query.fields) params.fields = parseJsonQueryParam(req.query.fields, 'ERR_FIELDS_INVALID_JSON')
-  if (req.query.offset != null) params.offset = req.query.offset
-  if (req.query.limit != null) params.limit = req.query.limit
 
-  params.query = { ...(params.query || {}), type: WORK_ORDER_THING_TYPE }
+  const [listResults, countResults] = await Promise.all([
+    ctx.dataProxy.requestData('listThings', params),
+    ctx.dataProxy.requestData('getThingsCount', { query })
+  ])
 
-  const results = await ctx.dataProxy.requestData('listThings', params)
-  return flattenRpcResults(results)
+  const data = flattenRpcResults(listResults)
+  const totalCount = countResults.reduce((acc, c) => acc + (Number(c) || 0), 0)
+  return { data, totalCount, offset, limit, hasMore: offset + data.length < totalCount }
 }
 
 async function getWorkOrder (ctx, req) {

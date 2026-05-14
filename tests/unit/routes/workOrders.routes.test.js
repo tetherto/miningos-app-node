@@ -40,3 +40,40 @@ test('workOrders.routes: every route has onRequest auth guard', (t) => {
     t.ok(typeof r.onRequest === 'function', `${r.method} ${r.url} has onRequest`)
   }
 })
+
+test('workOrders.routes: list cache key includes every filter shortcut', (t) => {
+  const { createCachedAuthRoute } = require('../../../workers/lib/server/lib/routeHelpers')
+  let capturedKeyFn
+  const orig = createCachedAuthRoute
+  require.cache[require.resolve('../../../workers/lib/server/lib/routeHelpers')].exports.createCachedAuthRoute =
+    (ctx, keyParts, endpoint, handler, perms) => {
+      if (endpoint === ENDPOINTS.WORK_ORDERS) capturedKeyFn = keyParts
+      return orig(ctx, keyParts, endpoint, handler, perms)
+    }
+  delete require.cache[require.resolve(ROUTES_PATH)]
+  require(ROUTES_PATH)({})
+
+  const req = {
+    query: {
+      query: '{"a":1}',
+      sort: '{"code":1}',
+      fields: '{}',
+      offset: 0,
+      limit: 10,
+      q: 'IVI',
+      assignee: 'u',
+      creator: 'c',
+      partId: 'p',
+      status: 'open',
+      type: 2,
+      from: 1,
+      to: 2
+    }
+  }
+  const key = capturedKeyFn(req)
+  for (const expected of ['{"a":1}', '{"code":1}', '{}', 0, 10, 'IVI', 'u', 'c', 'p', 'open', 2, 1, 2]) {
+    t.ok(key.includes(expected), `cache key includes ${JSON.stringify(expected)}`)
+  }
+
+  require.cache[require.resolve('../../../workers/lib/server/lib/routeHelpers')].exports.createCachedAuthRoute = orig
+})
