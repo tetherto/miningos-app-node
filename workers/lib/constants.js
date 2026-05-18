@@ -47,8 +47,8 @@ const WORK_ORDER_THING_TYPE = 'inventory-work_order'
 
 const WORK_ORDER_TYPES = { REGISTER: 1, REGULAR: 2 }
 const WORK_ORDER_VALID_DEVICE_TYPES = ['miner', 'psu', 'hashboard', 'controller']
-const MINER_LOCATIONS = ['Site Warehouse', 'Site Lab', 'Miner Room', 'Vendor', 'Scrapped', 'Disposed']
-const SPARE_PART_INITIAL_LOCATION = 'Site Warehouse'
+const MINER_LOCATIONS = ['siteWarehouse', 'siteLab', 'minerRoom', 'vendor', 'scrapped', 'disposed']
+const SPARE_PART_INITIAL_LOCATION = 'siteWarehouse'
 const WORK_ORDER_ACTION_WAIT_MS = 5000
 const WORK_ORDER_ACTION_POLL_MS = 100
 

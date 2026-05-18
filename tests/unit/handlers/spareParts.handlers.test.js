@@ -58,7 +58,7 @@ test('handlers: updateSparePart rejects location/status changes without workOrde
     () => handlers.updateSparePart(ctx, {
       ...userMeta(),
       params: { id: PART.id },
-      body: { rackId: PART_RACK, info: { location: 'Site Lab' } }
+      body: { rackId: PART_RACK, info: { location: 'siteLab' } }
     }),
     /ERR_PART_MOVE_REQUIRES_WO/
   )
@@ -70,7 +70,7 @@ test('handlers: updateSparePart rejects when WO is closed', async (t) => {
     () => handlers.updateSparePart(ctx, {
       ...userMeta(),
       params: { id: PART.id },
-      body: { rackId: PART_RACK, workOrderId: 'wo-1', info: { location: 'Site Lab' } }
+      body: { rackId: PART_RACK, workOrderId: 'wo-1', info: { location: 'siteLab' } }
     }),
     /ERR_WO_INVALID_STATUS_TRANSITION/
   )
@@ -82,7 +82,7 @@ test('handlers: updateSparePart 404s when WO is missing', async (t) => {
     () => handlers.updateSparePart(ctx, {
       ...userMeta(),
       params: { id: PART.id },
-      body: { rackId: PART_RACK, workOrderId: 'wo-missing', info: { location: 'Site Lab' } }
+      body: { rackId: PART_RACK, workOrderId: 'wo-missing', info: { location: 'siteLab' } }
     }),
     /ERR_WORK_ORDER_NOT_FOUND/
   )
@@ -93,14 +93,14 @@ test('handlers: updateSparePart pushes part update + WO partsMoves append on a v
   const out = await handlers.updateSparePart(ctx, {
     ...userMeta(),
     params: { id: PART.id },
-    body: { rackId: PART_RACK, workOrderId: 'wo-1', info: { location: 'Site Lab' } }
+    body: { rackId: PART_RACK, workOrderId: 'wo-1', info: { location: 'siteLab' } }
   })
 
   t.is(pushed.length, 2, 'two actions pushed (part + WO)')
 
   const partAction = pushed.find(p => p.params[0].rackId === PART_RACK)
   t.is(partAction.action, 'updateThing')
-  t.is(partAction.params[0].info.location, 'Site Lab')
+  t.is(partAction.params[0].info.location, 'siteLab')
   t.is(partAction.params[0].info.workOrderId, 'wo-1', 'workOrderId injected into part info')
   t.is(partAction.params[0].info.workOrderCode, 'IVI-2-0001', 'workOrderCode injected too')
 
@@ -110,7 +110,7 @@ test('handlers: updateSparePart pushes part update + WO partsMoves append on a v
   t.is(moves[0].partId, PART.id)
   t.is(moves[0].partCode, PART.code)
   t.is(moves[0].fromLocation, 'Lab')
-  t.is(moves[0].toLocation, 'Site Lab')
+  t.is(moves[0].toLocation, 'siteLab')
   t.is(moves[0].workOrderCode, 'IVI-2-0001')
 
   t.ok(out.move, 'response includes the move record')
@@ -184,7 +184,7 @@ test('handlers: registerSparePart creates part then Type-1 WO and returns ids/co
   t.is(pushed[1].params[0].rackId, WO_RACK)
   t.is(pushed[1].params[0].info.type, 1, 'Type-1 WO')
   t.is(pushed[1].params[0].info.partsMoves[0].fromLocation, null)
-  t.is(pushed[1].params[0].info.partsMoves[0].toLocation, 'Site Warehouse')
+  t.is(pushed[1].params[0].info.partsMoves[0].toLocation, 'siteWarehouse')
 
   t.ok(out.partId, 'returns partId')
   t.ok(out.workOrderId, 'returns workOrderId')
