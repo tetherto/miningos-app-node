@@ -70,6 +70,18 @@ test('handlers: createWorkOrder 400s ERR_PART_NOT_FOUND when deviceIdentifier re
   )
 })
 
+test('handlers: updateWorkOrder forwards warranty payload to updateThing', async (t) => {
+  const flow = buildSubmitFlow()
+  await handlers.updateWorkOrder(flow.ctx, {
+    ...userMeta(),
+    params: { id: 'wo-1' },
+    body: { warranty: { vendor: 'microbt', fields: { rmaNumber: 'RMA-1', faultCode: 'E03' } } }
+  })
+  t.is(flow.lastPush.action, 'updateThing')
+  t.is(flow.lastPush.params[0].info.warranty.vendor, 'microbt')
+  t.is(flow.lastPush.params[0].info.warranty.fields.rmaNumber, 'RMA-1')
+})
+
 test('handlers: closeWorkOrder maps to updateThing with status=closed and finalResult', async (t) => {
   const flow = buildSubmitFlow()
   await handlers.closeWorkOrder(flow.ctx, {

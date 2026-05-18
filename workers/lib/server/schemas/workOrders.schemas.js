@@ -2,6 +2,14 @@
 
 const types = { type: 'integer', enum: [1, 2] }
 
+const warranty = {
+  type: ['object', 'null'],
+  properties: {
+    vendor: { type: ['string', 'null'] },
+    fields: { type: 'object', additionalProperties: true }
+  }
+}
+
 const create = {
   body: {
     type: 'object',
@@ -13,7 +21,8 @@ const create = {
       deviceModel: { type: 'string', minLength: 1, maxLength: 100 },
       deviceIdentifier: { type: 'string', minLength: 1, maxLength: 200 },
       issue: { type: 'string', minLength: 1, maxLength: 2000 },
-      assignedTo: { type: ['string', 'null'], maxLength: 200 }
+      assignedTo: { type: ['string', 'null'], maxLength: 200 },
+      warranty
     },
     if: { properties: { type: { const: 2 } } },
     then: { required: ['issue'] }
@@ -63,7 +72,8 @@ const update = {
       deviceModel: { type: 'string', minLength: 1, maxLength: 100 },
       deviceIdentifier: { type: 'string', minLength: 1, maxLength: 200 },
       assignedTo: { type: ['string', 'null'], maxLength: 200 },
-      finalResult: { type: ['string', 'null'], maxLength: 4000 }
+      finalResult: { type: ['string', 'null'], maxLength: 4000 },
+      warranty
     }
   }
 }
