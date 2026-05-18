@@ -184,7 +184,7 @@ test('handlers: registerSparePart creates part then Type-1 WO and returns ids/co
   t.is(pushed[1].params[0].rackId, WO_RACK)
   t.is(pushed[1].params[0].info.type, 1, 'Type-1 WO')
   t.is(pushed[1].params[0].info.partsMoves[0].fromLocation, null)
-  t.is(pushed[1].params[0].info.partsMoves[0].toLocation, 'SiteWarehouse')
+  t.is(pushed[1].params[0].info.partsMoves[0].toLocation, 'Site Warehouse')
 
   t.ok(out.partId, 'returns partId')
   t.ok(out.workOrderId, 'returns workOrderId')
