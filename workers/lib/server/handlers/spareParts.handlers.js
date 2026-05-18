@@ -11,6 +11,10 @@ const {
 
 const TERMINAL_WO_STATUSES = new Set(['closed', 'cancelled'])
 
+function _pushErrors (results) {
+  return (results || []).flatMap(r => r?.errors || [])
+}
+
 async function _loadWorkOrder (ctx, workOrderId) {
   const results = await ctx.dataProxy.requestData('listThings', {
     query: { id: workOrderId, type: WORK_ORDER_THING_TYPE }
@@ -85,6 +89,14 @@ async function updateSparePart (ctx, req) {
 
   if (!movesPart) return partResults
 
+  const partPushErrors = _pushErrors(partResults)
+  if (partPushErrors.length) {
+    const err = new Error(`ERR_PART_UPDATE_PUSH_FAILED:${partPushErrors.join(',')}`)
+    err.statusCode = 502
+    err.detail = { stage: 'part', partAction: null, workOrderAction: null }
+    throw err
+  }
+
   const moveEntry = {
     partId: id,
     partCode: part.code,
@@ -114,14 +126,32 @@ async function updateSparePart (ctx, req) {
     else arr.push(res)
   })
 
-  return { part: partResults, workOrder: woResults, move: moveEntry }
+  return {
+    part: partResults,
+    workOrder: woResults,
+    move: moveEntry,
+    partActionId: partResults.find(r => r?.id)?.id ?? null,
+    workOrderActionId: woResults.find(r => r?.id)?.id ?? null,
+    workOrderAppendErrors: _pushErrors(woResults),
+    expectedActionLatencyMs: ctx.conf?.expectedActionLatencyMs ?? 1000
+  }
 }
 
 async function registerSparePart (ctx, req) {
   const { rackId, info } = req.body
-  const deviceType = info.deviceType || info.type
+  const deviceType = info.deviceType
   if (!WORK_ORDER_VALID_DEVICE_TYPES.includes(deviceType)) {
     const err = new Error('ERR_INVALID_DEVICE_TYPE')
+    err.statusCode = 400
+    throw err
+  }
+  if (!info.deviceModel || typeof info.deviceModel !== 'string') {
+    const err = new Error('ERR_DEVICE_MODEL_REQUIRED')
+    err.statusCode = 400
+    throw err
+  }
+  if (!info.serialNum || typeof info.serialNum !== 'string') {
+    const err = new Error('ERR_SERIAL_NUM_REQUIRED')
     err.statusCode = 400
     throw err
   }
@@ -143,8 +173,8 @@ async function registerSparePart (ctx, req) {
   const woInfo = {
     type: WORK_ORDER_TYPES.REGISTER,
     deviceType,
-    deviceModel: info.model || info.deviceModel || 'unknown',
-    deviceIdentifier: info.serialNum || info.macAddress || partId,
+    deviceModel: info.deviceModel,
+    deviceIdentifier: info.serialNum,
     createdBy: voter,
     createdAt: ts,
     partsMoves: [{
@@ -178,10 +208,8 @@ async function registerSparePart (ctx, req) {
     workOrderId: woId,
     partActionId: partResults.find(r => r?.id)?.id ?? null,
     workOrderActionId: woResults.find(r => r?.id)?.id ?? null,
-    errors: [
-      ...partResults.flatMap(r => r?.errors || []),
-      ...woResults.flatMap(r => r?.errors || [])
-    ]
+    errors: [..._pushErrors(partResults), ..._pushErrors(woResults)],
+    expectedActionLatencyMs: ctx.conf?.expectedActionLatencyMs ?? 1000
   }
 }
 

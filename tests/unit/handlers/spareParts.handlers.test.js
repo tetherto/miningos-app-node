@@ -116,6 +116,31 @@ test('handlers: updateSparePart pushes part update + WO partsMoves append on a v
   t.ok(out.move, 'response includes the move record')
 })
 
+test('handlers: updateSparePart aborts WO append when the part pushAction returned errors', async (t) => {
+  const handler = async (_key, method, params) => {
+    if (method === 'listThings') {
+      if (params.query?.type === 'inventory-work_order') return [OPEN_WO]
+      return [PART]
+    }
+    if (method === 'pushAction') {
+      const isPart = params.params[0].rackId === PART_RACK
+      return { id: null, errors: isPart ? ['ERR_RACK_DOWN'] : [] }
+    }
+    return null
+  }
+  const ctx = createMockCtxWithOrks([{ rpcPublicKey: 'k' }], handler)
+  ctx.authLib = mockAuthLib
+  ctx.conf = { ...ctx.conf, workOrderRackId: WO_RACK }
+  await t.exception(
+    () => handlers.updateSparePart(ctx, {
+      ...userMeta(),
+      params: { id: PART.id },
+      body: { rackId: PART_RACK, workOrderId: 'wo-1', info: { location: 'siteLab' } }
+    }),
+    /ERR_PART_UPDATE_PUSH_FAILED:ERR_RACK_DOWN/
+  )
+})
+
 test('handlers: updateSparePart skips WO checks when only non-move fields change', async (t) => {
   const { ctx, pushed } = buildCtx()
   await handlers.updateSparePart(ctx, {
@@ -148,9 +173,27 @@ test('handlers: registerSparePart rejects invalid deviceType', async (t) => {
   await t.exception(
     () => handlers.registerSparePart(ctx, {
       ...userMeta(),
-      body: { rackId: PART_RACK, info: { deviceType: 'cooling', model: 'X' } }
+      body: { rackId: PART_RACK, info: { deviceType: 'cooling', deviceModel: 'X', serialNum: 'SN' } }
     }),
     /ERR_INVALID_DEVICE_TYPE/
+  )
+})
+
+test('handlers: registerSparePart rejects missing deviceModel / serialNum', async (t) => {
+  const { ctx } = buildRegisterCtx()
+  await t.exception(
+    () => handlers.registerSparePart(ctx, {
+      ...userMeta(),
+      body: { rackId: PART_RACK, info: { deviceType: 'psu', serialNum: 'SN' } }
+    }),
+    /ERR_DEVICE_MODEL_REQUIRED/
+  )
+  await t.exception(
+    () => handlers.registerSparePart(ctx, {
+      ...userMeta(),
+      body: { rackId: PART_RACK, info: { deviceType: 'psu', deviceModel: 'M' } }
+    }),
+    /ERR_SERIAL_NUM_REQUIRED/
   )
 })
 
@@ -158,7 +201,7 @@ test('handlers: registerSparePart fires part + Type-1 WO pushActions in parallel
   const { ctx, pushed } = buildRegisterCtx()
   const out = await handlers.registerSparePart(ctx, {
     ...userMeta(),
-    body: { rackId: PART_RACK, info: { deviceType: 'psu', model: 'PSU-WM-CB6_V5', serialNum: 'SN-99' } }
+    body: { rackId: PART_RACK, info: { deviceType: 'psu', deviceModel: 'PSU-WM-CB6_V5', serialNum: 'SN-99' } }
   })
 
   t.is(pushed.length, 2, 'one part action, one WO action')
@@ -182,7 +225,7 @@ test('handlers: registerSparePart surfaces ork-side errors in the response', asy
   const { ctx } = buildRegisterCtx({ pushResult: { id: null, errors: ['ERR_RACK_DOWN'] } })
   const out = await handlers.registerSparePart(ctx, {
     ...userMeta(),
-    body: { rackId: PART_RACK, info: { deviceType: 'psu', model: 'X', serialNum: 'SN-X' } }
+    body: { rackId: PART_RACK, info: { deviceType: 'psu', deviceModel: 'X', serialNum: 'SN-X' } }
   })
   t.alike(out.errors.sort(), ['ERR_RACK_DOWN', 'ERR_RACK_DOWN'])
   t.is(out.partActionId, null)

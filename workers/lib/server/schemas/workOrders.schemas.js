@@ -43,7 +43,7 @@ const list = {
       assignee: { type: 'string', minLength: 1, maxLength: 200 },
       creator: { type: 'string', minLength: 1, maxLength: 200 },
       partId: { type: 'string', minLength: 1, maxLength: 200 },
-      status: { type: 'string', enum: ['open', 'in_progress', 'closed', 'cancelled'] },
+      status: { type: 'string', enum: ['open', 'inProgress', 'closed', 'cancelled'] },
       type: types,
       from: { type: 'integer', minimum: 0 },
       to: { type: 'integer', minimum: 0 },

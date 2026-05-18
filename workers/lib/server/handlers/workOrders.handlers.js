@@ -186,7 +186,7 @@ async function exportWorkOrder (ctx, req, rep) {
     return rep.status(501).send({
       statusCode: 501,
       error: 'Not Implemented',
-      message: 'ERR_EXPORT_FORMAT_NOT_IMPLEMENTED'
+      message: `ERR_EXPORT_FORMAT_NOT_IMPLEMENTED:${format}`
     })
   }
 

@@ -274,7 +274,7 @@ test('handlers: exportWorkOrder pdf returns 501 (deferred to phase 2)', async (t
   const rep = mkRep()
   await handlers.exportWorkOrder(ctx, { params: { id: 'IVI-2-0001' }, query: { format: 'pdf' } }, rep)
   t.is(rep._status, 501)
-  t.is(rep._body.message, 'ERR_EXPORT_FORMAT_NOT_IMPLEMENTED')
+  t.ok(/^ERR_EXPORT_FORMAT_NOT_IMPLEMENTED:(pdf|docx)$/.test(rep._body.message))
 })
 
 test('handlers: exportWorkOrder docx returns 501 (deferred to phase 2)', async (t) => {
@@ -282,7 +282,7 @@ test('handlers: exportWorkOrder docx returns 501 (deferred to phase 2)', async (
   const rep = mkRep()
   await handlers.exportWorkOrder(ctx, { params: { id: 'IVI-2-0001' }, query: { format: 'docx' } }, rep)
   t.is(rep._status, 501)
-  t.is(rep._body.message, 'ERR_EXPORT_FORMAT_NOT_IMPLEMENTED')
+  t.ok(/^ERR_EXPORT_FORMAT_NOT_IMPLEMENTED:(pdf|docx)$/.test(rep._body.message))
 })
 
 test('handlers: exportWorkOrder 404s when WO not found by id or code', async (t) => {

@@ -551,3 +551,20 @@ test('listThingsWithCount - hasMore=false when full result returned', async (t) 
   const out = await listThingsWithCount(ctx, {}, { offset: 0, limit: 10 })
   t.is(out.hasMore, false)
 })
+
+test('listThingsWithCount - caps data at limit when multiple orks each return up to limit items', async (t) => {
+  const ctx = {
+    dataProxy: {
+      requestData: async (method) => method === 'listThings'
+        ? [
+            [{ id: 'a' }, { id: 'b' }, { id: 'c' }],
+            [{ id: 'd' }, { id: 'e' }, { id: 'f' }]
+          ]
+        : [3, 3]
+    }
+  }
+  const out = await listThingsWithCount(ctx, {}, { offset: 0, limit: 4 })
+  t.is(out.data.length, 4, 'capped to limit even though 6 unique items came back across 2 orks')
+  t.is(out.totalCount, 6)
+  t.is(out.hasMore, true)
+})
