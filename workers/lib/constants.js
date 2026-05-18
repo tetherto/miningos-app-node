@@ -200,8 +200,12 @@ const ENDPOINTS = {
   // Spare Part endpoints
   SPARE_PARTS: '/auth/spare-parts',
   SPARE_PART_BY_ID: '/auth/spare-parts/:id',
-  SPARE_PART_REPAIR_HISTORY: '/auth/spare-parts/:id/repair-history'
+  SPARE_PART_REPAIR_HISTORY: '/auth/spare-parts/:id/repair-history',
+  // Work Order export
+  WORK_ORDER_EXPORT: '/auth/work-orders/:id/export'
 }
+
+const WORK_ORDER_EXPORT_FORMATS = ['pdf', 'csv', 'docx']
 
 const HTTP_METHODS = {
   GET: 'GET',
@@ -755,5 +759,6 @@ module.exports = {
   WORK_ORDER_ACTION_POLL_MS,
   WORK_ORDER_FILE_MAX_BYTES_DEFAULT,
   WORK_ORDER_FILE_COUNT_CAP_DEFAULT,
-  WORK_ORDER_FILE_MIME_ALLOWLIST_DEFAULT
+  WORK_ORDER_FILE_MIME_ALLOWLIST_DEFAULT,
+  WORK_ORDER_EXPORT_FORMATS
 }

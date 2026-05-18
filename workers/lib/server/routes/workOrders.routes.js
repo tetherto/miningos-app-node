@@ -15,7 +15,8 @@ const {
   cancelWorkOrder,
   assignWorkOrder,
   appendWorkLogEntry,
-  getWorkOrderAudit
+  getWorkOrderAudit,
+  exportWorkOrder
 } = require('../handlers/workOrders.handlers')
 const { createAuthRoute, createCachedAuthRoute } = require('../lib/routeHelpers')
 
@@ -106,5 +107,11 @@ module.exports = (ctx) => [
     url: ENDPOINTS.WORK_ORDER_LOG,
     schema: schemas.log,
     ...createAuthRoute(ctx, appendWorkLogEntry, [AUTH_PERMISSIONS.WORK_ORDER])
+  },
+  {
+    method: HTTP_METHODS.GET,
+    url: ENDPOINTS.WORK_ORDER_EXPORT,
+    schema: schemas.export,
+    ...createAuthRoute(ctx, exportWorkOrder, [AUTH_PERMISSIONS.WORK_ORDER])
   }
 ]

@@ -7,6 +7,7 @@ const {
   WORK_ORDER_VALID_DEVICE_TYPES,
   SPARE_PART_INITIAL_LOCATION
 } = require('../../constants')
+const { renderWorkOrderCsv, renderWorkOrderPdf } = require('../lib/workOrderExport')
 
 async function _resolvePartByIdentifier (ctx, identifier) {
   const results = await ctx.dataProxy.requestData('listThings', {
@@ -177,6 +178,47 @@ async function appendWorkLogEntry (ctx, req) {
   })
 }
 
+async function _loadWorkOrderByIdOrCode (ctx, idOrCode) {
+  const params = {
+    query: {
+      type: WORK_ORDER_THING_TYPE,
+      $or: [{ id: idOrCode }, { code: idOrCode }]
+    }
+  }
+  const results = await ctx.dataProxy.requestData('listThings', params)
+  return flattenRpcResults(results)[0] || null
+}
+
+async function exportWorkOrder (ctx, req, rep) {
+  const { format } = req.query
+  if (format === 'docx') {
+    return rep.status(501).send({
+      statusCode: 501,
+      error: 'Not Implemented',
+      message: 'ERR_EXPORT_FORMAT_NOT_IMPLEMENTED'
+    })
+  }
+
+  const wo = await _loadWorkOrderByIdOrCode(ctx, req.params.id)
+  if (!wo) {
+    const err = new Error('ERR_WORK_ORDER_NOT_FOUND')
+    err.statusCode = 404
+    throw err
+  }
+
+  const filename = wo.code || wo.id
+  if (format === 'csv') {
+    rep.header('content-type', 'text/csv; charset=utf-8')
+    rep.header('content-disposition', `attachment; filename="${filename}.csv"`)
+    return rep.send(renderWorkOrderCsv(wo))
+  }
+
+  const pdf = await renderWorkOrderPdf(wo, { fileBaseUrl: ctx.conf?.fileBaseUrl || '' })
+  rep.header('content-type', 'application/pdf')
+  rep.header('content-disposition', `attachment; filename="${filename}.pdf"`)
+  return rep.send(pdf)
+}
+
 async function getWorkOrderAudit (ctx, req) {
   const payload = {
     logType: 'info',
@@ -199,5 +241,6 @@ module.exports = {
   cancelWorkOrder,
   assignWorkOrder,
   appendWorkLogEntry,
-  getWorkOrderAudit
+  getWorkOrderAudit,
+  exportWorkOrder
 }

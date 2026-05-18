@@ -130,4 +130,16 @@ const audit = {
   }
 }
 
-module.exports = { create, list, byId, update, close, cancel, assign, audit, log }
+const exportRoute = {
+  params: byId.params,
+  querystring: {
+    type: 'object',
+    required: ['format'],
+    additionalProperties: false,
+    properties: {
+      format: { type: 'string', enum: ['pdf', 'csv', 'docx'] }
+    }
+  }
+}
+
+module.exports = { create, list, byId, update, close, cancel, assign, audit, log, export: exportRoute }
