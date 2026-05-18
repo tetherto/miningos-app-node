@@ -269,7 +269,15 @@ function mkRep () {
   }
 }
 
-test('handlers: exportWorkOrder docx returns 501 with structured error body', async (t) => {
+test('handlers: exportWorkOrder pdf returns 501 (deferred to phase 2)', async (t) => {
+  const ctx = createMockCtxWithOrks([{ rpcPublicKey: 'k' }], async () => [])
+  const rep = mkRep()
+  await handlers.exportWorkOrder(ctx, { params: { id: 'IVI-2-0001' }, query: { format: 'pdf' } }, rep)
+  t.is(rep._status, 501)
+  t.is(rep._body.message, 'ERR_EXPORT_FORMAT_NOT_IMPLEMENTED')
+})
+
+test('handlers: exportWorkOrder docx returns 501 (deferred to phase 2)', async (t) => {
   const ctx = createMockCtxWithOrks([{ rpcPublicKey: 'k' }], async () => [])
   const rep = mkRep()
   await handlers.exportWorkOrder(ctx, { params: { id: 'IVI-2-0001' }, query: { format: 'docx' } }, rep)
@@ -280,7 +288,7 @@ test('handlers: exportWorkOrder docx returns 501 with structured error body', as
 test('handlers: exportWorkOrder 404s when WO not found by id or code', async (t) => {
   const ctx = createMockCtxWithOrks([{ rpcPublicKey: 'k' }], async () => [])
   await t.exception(
-    () => handlers.exportWorkOrder(ctx, { params: { id: 'nope' }, query: { format: 'pdf' } }, mkRep()),
+    () => handlers.exportWorkOrder(ctx, { params: { id: 'nope' }, query: { format: 'csv' } }, mkRep()),
     /ERR_WORK_ORDER_NOT_FOUND/
   )
 })
@@ -293,16 +301,6 @@ test('handlers: exportWorkOrder csv sets text/csv content-type and attachment fi
   t.is(rep._headers['content-type'], 'text/csv; charset=utf-8')
   t.ok(rep._headers['content-disposition'].includes('IVI-2-0001.csv'))
   t.ok(typeof rep._body === 'string' && rep._body.startsWith('code,status,type'))
-})
-
-test('handlers: exportWorkOrder pdf sets application/pdf content-type and returns a PDF buffer', async (t) => {
-  const wo = { id: 'wo-1', code: 'IVI-2-0001', info: { status: 'open', type: 2, partsMoves: [] } }
-  const ctx = createMockCtxWithOrks([{ rpcPublicKey: 'k' }], async () => [wo])
-  const rep = mkRep()
-  await handlers.exportWorkOrder(ctx, { params: { id: 'IVI-2-0001' }, query: { format: 'pdf' } }, rep)
-  t.is(rep._headers['content-type'], 'application/pdf')
-  t.ok(rep._headers['content-disposition'].includes('IVI-2-0001.pdf'))
-  t.ok(Buffer.isBuffer(rep._body) && rep._body.slice(0, 5).toString() === '%PDF-')
 })
 
 test('handlers: getWorkOrderAudit calls getHistoricalLogs filtered by id', async (t) => {
