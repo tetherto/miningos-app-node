@@ -127,7 +127,8 @@ test('UserService - updateUser', async (t) => {
     id: 123,
     email: 'updated@example.com',
     name: 'Updated User',
-    role: 'admin'
+    role: 'admin',
+    callerRoles: ['admin']
   })
 
   t.ok(genTokenCalled, 'should call genToken')
@@ -161,7 +162,8 @@ test('UserService - updateUser with null name', async (t) => {
     id: 123,
     email: 'test@example.com',
     name: null,
-    role: 'admin'
+    role: 'admin',
+    callerRoles: ['admin']
   })
 
   t.is(updateUserArgs.name, null, 'should pass null name')

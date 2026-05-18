@@ -167,7 +167,9 @@ const ENDPOINTS = {
   // Site Efficiency endpoint
   SITE_EFFICIENCY: '/auth/site/efficiency',
   // Explorer endpoints
-  EXPLORER_RACKS: '/auth/explorer/racks'
+  EXPLORER_RACKS: '/auth/explorer/racks',
+  ENERGY_FORECAST: '/auth/energy/forecast',
+  ENERGY_AVAILABLE: '/auth/energy/available'
 }
 
 const HTTP_METHODS = {
@@ -218,6 +220,7 @@ const GET_HISTORICAL_LOGS = 'getHistoricalLogs'
 const RPC_METHODS = {
   TAIL_LOG_RANGE_AGGR: 'tailLogCustomRangeAggr',
   GET_WRK_EXT_DATA: 'getWrkExtData',
+  SET_WRK_EXT_DATA: 'setWrkExtData',
   LIST_THINGS: 'listThings',
   GET_HISTORICAL_LOGS: 'getHistoricalLogs',
   TAIL_LOG: 'tailLog',
@@ -519,6 +522,11 @@ const MINERPOOL_EXT_DATA_KEYS = {
   STATS: 'stats'
 }
 
+const ELECTRICITY_EXT_DATA_KEYS = {
+  FORECAST: 'forecast',
+  AVAIL_ENERGY_MWH: 'availableEnergyMWh'
+}
+
 const NON_METRIC_KEYS = [
   'ts',
   'site',
@@ -699,5 +707,6 @@ module.exports = {
   EXPLORER_RACK_AGGR_FIELDS,
   EXPLORER_RACK_DEFAULT_LIMIT,
   EXPLORER_RACK_MAX_LIMIT,
-  LOG_FIELDS
+  LOG_FIELDS,
+  ELECTRICITY_EXT_DATA_KEYS
 }

@@ -50,7 +50,7 @@
     "@bitfinex/bfx-facs-lru": "git+https://github.com/bitfinexcom/bfx-facs-lru.git",
     "@bitfinex/lib-js-util-base": "git+https://github.com/bitfinexcom/lib-js-util-base.git",
     "@tetherto/hp-svc-facs-store": "git+https://github.com/tetherto/hp-svc-facs-store.git#v1.0.0",
-    "@tetherto/svc-facs-auth": "git+https://github.com/tetherto/svc-facs-auth.git#v1.0.0",
+    "@tetherto/svc-facs-auth": "git+https://github.com/tetherto/svc-facs-auth.git#v1.1.1",
     "@tetherto/svc-facs-httpd": "git+https://github.com/tetherto/svc-facs-httpd.git#v1.0.0",
     "@tetherto/svc-facs-httpd-oauth2": "git+https://github.com/tetherto/svc-facs-httpd-oauth2.git#v1.0.0",
     "@tetherto/tether-wrk-base": "git+https://github.com/tetherto/tether-wrk-base.git#v1.0.0",

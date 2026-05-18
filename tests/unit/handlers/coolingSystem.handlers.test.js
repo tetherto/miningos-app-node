@@ -12,7 +12,7 @@ const {
   buildHvacCircuit2View,
   buildHvacLayoutView,
   buildHvacAmbientView
-} = require('../../../workers/lib/server/handlers/coolingSystem.handlers')
+} = require('../../../workers/lib/server/handlers/cooling.system.handlers')
 const { COOLING_SYSTEM_PROJECTIONS } = require('../../../workers/lib/constants')
 const { extractDcsThing, getDCSTag, isCentralDCSEnabled } = require('../../../workers/lib/dcs.utils')
 

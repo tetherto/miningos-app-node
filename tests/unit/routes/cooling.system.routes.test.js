@@ -6,12 +6,12 @@ const { createRoutesForTest } = require('../helpers/mockHelpers')
 const { ENDPOINTS } = require('../../../workers/lib/constants')
 
 test('coolingSystem routes - module structure', (t) => {
-  testModuleStructure(t, '../../../workers/lib/server/routes/coolingSystem.routes.js', 'coolingSystem')
+  testModuleStructure(t, '../../../workers/lib/server/routes/cooling.system.routes.js', 'coolingSystem')
   t.pass()
 })
 
 test('coolingSystem routes - route definitions', (t) => {
-  const routes = createRoutesForTest('../../../workers/lib/server/routes/coolingSystem.routes.js')
+  const routes = createRoutesForTest('../../../workers/lib/server/routes/cooling.system.routes.js')
 
   const routeUrls = routes.map(route => route.url)
   t.ok(routeUrls.includes(ENDPOINTS.COOLING_SYSTEM), 'should have cooling-system route')
@@ -20,7 +20,7 @@ test('coolingSystem routes - route definitions', (t) => {
 })
 
 test('coolingSystem routes - HTTP methods', (t) => {
-  const routes = createRoutesForTest('../../../workers/lib/server/routes/coolingSystem.routes.js')
+  const routes = createRoutesForTest('../../../workers/lib/server/routes/cooling.system.routes.js')
 
   const coolingSystemRoute = routes.find(r => r.url === ENDPOINTS.COOLING_SYSTEM)
   t.ok(coolingSystemRoute, 'cooling-system route should exist')
@@ -30,7 +30,7 @@ test('coolingSystem routes - HTTP methods', (t) => {
 })
 
 test('coolingSystem routes - schema validation', (t) => {
-  const routes = createRoutesForTest('../../../workers/lib/server/routes/coolingSystem.routes.js')
+  const routes = createRoutesForTest('../../../workers/lib/server/routes/cooling.system.routes.js')
 
   const coolingSystemRoute = routes.find(r => r.url === ENDPOINTS.COOLING_SYSTEM)
   t.ok(coolingSystemRoute, 'cooling-system route should exist')
@@ -50,13 +50,13 @@ test('coolingSystem routes - schema validation', (t) => {
 })
 
 test('coolingSystem routes - handler functions', (t) => {
-  const routes = createRoutesForTest('../../../workers/lib/server/routes/coolingSystem.routes.js')
+  const routes = createRoutesForTest('../../../workers/lib/server/routes/cooling.system.routes.js')
   testHandlerFunctions(t, routes, 'coolingSystem')
   t.pass()
 })
 
 test('coolingSystem routes - onRequest functions', (t) => {
-  const routes = createRoutesForTest('../../../workers/lib/server/routes/coolingSystem.routes.js')
+  const routes = createRoutesForTest('../../../workers/lib/server/routes/cooling.system.routes.js')
 
   routes.forEach(route => {
     t.ok(typeof route.onRequest === 'function', `coolingSystem route ${route.url} should have onRequest function`)

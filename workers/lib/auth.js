@@ -167,7 +167,7 @@ class AuthLib {
       return null
     }
 
-    return { email }
+    return { email: email.toLowerCase() }
   }
 }
 

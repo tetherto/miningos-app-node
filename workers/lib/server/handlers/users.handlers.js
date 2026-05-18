@@ -64,7 +64,8 @@ async function updateUser (ctx, req, res) {
     throw new Error('ERR_USER_NOT_FOUND')
   }
 
-  const result = await ctx.userService.updateUser({ id, email, name, role })
+  const callerRoles = JSON.parse(req._info.user.metadata.roles)
+  const result = await ctx.userService.updateUser({ id, email, name, role, callerRoles })
 
   // Audit logging for sensitive operations
   auditLogger.logUserUpdate(id, email, updatedBy, {
