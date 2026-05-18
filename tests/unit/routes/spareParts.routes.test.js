@@ -50,12 +50,12 @@ test('spareParts.routes: list cache key includes every filter shortcut', (t) => 
       offset: 0,
       limit: 10,
       q: 'AB:CD',
-      location: 'siteLab',
+      location: 'Site Lab',
       status: 'faulty'
     }
   }
   const key = capturedKeyFn(req)
-  for (const expected of ['{"info.foo":1}', '{"code":1}', '{}', 0, 10, 'AB:CD', 'siteLab', 'faulty']) {
+  for (const expected of ['{"info.foo":1}', '{"code":1}', '{}', 0, 10, 'AB:CD', 'Site Lab', 'faulty']) {
     t.ok(key.includes(expected), `cache key includes ${JSON.stringify(expected)}`)
   }
 
