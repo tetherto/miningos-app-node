@@ -202,6 +202,73 @@ test('handlers: registerSparePart throws if part never materialises after pushAc
   )
 })
 
+function listFlow ({ items = [], total = 0 } = {}) {
+  let lastList, lastCount
+  const handler = async (_key, method, params) => {
+    if (method === 'listThings') { lastList = params; return items }
+    if (method === 'getThingsCount') { lastCount = params; return total }
+    return null
+  }
+  const ctx = createMockCtxWithOrks([{ rpcPublicKey: 'k' }], handler)
+  return {
+    ctx,
+    get lastList () { return lastList },
+    get lastCount () { return lastCount }
+  }
+}
+
+test('handlers: listSpareParts excludes WO things via type $ne and paginates', async (t) => {
+  const flow = listFlow({ items: [{ id: 'p1' }, { id: 'p2' }], total: 9 })
+  const out = await handlers.listSpareParts(flow.ctx, { query: { offset: 0, limit: 2 } })
+  t.alike(flow.lastList.query.type, { $ne: 'inventory-work_order' }, 'WOs excluded by mingo')
+  t.alike(flow.lastCount.query.type, { $ne: 'inventory-work_order' }, 'count excludes WOs too')
+  t.alike(out.data.map(o => o.id), ['p1', 'p2'])
+  t.is(out.totalCount, 9)
+  t.is(out.hasMore, true)
+})
+
+test('handlers: listSpareParts honors an explicit type filter (overrides $ne default)', async (t) => {
+  const flow = listFlow()
+  await handlers.listSpareParts(flow.ctx, { query: { query: '{"type":"inventory-miner_part-psu"}' } })
+  t.is(flow.lastList.query.type, 'inventory-miner_part-psu')
+})
+
+test('handlers: listSpareParts maps location/status shortcuts to info.* mingo paths', async (t) => {
+  const flow = listFlow()
+  await handlers.listSpareParts(flow.ctx, {
+    query: { location: 'siteLab', status: 'faulty' }
+  })
+  t.is(flow.lastList.query['info.location'], 'siteLab')
+  t.is(flow.lastList.query['info.status'], 'faulty')
+})
+
+test('handlers: listSpareParts ?q builds case-insensitive $or against code / serialNum / macAddress', async (t) => {
+  const flow = listFlow()
+  await handlers.listSpareParts(flow.ctx, { query: { q: 'AB:CD:EF' } })
+  const or = flow.lastList.query.$or
+  t.is(or.length, 3)
+  t.alike(or[0], { code: { $regex: 'AB:CD:EF', $options: 'i' } })
+  t.alike(or[1], { 'info.serialNum': { $regex: 'AB:CD:EF', $options: 'i' } })
+  t.alike(or[2], { 'info.macAddress': { $regex: 'AB:CD:EF', $options: 'i' } })
+})
+
+test('handlers: listSpareParts ?q escapes regex metacharacters', async (t) => {
+  const flow = listFlow()
+  await handlers.listSpareParts(flow.ctx, { query: { q: 'a.b+c*' } })
+  t.is(flow.lastList.query.$or[0].code.$regex, 'a\\.b\\+c\\*')
+})
+
+test('handlers: listSpareParts ANDs location/status/q in a single query payload', async (t) => {
+  const flow = listFlow()
+  await handlers.listSpareParts(flow.ctx, {
+    query: { location: 'siteLab', status: 'faulty', q: 'PS-' }
+  })
+  const q = flow.lastList.query
+  t.is(q['info.location'], 'siteLab')
+  t.is(q['info.status'], 'faulty')
+  t.ok(Array.isArray(q.$or) && q.$or.length === 3)
+})
+
 test('handlers: getRepairHistory returns moves matching part id, newest first', async (t) => {
   const wos = [
     {

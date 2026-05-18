@@ -1,7 +1,7 @@
 'use strict'
 
 const { randomUUID } = require('crypto')
-const { flattenRpcResults, waitForThing } = require('../../utils')
+const { parseJsonQueryParam, flattenRpcResults, waitForThing } = require('../../utils')
 const {
   WORK_ORDER_THING_TYPE,
   WORK_ORDER_TYPES,
@@ -200,6 +200,42 @@ async function registerSparePart (ctx, req) {
   }
 }
 
+function _buildSparePartQuery (qs) {
+  const query = qs.query
+    ? parseJsonQueryParam(qs.query, 'ERR_QUERY_INVALID_JSON')
+    : {}
+  if (!query.type) query.type = { $ne: WORK_ORDER_THING_TYPE }
+  if (qs.location) query['info.location'] = qs.location
+  if (qs.status) query['info.status'] = qs.status
+  if (qs.q) {
+    const escaped = String(qs.q).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    query.$or = [
+      { code: { $regex: escaped, $options: 'i' } },
+      { 'info.serialNum': { $regex: escaped, $options: 'i' } },
+      { 'info.macAddress': { $regex: escaped, $options: 'i' } }
+    ]
+  }
+  return query
+}
+
+async function listSpareParts (ctx, req) {
+  const offset = req.query.offset ?? 0
+  const limit = req.query.limit ?? 100
+  const query = _buildSparePartQuery(req.query)
+  const params = { query, offset, limit }
+  if (req.query.sort) params.sort = parseJsonQueryParam(req.query.sort, 'ERR_SORT_INVALID_JSON')
+  if (req.query.fields) params.fields = parseJsonQueryParam(req.query.fields, 'ERR_FIELDS_INVALID_JSON')
+
+  const [listResults, countResults] = await Promise.all([
+    ctx.dataProxy.requestData('listThings', params),
+    ctx.dataProxy.requestData('getThingsCount', { query })
+  ])
+
+  const data = flattenRpcResults(listResults)
+  const totalCount = countResults.reduce((acc, c) => acc + (Number(c) || 0), 0)
+  return { data, totalCount, offset, limit, hasMore: offset + data.length < totalCount }
+}
+
 async function getRepairHistory (ctx, req) {
   const offset = req.query.offset ?? 0
   const limit = req.query.limit ?? 100
@@ -228,4 +264,4 @@ async function getRepairHistory (ctx, req) {
   }
 }
 
-module.exports = { registerSparePart, updateSparePart, getRepairHistory }
+module.exports = { registerSparePart, listSpareParts, updateSparePart, getRepairHistory }

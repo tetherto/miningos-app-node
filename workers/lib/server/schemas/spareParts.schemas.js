@@ -56,4 +56,22 @@ const repairHistory = {
   }
 }
 
-module.exports = { register, update, repairHistory }
+const list = {
+  querystring: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      query: { type: 'string' },
+      sort: { type: 'string' },
+      fields: { type: 'string' },
+      offset: { type: 'integer', minimum: 0 },
+      limit: { type: 'integer', minimum: 1, maximum: 200 },
+      q: { type: 'string', minLength: 1, maxLength: 200 },
+      location: { type: 'string', minLength: 1, maxLength: 100 },
+      status: { type: 'string', minLength: 1, maxLength: 100 },
+      overwriteCache: { type: 'boolean' }
+    }
+  }
+}
+
+module.exports = { register, list, update, repairHistory }

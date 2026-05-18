@@ -6,7 +6,7 @@ const {
   AUTH_PERMISSIONS
 } = require('../../constants')
 const schemas = require('../schemas/spareParts.schemas')
-const { registerSparePart, updateSparePart, getRepairHistory } = require('../handlers/spareParts.handlers')
+const { registerSparePart, listSpareParts, updateSparePart, getRepairHistory } = require('../handlers/spareParts.handlers')
 const { createAuthRoute, createCachedAuthRoute } = require('../lib/routeHelpers')
 
 module.exports = (ctx) => [
@@ -15,6 +15,23 @@ module.exports = (ctx) => [
     url: ENDPOINTS.SPARE_PARTS,
     schema: schemas.register,
     ...createAuthRoute(ctx, registerSparePart, [AUTH_PERMISSIONS.INVENTORY])
+  },
+  {
+    method: HTTP_METHODS.GET,
+    url: ENDPOINTS.SPARE_PARTS,
+    schema: schemas.list,
+    ...createCachedAuthRoute(
+      ctx,
+      (req) => [
+        'spare-parts/list',
+        req.query.query, req.query.sort, req.query.fields,
+        req.query.offset, req.query.limit,
+        req.query.q, req.query.location, req.query.status
+      ],
+      ENDPOINTS.SPARE_PARTS,
+      listSpareParts,
+      [AUTH_PERMISSIONS.INVENTORY]
+    )
   },
   {
     method: HTTP_METHODS.PUT,
