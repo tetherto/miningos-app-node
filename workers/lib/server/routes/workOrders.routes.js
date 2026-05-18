@@ -19,6 +19,7 @@ const {
   exportWorkOrder
 } = require('../handlers/workOrders.handlers')
 const { createAuthRoute, createCachedAuthRoute } = require('../lib/routeHelpers')
+const { stableJsonString } = require('../../utils')
 
 module.exports = (ctx) => [
   {
@@ -35,9 +36,9 @@ module.exports = (ctx) => [
       ctx,
       (req) => [
         'work-orders',
-        req.query.query,
-        req.query.sort,
-        req.query.fields,
+        stableJsonString(req.query.query),
+        stableJsonString(req.query.sort),
+        stableJsonString(req.query.fields),
         req.query.offset,
         req.query.limit,
         req.query.q,

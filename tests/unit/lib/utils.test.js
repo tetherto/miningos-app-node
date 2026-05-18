@@ -9,7 +9,10 @@ const {
   getRpcTimeout,
   getAuthTokenFromHeaders,
   parseJsonQueryParam,
-  submitWorkOrderAction
+  submitWorkOrderAction,
+  escapeRegex,
+  stableJsonString,
+  listThingsWithCount
 } = require('../../../workers/lib/utils')
 
 const randomIPv4 = () => {
@@ -497,4 +500,54 @@ test('submitWorkOrderAction - maps rpc error into result array', async (t) => {
   const out = await submitWorkOrderAction(ctx, woReq(), 'updateThing', { id: 'wo-1' })
   t.is(out[0].id, null)
   t.is(out[0].errors[0], 'boom')
+})
+
+test('escapeRegex - escapes mingo regex metacharacters', (t) => {
+  t.is(escapeRegex('a.b+c*'), 'a\\.b\\+c\\*')
+  t.is(escapeRegex('AB:CD:EF'), 'AB:CD:EF', 'preserves non-metachars like ":"')
+  t.is(escapeRegex('(x|y)?'), '\\(x\\|y\\)\\?')
+})
+
+test('stableJsonString - sorts top-level keys so semantically-equal queries share cache entries', (t) => {
+  t.is(stableJsonString('{"b":2,"a":1}'), stableJsonString('{"a":1,"b":2}'))
+  t.is(stableJsonString('{"a":1,"b":2}'), '{"a":1,"b":2}')
+})
+
+test('stableJsonString - passes through non-strings, primitives, and malformed JSON', (t) => {
+  t.is(stableJsonString(undefined), undefined)
+  t.is(stableJsonString(42), 42)
+  t.is(stableJsonString('not json'), 'not json')
+  t.is(stableJsonString('"just a string"'), '"just a string"', 'wrapped primitive is not reordered')
+  t.is(stableJsonString('null'), 'null')
+})
+
+test('listThingsWithCount - issues listThings + getThingsCount in parallel and returns envelope', async (t) => {
+  const calls = []
+  const ctx = {
+    dataProxy: {
+      requestData: async (method, params) => {
+        calls.push({ method, params })
+        if (method === 'listThings') return [[{ id: 'a' }, { id: 'b' }]]
+        if (method === 'getThingsCount') return [5]
+      }
+    }
+  }
+  const out = await listThingsWithCount(ctx, { type: 'x' }, { offset: 2, limit: 2 })
+  t.is(calls.length, 2)
+  t.alike(calls.map(c => c.method).sort(), ['getThingsCount', 'listThings'])
+  t.alike(out.data.map(d => d.id), ['a', 'b'])
+  t.is(out.totalCount, 5)
+  t.is(out.offset, 2)
+  t.is(out.limit, 2)
+  t.is(out.hasMore, true, 'offset(2) + page(2) < total(5)')
+})
+
+test('listThingsWithCount - hasMore=false when full result returned', async (t) => {
+  const ctx = {
+    dataProxy: {
+      requestData: async (method) => method === 'listThings' ? [[{ id: 'a' }]] : [1]
+    }
+  }
+  const out = await listThingsWithCount(ctx, {}, { offset: 0, limit: 10 })
+  t.is(out.hasMore, false)
 })

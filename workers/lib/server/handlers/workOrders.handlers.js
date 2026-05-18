@@ -1,6 +1,6 @@
 'use strict'
 
-const { parseJsonQueryParam, flattenRpcResults, submitWorkOrderAction } = require('../../utils')
+const { parseJsonQueryParam, flattenRpcResults, submitWorkOrderAction, escapeRegex, listThingsWithCount } = require('../../utils')
 const {
   WORK_ORDER_THING_TYPE,
   WORK_ORDER_TYPES,
@@ -109,7 +109,7 @@ function _buildWorkOrderQuery (qs) {
     if (qs.to) query['info.createdAt'].$lte = qs.to
   }
   if (qs.q) {
-    const escaped = String(qs.q).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const escaped = escapeRegex(qs.q)
     query.$or = [
       { code: { $regex: escaped } },
       { 'info.issue': { $regex: escaped, $options: 'i' } }
@@ -119,21 +119,12 @@ function _buildWorkOrderQuery (qs) {
 }
 
 async function listWorkOrders (ctx, req) {
-  const offset = req.query.offset ?? 0
-  const limit = req.query.limit ?? 100
-  const query = _buildWorkOrderQuery(req.query)
-  const params = { query, offset, limit }
-  if (req.query.sort) params.sort = parseJsonQueryParam(req.query.sort, 'ERR_SORT_INVALID_JSON')
-  if (req.query.fields) params.fields = parseJsonQueryParam(req.query.fields, 'ERR_FIELDS_INVALID_JSON')
-
-  const [listResults, countResults] = await Promise.all([
-    ctx.dataProxy.requestData('listThings', params),
-    ctx.dataProxy.requestData('getThingsCount', { query })
-  ])
-
-  const data = flattenRpcResults(listResults)
-  const totalCount = countResults.reduce((acc, c) => acc + (Number(c) || 0), 0)
-  return { data, totalCount, offset, limit, hasMore: offset + data.length < totalCount }
+  return listThingsWithCount(ctx, _buildWorkOrderQuery(req.query), {
+    offset: req.query.offset ?? 0,
+    limit: req.query.limit ?? 100,
+    sort: req.query.sort && parseJsonQueryParam(req.query.sort, 'ERR_SORT_INVALID_JSON'),
+    fields: req.query.fields && parseJsonQueryParam(req.query.fields, 'ERR_FIELDS_INVALID_JSON')
+  })
 }
 
 async function getWorkOrder (ctx, req) {

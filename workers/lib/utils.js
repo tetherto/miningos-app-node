@@ -160,6 +160,36 @@ async function waitForThing (ctx, query, opts = {}) {
   return null
 }
 
+function escapeRegex (s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function stableJsonString (raw) {
+  if (typeof raw !== 'string') return raw
+  try {
+    const parsed = JSON.parse(raw)
+    if (parsed === null || typeof parsed !== 'object') return raw
+    return JSON.stringify(parsed, Object.keys(parsed).sort())
+  } catch {
+    return raw
+  }
+}
+
+async function listThingsWithCount (ctx, query, { offset = 0, limit = 100, sort, fields } = {}) {
+  const params = { query, offset, limit }
+  if (sort !== undefined) params.sort = sort
+  if (fields !== undefined) params.fields = fields
+
+  const [listResults, countResults] = await Promise.all([
+    ctx.dataProxy.requestData('listThings', params),
+    ctx.dataProxy.requestData('getThingsCount', { query })
+  ])
+
+  const data = flattenRpcResults(listResults)
+  const totalCount = countResults.reduce((acc, c) => acc + (Number(c) || 0), 0)
+  return { data, totalCount, offset, limit, hasMore: offset + data.length < totalCount }
+}
+
 function matchesFilter (item, filter, allowedFields) {
   if (!filter) return true
   for (const key of allowedFields) {
@@ -191,5 +221,8 @@ module.exports = {
   matchesFilter,
   submitWorkOrderAction,
   waitForThing,
-  sleep
+  sleep,
+  escapeRegex,
+  stableJsonString,
+  listThingsWithCount
 }

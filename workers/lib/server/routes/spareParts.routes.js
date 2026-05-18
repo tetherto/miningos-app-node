@@ -8,6 +8,7 @@ const {
 const schemas = require('../schemas/spareParts.schemas')
 const { registerSparePart, listSpareParts, updateSparePart, getRepairHistory } = require('../handlers/spareParts.handlers')
 const { createAuthRoute, createCachedAuthRoute } = require('../lib/routeHelpers')
+const { stableJsonString } = require('../../utils')
 
 module.exports = (ctx) => [
   {
@@ -23,8 +24,10 @@ module.exports = (ctx) => [
     ...createCachedAuthRoute(
       ctx,
       (req) => [
-        'spare-parts/list',
-        req.query.query, req.query.sort, req.query.fields,
+        'spare-parts',
+        stableJsonString(req.query.query),
+        stableJsonString(req.query.sort),
+        stableJsonString(req.query.fields),
         req.query.offset, req.query.limit,
         req.query.q, req.query.location, req.query.status
       ],
