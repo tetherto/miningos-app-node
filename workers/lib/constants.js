@@ -39,8 +39,22 @@ const AUTH_PERMISSIONS = {
   TICKETS: 'tickets',
   POWER_SPOT_FORECAST: 'power_spot_forecast',
   POOL_CONFIG: 'pool_config',
-  POOL_CONFIG_APPROVE: 'pool_config_approve'
+  POOL_CONFIG_APPROVE: 'pool_config_approve',
+  WORK_ORDER: 'work_order'
 }
+
+const WORK_ORDER_THING_TYPE = 'inventory-work_order'
+
+const WORK_ORDER_TYPES = { REGISTER: 1, REGULAR: 2 }
+const WORK_ORDER_VALID_DEVICE_TYPES = ['miner', 'psu', 'hashboard', 'controller']
+const MINER_LOCATIONS = ['Site Warehouse', 'Site Lab', 'Miner Room', 'Vendor', 'Scrapped', 'Disposed']
+const SPARE_PART_INITIAL_LOCATION = 'Site Warehouse'
+const WORK_ORDER_FILE_MAX_BYTES_DEFAULT = 10 * 1024 * 1024
+const WORK_ORDER_FILE_COUNT_CAP_DEFAULT = 20
+const WORK_ORDER_FILE_MIME_ALLOWLIST_DEFAULT = [
+  'image/png', 'image/jpeg', 'image/webp', 'image/gif',
+  'application/pdf', 'text/plain', 'text/csv', 'application/json'
+]
 
 const AUTH_LEVELS = {
   READ: 'r',
@@ -168,9 +182,28 @@ const ENDPOINTS = {
   SITE_EFFICIENCY: '/auth/site/efficiency',
   // Explorer endpoints
   EXPLORER_RACKS: '/auth/explorer/racks',
+  // Energy endpoints
   ENERGY_FORECAST: '/auth/energy/forecast',
-  ENERGY_AVAILABLE: '/auth/energy/available'
+  ENERGY_AVAILABLE: '/auth/energy/available',
+  // Work Order endpoints
+  WORK_ORDERS: '/auth/work-orders',
+  WORK_ORDER_BY_ID: '/auth/work-orders/:id',
+  WORK_ORDER_AUDIT: '/auth/work-orders/:id/audit',
+  WORK_ORDER_LOG: '/auth/work-orders/:id/log',
+  WORK_ORDER_FILES: '/auth/work-orders/:id/files',
+  WORK_ORDER_FILE_BY_ID: '/auth/work-orders/:id/files/:fileId',
+  WORK_ORDER_ASSIGN: '/auth/work-orders/:id/assign',
+  WORK_ORDER_CLOSE: '/auth/work-orders/:id/close',
+  WORK_ORDER_CANCEL: '/auth/work-orders/:id/cancel',
+  // Spare Part endpoints
+  SPARE_PARTS: '/auth/spare-parts',
+  SPARE_PART_BY_ID: '/auth/spare-parts/:id',
+  SPARE_PART_REPAIR_HISTORY: '/auth/spare-parts/:id/repair-history',
+  // Work Order export
+  WORK_ORDER_EXPORT: '/auth/work-orders/:id/export'
 }
+
+const WORK_ORDER_EXPORT_FORMATS = ['pdf', 'csv', 'docx']
 
 const HTTP_METHODS = {
   GET: 'GET',
@@ -197,7 +230,14 @@ const OPERATIONS = {
   ACTIONS_CANCEL: 'actions.cancel',
 
   // Things operations
-  THING_COMMENT_WRITE: 'thing.comment.write'
+  THING_COMMENT_WRITE: 'thing.comment.write',
+
+  WORK_ORDER_CREATE: 'work_order.create',
+  WORK_ORDER_READ: 'work_order.read',
+  WORK_ORDER_UPDATE: 'work_order.update',
+  WORK_ORDER_CLOSE: 'work_order.close',
+  WORK_ORDER_CANCEL: 'work_order.cancel',
+  WORK_ORDER_ASSIGN: 'work_order.assign'
 }
 
 const DEFAULTS = {
@@ -708,5 +748,14 @@ module.exports = {
   EXPLORER_RACK_DEFAULT_LIMIT,
   EXPLORER_RACK_MAX_LIMIT,
   LOG_FIELDS,
-  ELECTRICITY_EXT_DATA_KEYS
+  ELECTRICITY_EXT_DATA_KEYS,
+  WORK_ORDER_THING_TYPE,
+  WORK_ORDER_TYPES,
+  WORK_ORDER_VALID_DEVICE_TYPES,
+  MINER_LOCATIONS,
+  SPARE_PART_INITIAL_LOCATION,
+  WORK_ORDER_FILE_MAX_BYTES_DEFAULT,
+  WORK_ORDER_FILE_COUNT_CAP_DEFAULT,
+  WORK_ORDER_FILE_MIME_ALLOWLIST_DEFAULT,
+  WORK_ORDER_EXPORT_FORMATS
 }
