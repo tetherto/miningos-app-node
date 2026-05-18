@@ -5,7 +5,7 @@ const types = { type: 'integer', enum: [1, 2] }
 const create = {
   body: {
     type: 'object',
-    required: ['type', 'deviceType', 'deviceModel', 'deviceIdentifier', 'issue'],
+    required: ['type', 'deviceType', 'deviceModel', 'deviceIdentifier'],
     additionalProperties: false,
     properties: {
       type: types,
@@ -14,7 +14,9 @@ const create = {
       deviceIdentifier: { type: 'string', minLength: 1, maxLength: 200 },
       issue: { type: 'string', minLength: 1, maxLength: 2000 },
       assignedTo: { type: ['string', 'null'], maxLength: 200 }
-    }
+    },
+    if: { properties: { type: { const: 2 } } },
+    then: { required: ['issue'] }
   }
 }
 

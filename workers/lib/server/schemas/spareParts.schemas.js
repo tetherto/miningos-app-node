@@ -1,5 +1,22 @@
 'use strict'
 
+const register = {
+  body: {
+    type: 'object',
+    required: ['rackId', 'info'],
+    additionalProperties: false,
+    properties: {
+      rackId: { type: 'string', minLength: 1 },
+      info: {
+        type: 'object',
+        additionalProperties: true,
+        minProperties: 1,
+        required: ['deviceType']
+      }
+    }
+  }
+}
+
 const update = {
   params: {
     type: 'object',
@@ -39,4 +56,4 @@ const repairHistory = {
   }
 }
 
-module.exports = { update, repairHistory }
+module.exports = { register, update, repairHistory }

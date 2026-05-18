@@ -128,6 +128,80 @@ test('handlers: updateSparePart skips WO checks when only non-move fields change
   t.absent(pushed[0].params[0].info.workOrderId, 'no WO injected for non-move')
 })
 
+function buildRegisterCtx ({ registeredPart, registeredWo, validDeviceType = true } = {}) {
+  const pushed = []
+  let pollPartCalls = 0
+  let pollWoCalls = 0
+  const handler = async (_key, method, params) => {
+    if (method === 'pushAction') {
+      pushed.push(params)
+      return { id: `act-${pushed.length}`, errors: [] }
+    }
+    if (method === 'listThings') {
+      if (params.query?.type === 'inventory-work_order') {
+        pollWoCalls++
+        return registeredWo ? [registeredWo] : []
+      }
+      pollPartCalls++
+      return registeredPart ? [registeredPart] : []
+    }
+    return null
+  }
+  const ctx = createMockCtxWithOrks([{ rpcPublicKey: 'k' }], handler)
+  ctx.authLib = mockAuthLib
+  ctx.conf = {
+    ...ctx.conf,
+    workOrderRackId: WO_RACK,
+    workOrderActionWaitMs: 50,
+    workOrderActionPollMs: 5
+  }
+  return { ctx, pushed, get pollPartCalls () { return pollPartCalls }, get pollWoCalls () { return pollWoCalls } }
+}
+
+test('handlers: registerSparePart rejects invalid deviceType', async (t) => {
+  const { ctx } = buildRegisterCtx({ validDeviceType: false })
+  await t.exception(
+    () => handlers.registerSparePart(ctx, {
+      ...userMeta(),
+      body: { rackId: PART_RACK, info: { deviceType: 'cooling', model: 'X' } }
+    }),
+    /ERR_INVALID_DEVICE_TYPE/
+  )
+})
+
+test('handlers: registerSparePart creates part then Type-1 WO and returns ids/codes', async (t) => {
+  const part = { id: 'pre-set', code: 'PSU-WM-CB6_V5-99', info: { serialNum: 'SN-99' } }
+  const wo = { id: 'pre-set', code: 'IVI-1-0001', type: 'inventory-work_order' }
+  const { ctx, pushed } = buildRegisterCtx({ registeredPart: part, registeredWo: wo })
+  const out = await handlers.registerSparePart(ctx, {
+    ...userMeta(),
+    body: { rackId: PART_RACK, info: { deviceType: 'psu', model: 'PSU-WM-CB6_V5', serialNum: 'SN-99' } }
+  })
+
+  t.is(pushed.length, 2, 'one part action, one WO action')
+  t.is(pushed[0].params[0].rackId, PART_RACK)
+  t.is(pushed[0].action, 'registerThing')
+  t.is(pushed[1].params[0].rackId, WO_RACK)
+  t.is(pushed[1].params[0].info.type, 1, 'Type-1 WO')
+  t.is(pushed[1].params[0].info.partsMoves[0].fromLocation, null)
+  t.is(pushed[1].params[0].info.partsMoves[0].toLocation, 'SiteWarehouse')
+
+  t.ok(out.partId, 'returns partId')
+  t.ok(out.workOrderId, 'returns workOrderId')
+  t.is(out.workOrderCode, 'IVI-1-0001')
+})
+
+test('handlers: registerSparePart throws if part never materialises after pushAction', async (t) => {
+  const { ctx } = buildRegisterCtx({ registeredPart: null })
+  await t.exception(
+    () => handlers.registerSparePart(ctx, {
+      ...userMeta(),
+      body: { rackId: PART_RACK, info: { deviceType: 'psu', model: 'X', serialNum: 'SN-X' } }
+    }, undefined),
+    /ERR_SPARE_PART_REGISTER_FAILED|register/i
+  )
+})
+
 test('handlers: getRepairHistory returns moves matching part id, newest first', async (t) => {
   const wos = [
     {

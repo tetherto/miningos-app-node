@@ -1,10 +1,72 @@
 'use strict'
 
 const { parseJsonQueryParam, flattenRpcResults, submitWorkOrderAction } = require('../../utils')
-const { WORK_ORDER_THING_TYPE } = require('../../constants')
+const {
+  WORK_ORDER_THING_TYPE,
+  WORK_ORDER_TYPES,
+  WORK_ORDER_VALID_DEVICE_TYPES,
+  SPARE_PART_INITIAL_LOCATION
+} = require('../../constants')
+
+async function _resolvePartByIdentifier (ctx, identifier) {
+  const results = await ctx.dataProxy.requestData('listThings', {
+    query: {
+      $or: [
+        { id: identifier },
+        { code: identifier },
+        { 'info.serialNum': identifier },
+        { 'info.macAddress': identifier }
+      ]
+    }
+  })
+  return flattenRpcResults(results).find(t => t?.type !== WORK_ORDER_THING_TYPE) || null
+}
 
 async function createWorkOrder (ctx, req) {
-  return submitWorkOrderAction(ctx, req, 'registerThing', { info: { ...req.body } })
+  const { type, deviceType, deviceIdentifier } = req.body
+
+  if (!WORK_ORDER_VALID_DEVICE_TYPES.includes(deviceType)) {
+    const err = new Error('ERR_INVALID_DEVICE_TYPE')
+    err.statusCode = 400
+    throw err
+  }
+
+  const voter = req._info.user.metadata.email
+  const info = { ...req.body, createdBy: voter, createdAt: Date.now() }
+
+  if (type === WORK_ORDER_TYPES.REGULAR) {
+    const part = await _resolvePartByIdentifier(ctx, deviceIdentifier)
+    if (!part) {
+      const err = new Error('ERR_PART_NOT_FOUND')
+      err.statusCode = 400
+      throw err
+    }
+    info.partsMoves = [{
+      partId: part.id,
+      partCode: part.code,
+      role: 'diagnosis',
+      ts: Date.now(),
+      user: voter
+    }]
+  } else if (type === WORK_ORDER_TYPES.REGISTER) {
+    const part = await _resolvePartByIdentifier(ctx, deviceIdentifier)
+    if (!part) {
+      const err = new Error('ERR_PART_NOT_FOUND')
+      err.statusCode = 400
+      throw err
+    }
+    info.partsMoves = [{
+      partId: part.id,
+      partCode: part.code,
+      fromLocation: null,
+      toLocation: SPARE_PART_INITIAL_LOCATION,
+      role: 'register',
+      ts: Date.now(),
+      user: voter
+    }]
+  }
+
+  return submitWorkOrderAction(ctx, req, 'registerThing', { info })
 }
 
 async function updateWorkOrder (ctx, req) {

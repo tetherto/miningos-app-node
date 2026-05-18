@@ -1,7 +1,13 @@
 'use strict'
 
-const { flattenRpcResults } = require('../../utils')
-const { WORK_ORDER_THING_TYPE } = require('../../constants')
+const { randomUUID } = require('crypto')
+const { flattenRpcResults, waitForThing } = require('../../utils')
+const {
+  WORK_ORDER_THING_TYPE,
+  WORK_ORDER_TYPES,
+  WORK_ORDER_VALID_DEVICE_TYPES,
+  SPARE_PART_INITIAL_LOCATION
+} = require('../../constants')
 
 const TERMINAL_WO_STATUSES = new Set(['closed', 'cancelled'])
 
@@ -111,6 +117,89 @@ async function updateSparePart (ctx, req) {
   return { part: partResults, workOrder: woResults, move: moveEntry }
 }
 
+async function registerSparePart (ctx, req) {
+  const { rackId, info } = req.body
+  const deviceType = info.deviceType || info.type
+  if (!WORK_ORDER_VALID_DEVICE_TYPES.includes(deviceType)) {
+    const err = new Error('ERR_INVALID_DEVICE_TYPE')
+    err.statusCode = 400
+    throw err
+  }
+  const workOrderRackId = ctx.conf.workOrderRackId
+  if (!workOrderRackId) throw new Error('ERR_WORK_ORDER_RACK_ID_NOT_CONFIGURED')
+
+  const voter = req._info.user.metadata.email
+  const { permissions } = await ctx.authLib.getTokenPerms(req._info.authToken)
+  const authPerms = permissions || []
+
+  const partId = randomUUID()
+  const partInfo = {
+    ...info,
+    location: info.location ?? SPARE_PART_INITIAL_LOCATION
+  }
+
+  const partActionResults = await ctx.dataProxy.requestData('pushAction', {
+    action: 'registerThing',
+    query: { rack: rackId },
+    params: [{ rackId, id: partId, info: partInfo }],
+    voter,
+    authPerms
+  }, (res, arr) => {
+    if (res?.error) arr.push({ id: null, errors: [res.error] })
+    else arr.push(res)
+  })
+
+  const part = await waitForThing(ctx, { id: partId })
+  if (!part) {
+    const failed = partActionResults.find(r => r?.errors?.length)
+    throw new Error(failed?.errors?.[0] || 'ERR_SPARE_PART_REGISTER_FAILED')
+  }
+
+  const woId = randomUUID()
+  const ts = Date.now()
+  const woInfo = {
+    type: WORK_ORDER_TYPES.REGISTER,
+    deviceType,
+    deviceModel: info.model || info.deviceModel || part.info?.model || 'unknown',
+    deviceIdentifier: part.info?.serialNum || part.info?.macAddress || part.code || partId,
+    createdBy: voter,
+    createdAt: ts,
+    partsMoves: [{
+      partId,
+      partCode: part.code,
+      fromLocation: null,
+      toLocation: SPARE_PART_INITIAL_LOCATION,
+      role: 'register',
+      ts,
+      user: voter
+    }]
+  }
+
+  const woActionResults = await ctx.dataProxy.requestData('pushAction', {
+    action: 'registerThing',
+    query: { rack: workOrderRackId },
+    params: [{ rackId: workOrderRackId, id: woId, info: woInfo }],
+    voter,
+    authPerms
+  }, (res, arr) => {
+    if (res?.error) arr.push({ id: null, errors: [res.error] })
+    else arr.push(res)
+  })
+
+  const wo = await waitForThing(ctx, { id: woId, type: WORK_ORDER_THING_TYPE })
+  if (!wo) {
+    const failed = woActionResults.find(r => r?.errors?.length)
+    throw new Error(failed?.errors?.[0] || 'ERR_WORK_ORDER_REGISTER_FAILED')
+  }
+
+  return {
+    partId,
+    partCode: part.code,
+    workOrderId: woId,
+    workOrderCode: wo.code
+  }
+}
+
 async function getRepairHistory (ctx, req) {
   const offset = req.query.offset ?? 0
   const limit = req.query.limit ?? 100
@@ -139,4 +228,4 @@ async function getRepairHistory (ctx, req) {
   }
 }
 
-module.exports = { updateSparePart, getRepairHistory }
+module.exports = { registerSparePart, updateSparePart, getRepairHistory }

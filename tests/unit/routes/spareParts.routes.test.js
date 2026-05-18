@@ -19,6 +19,7 @@ test('spareParts.routes: module structure', (t) => {
 test('spareParts.routes: registers expected endpoints', (t) => {
   const routes = require(ROUTES_PATH)({})
   const expected = [
+    { method: HTTP_METHODS.POST, url: ENDPOINTS.SPARE_PARTS },
     { method: HTTP_METHODS.PUT, url: ENDPOINTS.SPARE_PART_BY_ID },
     { method: HTTP_METHODS.GET, url: ENDPOINTS.SPARE_PART_REPAIR_HISTORY }
   ]

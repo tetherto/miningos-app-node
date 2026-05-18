@@ -45,6 +45,12 @@ const AUTH_PERMISSIONS = {
 
 const WORK_ORDER_THING_TYPE = 'inventory-work_order'
 
+const WORK_ORDER_TYPES = { REGISTER: 1, REGULAR: 2 }
+const WORK_ORDER_VALID_DEVICE_TYPES = ['miner', 'psu', 'hashboard', 'controller']
+const SPARE_PART_INITIAL_LOCATION = 'SiteWarehouse'
+const WORK_ORDER_ACTION_WAIT_MS = 5000
+const WORK_ORDER_ACTION_POLL_MS = 100
+
 const WORK_ORDER_FILE_MAX_BYTES_DEFAULT = 10 * 1024 * 1024
 const WORK_ORDER_FILE_COUNT_CAP_DEFAULT = 20
 const WORK_ORDER_FILE_MIME_ALLOWLIST_DEFAULT = [
@@ -192,6 +198,7 @@ const ENDPOINTS = {
   WORK_ORDER_CLOSE: '/auth/work-orders/:id/close',
   WORK_ORDER_CANCEL: '/auth/work-orders/:id/cancel',
   // Spare Part endpoints
+  SPARE_PARTS: '/auth/spare-parts',
   SPARE_PART_BY_ID: '/auth/spare-parts/:id',
   SPARE_PART_REPAIR_HISTORY: '/auth/spare-parts/:id/repair-history'
 }
@@ -741,6 +748,11 @@ module.exports = {
   LOG_FIELDS,
   ELECTRICITY_EXT_DATA_KEYS,
   WORK_ORDER_THING_TYPE,
+  WORK_ORDER_TYPES,
+  WORK_ORDER_VALID_DEVICE_TYPES,
+  SPARE_PART_INITIAL_LOCATION,
+  WORK_ORDER_ACTION_WAIT_MS,
+  WORK_ORDER_ACTION_POLL_MS,
   WORK_ORDER_FILE_MAX_BYTES_DEFAULT,
   WORK_ORDER_FILE_COUNT_CAP_DEFAULT,
   WORK_ORDER_FILE_MIME_ALLOWLIST_DEFAULT

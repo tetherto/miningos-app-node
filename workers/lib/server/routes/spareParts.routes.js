@@ -6,10 +6,16 @@ const {
   AUTH_PERMISSIONS
 } = require('../../constants')
 const schemas = require('../schemas/spareParts.schemas')
-const { updateSparePart, getRepairHistory } = require('../handlers/spareParts.handlers')
+const { registerSparePart, updateSparePart, getRepairHistory } = require('../handlers/spareParts.handlers')
 const { createAuthRoute, createCachedAuthRoute } = require('../lib/routeHelpers')
 
 module.exports = (ctx) => [
+  {
+    method: HTTP_METHODS.POST,
+    url: ENDPOINTS.SPARE_PARTS,
+    schema: schemas.register,
+    ...createAuthRoute(ctx, registerSparePart, [AUTH_PERMISSIONS.INVENTORY])
+  },
   {
     method: HTTP_METHODS.PUT,
     url: ENDPOINTS.SPARE_PART_BY_ID,

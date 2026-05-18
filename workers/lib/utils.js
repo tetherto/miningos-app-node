@@ -1,8 +1,14 @@
 'use strict'
 
 const async = require('async')
-const { RPC_TIMEOUT } = require('./constants')
+const {
+  RPC_TIMEOUT,
+  WORK_ORDER_ACTION_WAIT_MS,
+  WORK_ORDER_ACTION_POLL_MS
+} = require('./constants')
 const { getStartOfDay } = require('./period.utils')
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 const dateNowSec = () => Math.floor(Date.now() / 1000)
 
@@ -141,6 +147,19 @@ async function submitWorkOrderAction (ctx, req, action, paramObj) {
   })
 }
 
+async function waitForThing (ctx, query, opts = {}) {
+  const maxMs = opts.maxMs ?? ctx.conf?.workOrderActionWaitMs ?? WORK_ORDER_ACTION_WAIT_MS
+  const intervalMs = opts.intervalMs ?? ctx.conf?.workOrderActionPollMs ?? WORK_ORDER_ACTION_POLL_MS
+  const deadline = Date.now() + maxMs
+  while (Date.now() <= deadline) {
+    const results = await ctx.dataProxy.requestData('listThings', { query })
+    const items = flattenRpcResults(results)
+    if (items.length) return items[0]
+    await sleep(intervalMs)
+  }
+  return null
+}
+
 function matchesFilter (item, filter, allowedFields) {
   if (!filter) return true
   for (const key of allowedFields) {
@@ -170,5 +189,7 @@ module.exports = {
   runParallel,
   deduplicateAlerts,
   matchesFilter,
-  submitWorkOrderAction
+  submitWorkOrderAction,
+  waitForThing,
+  sleep
 }

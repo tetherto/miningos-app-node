@@ -14,13 +14,14 @@ const mockAuthLib = {
   getTokenPerms: async () => ({ permissions: ['inventory:rw', 'work_order:rw', 'actions:rw'] })
 }
 
-function buildSubmitFlow ({ rackId = RACK } = {}) {
+function buildSubmitFlow ({ rackId = RACK, parts = [] } = {}) {
   let lastPush
   const handler = async (_key, method, params) => {
     if (method === 'pushAction') {
       lastPush = params
       return { id: 'action-1', errors: [] }
     }
+    if (method === 'listThings') return parts
     return null
   }
   const ctx = createMockCtxWithOrks([{ rpcPublicKey: 'k' }], handler)
@@ -29,8 +30,8 @@ function buildSubmitFlow ({ rackId = RACK } = {}) {
   return { ctx, get lastPush () { return lastPush } }
 }
 
-test('handlers: createWorkOrder forwards request body as the new thing info', async (t) => {
-  const flow = buildSubmitFlow()
+test('handlers: createWorkOrder Type 2 resolves part and forwards body as info', async (t) => {
+  const flow = buildSubmitFlow({ parts: [{ id: 'part-1', code: 'PSU-1', type: 'inventory-miner_part-psu', info: { serialNum: 'AM-1' } }] })
   await handlers.createWorkOrder(flow.ctx, {
     ...userMeta(),
     body: {
@@ -43,6 +44,30 @@ test('handlers: createWorkOrder forwards request body as the new thing info', as
   })
   t.is(flow.lastPush.action, 'registerThing')
   t.is(flow.lastPush.params[0].info.deviceIdentifier, 'AM-1')
+  t.is(flow.lastPush.params[0].info.partsMoves[0].partId, 'part-1')
+  t.is(flow.lastPush.params[0].info.partsMoves[0].role, 'diagnosis')
+})
+
+test('handlers: createWorkOrder rejects unknown deviceType with ERR_INVALID_DEVICE_TYPE', async (t) => {
+  const flow = buildSubmitFlow()
+  await t.exception(
+    () => handlers.createWorkOrder(flow.ctx, {
+      ...userMeta(),
+      body: { type: 2, deviceType: 'cooling', deviceModel: 'm', deviceIdentifier: 'x', issue: 'i' }
+    }),
+    /ERR_INVALID_DEVICE_TYPE/
+  )
+})
+
+test('handlers: createWorkOrder 400s ERR_PART_NOT_FOUND when deviceIdentifier resolves to nothing', async (t) => {
+  const flow = buildSubmitFlow({ parts: [] })
+  await t.exception(
+    () => handlers.createWorkOrder(flow.ctx, {
+      ...userMeta(),
+      body: { type: 2, deviceType: 'psu', deviceModel: 'm', deviceIdentifier: 'unknown-sn', issue: 'i' }
+    }),
+    /ERR_PART_NOT_FOUND/
+  )
 })
 
 test('handlers: closeWorkOrder maps to updateThing with status=closed and finalResult', async (t) => {
