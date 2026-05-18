@@ -34,11 +34,16 @@ class UserService {
     return userRows.filter(user => user.id !== 1).map(this.parseUserRow.bind(this))
   }
 
-  async updateUser ({ id, email, name = null, role }) {
+  async updateUser ({ id, email, name = null, role, callerRoles }) {
+    const targetUser = await this._auth.getUserById(id)
+    if (!targetUser) {
+      throw new Error('ERR_USER_NOT_FOUND')
+    }
+
     const token = await this._auth.genToken({
       ips: ['127.0.0.1'],
       userId: id,
-      roles: []
+      roles: callerRoles
     })
 
     await this._auth.updateUser({

@@ -101,7 +101,7 @@ test('Api', { timeout: 90000 }, async (main) => {
     worker.worker.authLib._auth.addHandlers({
       google: () => { return { email } }
     })
-    const token = await worker.worker.auth_a0.authCallbackHandler('google', { ip })
+    const token = await worker.worker.auth_a0.authCallbackHandler('google', { socket: { remoteAddress: ip } })
     return token
   }
 
@@ -109,7 +109,7 @@ test('Api', { timeout: 90000 }, async (main) => {
     worker.worker.authLib._auth.addHandlers({
       microsoft: () => { return { email } }
     })
-    const token = await worker.worker.auth_a0.authCallbackHandler('microsoft', { ip })
+    const token = await worker.worker.auth_a0.authCallbackHandler('microsoft', { socket: { remoteAddress: ip } })
     return token
   }
 

@@ -178,7 +178,10 @@ const ENDPOINTS = {
   SITE_EFFICIENCY: '/auth/site/efficiency',
   // Explorer endpoints
   EXPLORER_RACKS: '/auth/explorer/racks',
-
+  // Energy endpoints
+  ENERGY_FORECAST: '/auth/energy/forecast',
+  ENERGY_AVAILABLE: '/auth/energy/available',
+  // Work Order endpoints
   WORK_ORDERS: '/auth/work-orders',
   WORK_ORDER_BY_ID: '/auth/work-orders/:id',
   WORK_ORDER_AUDIT: '/auth/work-orders/:id/audit',
@@ -188,7 +191,7 @@ const ENDPOINTS = {
   WORK_ORDER_ASSIGN: '/auth/work-orders/:id/assign',
   WORK_ORDER_CLOSE: '/auth/work-orders/:id/close',
   WORK_ORDER_CANCEL: '/auth/work-orders/:id/cancel',
-
+  // Spare Part endpoints
   SPARE_PART_BY_ID: '/auth/spare-parts/:id',
   SPARE_PART_REPAIR_HISTORY: '/auth/spare-parts/:id/repair-history'
 }
@@ -248,6 +251,7 @@ const GET_HISTORICAL_LOGS = 'getHistoricalLogs'
 const RPC_METHODS = {
   TAIL_LOG_RANGE_AGGR: 'tailLogCustomRangeAggr',
   GET_WRK_EXT_DATA: 'getWrkExtData',
+  SET_WRK_EXT_DATA: 'setWrkExtData',
   LIST_THINGS: 'listThings',
   GET_HISTORICAL_LOGS: 'getHistoricalLogs',
   TAIL_LOG: 'tailLog',
@@ -549,6 +553,11 @@ const MINERPOOL_EXT_DATA_KEYS = {
   STATS: 'stats'
 }
 
+const ELECTRICITY_EXT_DATA_KEYS = {
+  FORECAST: 'forecast',
+  AVAIL_ENERGY_MWH: 'availableEnergyMWh'
+}
+
 const NON_METRIC_KEYS = [
   'ts',
   'site',
@@ -730,6 +739,7 @@ module.exports = {
   EXPLORER_RACK_DEFAULT_LIMIT,
   EXPLORER_RACK_MAX_LIMIT,
   LOG_FIELDS,
+  ELECTRICITY_EXT_DATA_KEYS,
   WORK_ORDER_THING_TYPE,
   WORK_ORDER_FILE_MAX_BYTES_DEFAULT,
   WORK_ORDER_FILE_COUNT_CAP_DEFAULT,

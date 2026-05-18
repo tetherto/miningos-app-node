@@ -1,7 +1,7 @@
 'use strict'
 
 const { ENDPOINTS, HTTP_METHODS } = require('../../constants')
-const { getCoolingSystemData } = require('../handlers/coolingSystem.handlers')
+const { getCoolingSystemData } = require('../handlers/cooling.system.handlers')
 const { createCachedAuthRoute } = require('../lib/routeHelpers')
 
 module.exports = (ctx) => [

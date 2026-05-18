@@ -86,7 +86,7 @@ test('Api security', { timeout: 90000 }, async (main) => {
     worker.worker.authLib._auth.addHandlers({
       google: () => { return { email } }
     })
-    const token = await worker.worker.auth_a0.authCallbackHandler('google', { ip })
+    const token = await worker.worker.auth_a0.authCallbackHandler('google', { socket: { remoteAddress: ip } })
     return token
   }
 
