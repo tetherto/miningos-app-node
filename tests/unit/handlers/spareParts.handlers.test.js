@@ -128,38 +128,23 @@ test('handlers: updateSparePart skips WO checks when only non-move fields change
   t.absent(pushed[0].params[0].info.workOrderId, 'no WO injected for non-move')
 })
 
-function buildRegisterCtx ({ registeredPart, registeredWo, validDeviceType = true } = {}) {
+function buildRegisterCtx ({ pushResult } = {}) {
   const pushed = []
-  let pollPartCalls = 0
-  let pollWoCalls = 0
   const handler = async (_key, method, params) => {
     if (method === 'pushAction') {
       pushed.push(params)
-      return { id: `act-${pushed.length}`, errors: [] }
-    }
-    if (method === 'listThings') {
-      if (params.query?.type === 'inventory-work_order') {
-        pollWoCalls++
-        return registeredWo ? [registeredWo] : []
-      }
-      pollPartCalls++
-      return registeredPart ? [registeredPart] : []
+      return pushResult ?? { id: `act-${pushed.length}`, errors: [] }
     }
     return null
   }
   const ctx = createMockCtxWithOrks([{ rpcPublicKey: 'k' }], handler)
   ctx.authLib = mockAuthLib
-  ctx.conf = {
-    ...ctx.conf,
-    workOrderRackId: WO_RACK,
-    workOrderActionWaitMs: 50,
-    workOrderActionPollMs: 5
-  }
-  return { ctx, pushed, get pollPartCalls () { return pollPartCalls }, get pollWoCalls () { return pollWoCalls } }
+  ctx.conf = { ...ctx.conf, workOrderRackId: WO_RACK }
+  return { ctx, pushed }
 }
 
 test('handlers: registerSparePart rejects invalid deviceType', async (t) => {
-  const { ctx } = buildRegisterCtx({ validDeviceType: false })
+  const { ctx } = buildRegisterCtx()
   await t.exception(
     () => handlers.registerSparePart(ctx, {
       ...userMeta(),
@@ -169,37 +154,38 @@ test('handlers: registerSparePart rejects invalid deviceType', async (t) => {
   )
 })
 
-test('handlers: registerSparePart creates part then Type-1 WO and returns ids/codes', async (t) => {
-  const part = { id: 'pre-set', code: 'PSU-WM-CB6_V5-99', info: { serialNum: 'SN-99' } }
-  const wo = { id: 'pre-set', code: 'IVI-1-0001', type: 'inventory-work_order' }
-  const { ctx, pushed } = buildRegisterCtx({ registeredPart: part, registeredWo: wo })
+test('handlers: registerSparePart fires part + Type-1 WO pushActions in parallel and returns action ids', async (t) => {
+  const { ctx, pushed } = buildRegisterCtx()
   const out = await handlers.registerSparePart(ctx, {
     ...userMeta(),
     body: { rackId: PART_RACK, info: { deviceType: 'psu', model: 'PSU-WM-CB6_V5', serialNum: 'SN-99' } }
   })
 
   t.is(pushed.length, 2, 'one part action, one WO action')
-  t.is(pushed[0].params[0].rackId, PART_RACK)
-  t.is(pushed[0].action, 'registerThing')
-  t.is(pushed[1].params[0].rackId, WO_RACK)
-  t.is(pushed[1].params[0].info.type, 1, 'Type-1 WO')
-  t.is(pushed[1].params[0].info.partsMoves[0].fromLocation, null)
-  t.is(pushed[1].params[0].info.partsMoves[0].toLocation, 'siteWarehouse')
+  const partAction = pushed.find(p => p.params[0].rackId === PART_RACK)
+  const woAction = pushed.find(p => p.params[0].rackId === WO_RACK)
+  t.is(partAction.action, 'registerThing')
+  t.is(woAction.action, 'registerThing')
+  t.is(woAction.params[0].info.type, 1, 'Type-1 WO')
+  t.is(woAction.params[0].info.partsMoves[0].fromLocation, null)
+  t.is(woAction.params[0].info.partsMoves[0].toLocation, 'siteWarehouse')
+  t.is(woAction.params[0].info.partsMoves[0].partId, out.partId, 'WO partsMoves entry links to the pre-generated partId')
 
   t.ok(out.partId, 'returns partId')
   t.ok(out.workOrderId, 'returns workOrderId')
-  t.is(out.workOrderCode, 'IVI-1-0001')
+  t.ok(out.partActionId, 'returns partActionId for the client to poll')
+  t.ok(out.workOrderActionId, 'returns workOrderActionId for the client to poll')
+  t.alike(out.errors, [], 'no errors on happy path')
 })
 
-test('handlers: registerSparePart throws if part never materialises after pushAction', async (t) => {
-  const { ctx } = buildRegisterCtx({ registeredPart: null })
-  await t.exception(
-    () => handlers.registerSparePart(ctx, {
-      ...userMeta(),
-      body: { rackId: PART_RACK, info: { deviceType: 'psu', model: 'X', serialNum: 'SN-X' } }
-    }, undefined),
-    /ERR_SPARE_PART_REGISTER_FAILED|register/i
-  )
+test('handlers: registerSparePart surfaces ork-side errors in the response', async (t) => {
+  const { ctx } = buildRegisterCtx({ pushResult: { id: null, errors: ['ERR_RACK_DOWN'] } })
+  const out = await handlers.registerSparePart(ctx, {
+    ...userMeta(),
+    body: { rackId: PART_RACK, info: { deviceType: 'psu', model: 'X', serialNum: 'SN-X' } }
+  })
+  t.alike(out.errors.sort(), ['ERR_RACK_DOWN', 'ERR_RACK_DOWN'])
+  t.is(out.partActionId, null)
 })
 
 function listFlow ({ items = [], total = 0 } = {}) {

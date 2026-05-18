@@ -1,7 +1,7 @@
 'use strict'
 
 const { randomUUID } = require('crypto')
-const { parseJsonQueryParam, flattenRpcResults, waitForThing, escapeRegex, listThingsWithCount } = require('../../utils')
+const { parseJsonQueryParam, flattenRpcResults, escapeRegex, listThingsWithCount } = require('../../utils')
 const {
   WORK_ORDER_THING_TYPE,
   WORK_ORDER_TYPES,
@@ -133,40 +133,22 @@ async function registerSparePart (ctx, req) {
   const authPerms = permissions || []
 
   const partId = randomUUID()
+  const woId = randomUUID()
+  const ts = Date.now()
+
   const partInfo = {
     ...info,
     location: info.location ?? SPARE_PART_INITIAL_LOCATION
   }
-
-  const partActionResults = await ctx.dataProxy.requestData('pushAction', {
-    action: 'registerThing',
-    query: { rack: rackId },
-    params: [{ rackId, id: partId, info: partInfo }],
-    voter,
-    authPerms
-  }, (res, arr) => {
-    if (res?.error) arr.push({ id: null, errors: [res.error] })
-    else arr.push(res)
-  })
-
-  const part = await waitForThing(ctx, { id: partId })
-  if (!part) {
-    const failed = partActionResults.find(r => r?.errors?.length)
-    throw new Error(failed?.errors?.[0] || 'ERR_SPARE_PART_REGISTER_FAILED')
-  }
-
-  const woId = randomUUID()
-  const ts = Date.now()
   const woInfo = {
     type: WORK_ORDER_TYPES.REGISTER,
     deviceType,
-    deviceModel: info.model || info.deviceModel || part.info?.model || 'unknown',
-    deviceIdentifier: part.info?.serialNum || part.info?.macAddress || part.code || partId,
+    deviceModel: info.model || info.deviceModel || 'unknown',
+    deviceIdentifier: info.serialNum || info.macAddress || partId,
     createdBy: voter,
     createdAt: ts,
     partsMoves: [{
       partId,
-      partCode: part.code,
       fromLocation: null,
       toLocation: SPARE_PART_INITIAL_LOCATION,
       role: 'register',
@@ -175,10 +157,10 @@ async function registerSparePart (ctx, req) {
     }]
   }
 
-  const woActionResults = await ctx.dataProxy.requestData('pushAction', {
+  const pushOne = (rack, id, info) => ctx.dataProxy.requestData('pushAction', {
     action: 'registerThing',
-    query: { rack: workOrderRackId },
-    params: [{ rackId: workOrderRackId, id: woId, info: woInfo }],
+    query: { rack },
+    params: [{ rackId: rack, id, info }],
     voter,
     authPerms
   }, (res, arr) => {
@@ -186,17 +168,20 @@ async function registerSparePart (ctx, req) {
     else arr.push(res)
   })
 
-  const wo = await waitForThing(ctx, { id: woId, type: WORK_ORDER_THING_TYPE })
-  if (!wo) {
-    const failed = woActionResults.find(r => r?.errors?.length)
-    throw new Error(failed?.errors?.[0] || 'ERR_WORK_ORDER_REGISTER_FAILED')
-  }
+  const [partResults, woResults] = await Promise.all([
+    pushOne(rackId, partId, partInfo),
+    pushOne(workOrderRackId, woId, woInfo)
+  ])
 
   return {
     partId,
-    partCode: part.code,
     workOrderId: woId,
-    workOrderCode: wo.code
+    partActionId: partResults.find(r => r?.id)?.id ?? null,
+    workOrderActionId: woResults.find(r => r?.id)?.id ?? null,
+    errors: [
+      ...partResults.flatMap(r => r?.errors || []),
+      ...woResults.flatMap(r => r?.errors || [])
+    ]
   }
 }
 
