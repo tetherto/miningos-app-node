@@ -53,7 +53,7 @@ function buildCtx ({ wo = OPEN_WO, storeResult, conf = {} } = {}) {
       }
     }
     if (method === 'loadFile') return { contentBase64: Buffer.from('hello').toString('base64') }
-    if (method === 'removeFile') return 1
+    if (method === 'removeFile') return { cleared: true }
     if (method === 'pushAction') { pushed.push(params); return { id: 'act-1', errors: [] } }
     return null
   }
@@ -178,16 +178,20 @@ test('handlers: downloadWorkOrderFile streams blob content with content-type hea
 
 test('handlers: deleteWorkOrderFile removes blob + strips metadata', async (t) => {
   const wo = { id: 'wo-1', info: { status: 'open', files: [{ id: 'f-1', blobRef: 'ref' }, { id: 'f-2', blobRef: 'ref2' }] } }
-  const { ctx, pushed } = buildCtx({ wo })
+  const { ctx, pushed, fileCalls } = buildCtx({ wo })
   const out = await handlers.deleteWorkOrderFile(ctx, {
     ...userMeta(),
     params: { id: 'wo-1', fileId: 'f-1' }
   })
   t.is(out.id, 'f-1')
+  t.is(out.blobCleared, true, 'surfaces whether the rack cleared the blob')
   t.is(pushed.length, 1)
   const updated = pushed[0].params[0].info.files
   t.is(updated.length, 1)
   t.is(updated[0].id, 'f-2')
+  const removeCall = fileCalls.find(c => c.method === 'removeFile')
+  t.is(removeCall.params.workOrderId, 'wo-1', 'scopes the rack call to the owning WO')
+  t.is(removeCall.params.fileId, 'f-1', 'passes fileId, not a raw blobRef')
 })
 
 test('handlers: deleteWorkOrderFile blocked on closed WO', async (t) => {

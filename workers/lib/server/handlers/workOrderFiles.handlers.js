@@ -116,7 +116,8 @@ async function downloadWorkOrderFile (ctx, req, rep) {
   const loaded = await ctx.dataProxy.requestData('loadFile', {
     type: FILE_TYPES.WORK_ORDER,
     rackId: ctx.conf.workOrderRackId,
-    blobRef: file.blobRef
+    workOrderId: wo.id,
+    fileId: req.params.fileId
   })
   const got = loaded.find(r => r && r.contentBase64)
   if (!got) {
@@ -150,14 +151,16 @@ async function deleteWorkOrderFile (ctx, req) {
     throw err
   }
 
-  await ctx.dataProxy.requestData('removeFile', {
+  const removeResults = await ctx.dataProxy.requestData('removeFile', {
     type: FILE_TYPES.WORK_ORDER,
     rackId: ctx.conf.workOrderRackId,
-    blobRef: file.blobRef
+    workOrderId: wo.id,
+    fileId: req.params.fileId
   })
   await _pushWorkOrderUpdate(ctx, req, { files: files.filter(f => f.id !== req.params.fileId) })
 
-  return { id: req.params.fileId }
+  const removed = removeResults.find(r => r && typeof r.cleared === 'boolean')
+  return { id: req.params.fileId, blobCleared: removed?.cleared ?? false }
 }
 
 module.exports = { uploadWorkOrderFile, downloadWorkOrderFile, deleteWorkOrderFile }
