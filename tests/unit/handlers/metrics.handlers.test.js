@@ -524,6 +524,64 @@ test('getConsumption - grouped by container uses container group aggregation', a
   t.pass()
 })
 
+test('getConsumption - grouped by rack uses rack group aggregation', async (t) => {
+  let capturedPayload = null
+  const mockCtx = withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: {
+      jRequest: async (key, method, payload) => {
+        capturedPayload = payload
+        return [{
+          ts: 1700006400000,
+          power_w_pdu_rack_group_sum_aggr: {
+            'group-1_rack-1': 1000000, 'group-1_rack-2': 2000000, 'group-2_rack-1': 3000000
+          }
+        }]
+      }
+    }
+  })
+
+  const result = await getConsumption(mockCtx, {
+    query: { start: 1700000000000, end: 1700100000000, groupBy: 'rack' }
+  })
+
+  t.is(capturedPayload.fields.power_w_pdu_rack_group_sum, 1, 'should request rack-group source field')
+  t.is(capturedPayload.aggrFields.power_w_pdu_rack_group_sum_aggr, 1, 'should request rack-group aggregate field')
+  t.is(result.log.length, 1, 'should map grouped row')
+  t.alike(result.log[0].powerW, { 'group-1_rack-1': 1000000, 'group-1_rack-2': 2000000, 'group-2_rack-1': 3000000 }, 'should map all racks when no filter given')
+  t.is(result.summary.totalConsumptionMWh, (6000000 * 24) / 1000000, 'should total all racks')
+  t.ok(result.summary.groupedBy['group-1_rack-1'], 'should have per-rack breakdown')
+  t.pass()
+})
+
+test('getConsumption - grouped by rack filters to requested racks', async (t) => {
+  const mockCtx = withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: {
+      jRequest: async () => [{
+        ts: 1700006400000,
+        power_w_pdu_rack_group_sum_aggr: {
+          'group-1_rack-1': 1000000, 'group-1_rack-2': 2000000, 'group-2_rack-1': 3000000
+        }
+      }]
+    }
+  })
+
+  const result = await getConsumption(mockCtx, {
+    query: {
+      start: 1700000000000,
+      end: 1700100000000,
+      groupBy: 'rack',
+      racks: 'group-1_rack-1, group-2_rack-1'
+    }
+  })
+
+  t.alike(result.log[0].powerW, { 'group-1_rack-1': 1000000, 'group-2_rack-1': 3000000 }, 'should keep only requested racks')
+  t.is(result.summary.totalConsumptionMWh, (4000000 * 24) / 1000000, 'summary should reflect filtered racks only')
+  t.absent(result.summary.groupedBy['group-1_rack-2'], 'filtered-out rack should be absent from summary')
+  t.pass()
+})
+
 test('getConsumption - grouped mode handles empty results', async (t) => {
   const mockCtx = withDataProxy({
     conf: { orks: [{ rpcPublicKey: 'key1' }] },

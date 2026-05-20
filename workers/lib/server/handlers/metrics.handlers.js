@@ -223,18 +223,16 @@ function calculateConsumptionSummary (log) {
   }
 }
 
+const CONSUMPTION_GROUP_FIELDS = {
+  miner: { field: LOG_FIELDS.POWER_W_TYPE_GROUP_SUM, aggrField: AGGR_FIELDS.POWER_W_TYPE_GROUP_SUM },
+  container: { field: LOG_FIELDS.POWER_W_CONTAINER_GROUP_SUM, aggrField: AGGR_FIELDS.POWER_W_CONTAINER_GROUP_SUM },
+  rack: { field: LOG_FIELDS.POWER_W_RACK_GROUP_SUM, aggrField: AGGR_FIELDS.POWER_W_RACK_GROUP_SUM }
+}
+
 async function getGroupedConsumption (ctx, req) {
   const { groupBy, start, end } = req.query
 
-  const isMinerGroup = groupBy === WORKER_TYPES.MINER
-
-  const field = isMinerGroup
-    ? LOG_FIELDS.POWER_W_TYPE_GROUP_SUM
-    : LOG_FIELDS.POWER_W_CONTAINER_GROUP_SUM
-
-  const aggrField = isMinerGroup
-    ? AGGR_FIELDS.POWER_W_TYPE_GROUP_SUM
-    : AGGR_FIELDS.POWER_W_CONTAINER_GROUP_SUM
+  const { field, aggrField } = CONSUMPTION_GROUP_FIELDS[groupBy]
 
   const res = await ctx.dataProxy.requestData(RPC_METHODS.TAIL_LOG, {
     type: WORKER_TYPES.MINER,
@@ -246,8 +244,14 @@ async function getGroupedConsumption (ctx, req) {
     aggrFields: { [aggrField]: 1 }
   })
 
+  const racks = groupBy === 'rack' ? parseRacks(req) : null
+  const rackFilter = racks && racks.length ? new Set(racks) : null
+
   const log = res[0].reduce((aggr, val) => {
-    const powerW = val[aggrField]
+    let powerW = val[aggrField]
+    if (rackFilter && powerW && typeof powerW === 'object') {
+      powerW = Object.fromEntries(Object.entries(powerW).filter(([rack]) => rackFilter.has(rack)))
+    }
     aggr.push({
       ts: val.ts,
       powerW,
