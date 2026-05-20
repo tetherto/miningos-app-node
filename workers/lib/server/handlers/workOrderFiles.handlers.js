@@ -3,6 +3,7 @@
 const { flattenRpcResults } = require('../../utils')
 const {
   WORK_ORDER_THING_TYPE,
+  FILE_TYPES,
   WORK_ORDER_FILE_COUNT_CAP_DEFAULT,
   WORK_ORDER_FILE_MAX_BYTES_DEFAULT,
   WORK_ORDER_FILE_MIME_ALLOWLIST_DEFAULT
@@ -77,7 +78,8 @@ async function uploadWorkOrderFile (ctx, req) {
 
   const voter = req._info.user.metadata.email
   const rackId = ctx.conf.workOrderRackId
-  const storeResults = await ctx.dataProxy.requestData('storeWorkOrderFile', {
+  const storeResults = await ctx.dataProxy.requestData('storeFile', {
+    type: FILE_TYPES.WORK_ORDER,
     rackId,
     workOrderId: req.params.id,
     name: part.filename,
@@ -111,7 +113,8 @@ async function downloadWorkOrderFile (ctx, req, rep) {
     throw err
   }
 
-  const loaded = await ctx.dataProxy.requestData('loadWorkOrderFile', {
+  const loaded = await ctx.dataProxy.requestData('loadFile', {
+    type: FILE_TYPES.WORK_ORDER,
     rackId: ctx.conf.workOrderRackId,
     blobRef: file.blobRef
   })
@@ -147,7 +150,8 @@ async function deleteWorkOrderFile (ctx, req) {
     throw err
   }
 
-  await ctx.dataProxy.requestData('removeWorkOrderFile', {
+  await ctx.dataProxy.requestData('removeFile', {
+    type: FILE_TYPES.WORK_ORDER,
     rackId: ctx.conf.workOrderRackId,
     blobRef: file.blobRef
   })

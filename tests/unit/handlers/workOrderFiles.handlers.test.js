@@ -35,9 +35,13 @@ function mockFile (mimetype, content, filename = 'file.bin') {
 
 function buildCtx ({ wo = OPEN_WO, storeResult, conf = {} } = {}) {
   const pushed = []
+  const fileCalls = []
   const handler = async (_key, method, params) => {
     if (method === 'listThings') return wo ? [wo] : []
-    if (method === 'storeWorkOrderFile') {
+    if (method === 'storeFile' || method === 'loadFile' || method === 'removeFile') {
+      fileCalls.push({ method, params })
+    }
+    if (method === 'storeFile') {
       return storeResult ?? {
         id: 'file-1',
         name: params.name,
@@ -48,15 +52,15 @@ function buildCtx ({ wo = OPEN_WO, storeResult, conf = {} } = {}) {
         user: params.user
       }
     }
-    if (method === 'loadWorkOrderFile') return { contentBase64: Buffer.from('hello').toString('base64') }
-    if (method === 'removeWorkOrderFile') return 1
+    if (method === 'loadFile') return { contentBase64: Buffer.from('hello').toString('base64') }
+    if (method === 'removeFile') return 1
     if (method === 'pushAction') { pushed.push(params); return { id: 'act-1', errors: [] } }
     return null
   }
   const ctx = createMockCtxWithOrks([{ rpcPublicKey: 'k' }], handler)
   ctx.authLib = mockAuthLib
   ctx.conf = { ...ctx.conf, workOrderRackId: RACK, ...conf }
-  return { ctx, pushed }
+  return { ctx, pushed, fileCalls }
 }
 
 test('handlers: uploadWorkOrderFile 404s when WO is missing', async (t) => {
@@ -123,7 +127,7 @@ test('handlers: uploadWorkOrderFile rejects when file count cap reached', async 
 })
 
 test('handlers: uploadWorkOrderFile happy path stores blob and appends file metadata', async (t) => {
-  const { ctx, pushed } = buildCtx()
+  const { ctx, pushed, fileCalls } = buildCtx()
   const out = await handlers.uploadWorkOrderFile(ctx, {
     ...userMeta(),
     params: { id: 'wo-1' },
@@ -136,6 +140,8 @@ test('handlers: uploadWorkOrderFile happy path stores blob and appends file meta
   t.is(pushed[0].action, 'updateThing')
   t.is(pushed[0].params[0].info.files.length, 1)
   t.is(pushed[0].params[0].info.files[0].id, 'file-1')
+  t.is(fileCalls[0].method, 'storeFile', 'uses the generic storeFile RPC')
+  t.is(fileCalls[0].params.type, 'work_order', 'tags the call with the work_order file type')
 })
 
 test('handlers: downloadWorkOrderFile 404s for unknown file id', async (t) => {
