@@ -26,6 +26,7 @@ const {
   resolveInterval,
   getIntervalConfig
 } = require('../../metrics.utils')
+const { parseRacks } = require('../lib/queryUtils')
 
 async function getHashrate (ctx, req) {
   const { start, end } = validateStartEnd(req)
@@ -56,16 +57,16 @@ async function getHashrate (ctx, req) {
   return { log, summary }
 }
 
+const HASHRATE_GROUP_FIELDS = {
+  miner: { field: LOG_FIELDS.HASHRATE_SUM_TYPE_GROUP, aggrField: AGGR_FIELDS.HASHRATE_SUM_TYPE_GROUP_AGGR },
+  container: { field: LOG_FIELDS.HASHRATE_SUM_CONTAINER_GROUP, aggrField: AGGR_FIELDS.HASHRATE_SUM_CONTAINER_GROUP_AGGR },
+  rack: { field: LOG_FIELDS.HASHRATE_SUM_RACK_GROUP, aggrField: AGGR_FIELDS.HASHRATE_SUM_RACK_GROUP_AGGR }
+}
+
 async function getGoupedHashrate (ctx, req) {
   const { groupBy, start, end } = req.query
 
-  const field = groupBy === WORKER_TYPES.MINER
-    ? LOG_FIELDS.HASHRATE_SUM_TYPE_GROUP
-    : LOG_FIELDS.HASHRATE_SUM_CONTAINER_GROUP
-
-  const aggrField = groupBy === WORKER_TYPES.MINER
-    ? AGGR_FIELDS.HASHRATE_SUM_TYPE_GROUP_AGGR
-    : AGGR_FIELDS.HASHRATE_SUM_CONTAINER_GROUP_AGGR
+  const { field, aggrField } = HASHRATE_GROUP_FIELDS[groupBy]
 
   const res = await ctx.dataProxy.requestData(RPC_METHODS.TAIL_LOG, {
     type: WORKER_TYPES.MINER,
@@ -77,8 +78,15 @@ async function getGoupedHashrate (ctx, req) {
     aggrFields: { [aggrField]: 1 }
   })
 
+  const racks = groupBy === 'rack' ? parseRacks(req) : null
+  const rackFilter = racks && racks.length ? new Set(racks) : null
+
   const log = res[0].reduce((aggr, val) => {
-    aggr.push({ ts: val.ts, hashrateMhs: val[aggrField] })
+    let hashrateMhs = val[aggrField]
+    if (rackFilter && hashrateMhs && typeof hashrateMhs === 'object') {
+      hashrateMhs = Object.fromEntries(Object.entries(hashrateMhs).filter(([rack]) => rackFilter.has(rack)))
+    }
+    aggr.push({ ts: val.ts, hashrateMhs })
     return aggr
   }, [])
 

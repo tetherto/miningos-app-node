@@ -128,6 +128,64 @@ test('getHashrate - grouped by container uses container group aggregation', asyn
   t.pass()
 })
 
+test('getHashrate - grouped by rack uses rack group aggregation', async (t) => {
+  let capturedPayload = null
+  const mockCtx = withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: {
+      jRequest: async (key, method, payload) => {
+        capturedPayload = payload
+        return [{
+          ts: 1700006400000,
+          hashrate_mhs_5m_pdu_rack_group_sum_aggr: {
+            'group-1_rack-1': 1000, 'group-1_rack-2': 2000, 'group-2_rack-1': 3000
+          }
+        }]
+      }
+    }
+  })
+
+  const result = await getHashrate(mockCtx, {
+    query: { start: 1700000000000, end: 1700100000000, groupBy: 'rack' }
+  })
+
+  t.is(capturedPayload.fields.hashrate_mhs_5m_pdu_rack_group_sum, 1, 'should request rack-group source field')
+  t.is(capturedPayload.aggrFields.hashrate_mhs_5m_pdu_rack_group_sum_aggr, 1, 'should request rack-group aggregate field')
+  t.is(result.log.length, 1, 'should map grouped row')
+  t.alike(result.log[0].hashrateMhs, { 'group-1_rack-1': 1000, 'group-1_rack-2': 2000, 'group-2_rack-1': 3000 }, 'should map all racks when no filter given')
+  t.is(result.summary.totalHashrateMhs, 6000, 'should total all racks')
+  t.ok(result.summary.groupedBy['group-1_rack-1'], 'should have per-rack breakdown')
+  t.pass()
+})
+
+test('getHashrate - grouped by rack filters to requested racks', async (t) => {
+  const mockCtx = withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: {
+      jRequest: async () => [{
+        ts: 1700006400000,
+        hashrate_mhs_5m_pdu_rack_group_sum_aggr: {
+          'group-1_rack-1': 1000, 'group-1_rack-2': 2000, 'group-2_rack-1': 3000
+        }
+      }]
+    }
+  })
+
+  const result = await getHashrate(mockCtx, {
+    query: {
+      start: 1700000000000,
+      end: 1700100000000,
+      groupBy: 'rack',
+      racks: 'group-1_rack-1, group-2_rack-1'
+    }
+  })
+
+  t.alike(result.log[0].hashrateMhs, { 'group-1_rack-1': 1000, 'group-2_rack-1': 3000 }, 'should keep only requested racks')
+  t.is(result.summary.totalHashrateMhs, 4000, 'summary should reflect filtered racks only')
+  t.absent(result.summary.groupedBy['group-1_rack-2'], 'filtered-out rack should be absent from summary')
+  t.pass()
+})
+
 test('getHashrate - grouped mode handles empty results', async (t) => {
   const mockCtx = withDataProxy({
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
