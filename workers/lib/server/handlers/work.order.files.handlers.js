@@ -9,7 +9,7 @@ const {
   WORK_ORDER_FILE_MAX_BYTES_DEFAULT,
   WORK_ORDER_FILE_MIME_ALLOWLIST_DEFAULT
 } = require('../../constants')
-const { getWorkOrderRackId } = require('../lib/workOrders')
+const { getWorkOrderRackId } = require('../lib/work.orders')
 
 async function _loadWorkOrder (ctx, id) {
   const results = await ctx.dataProxy.requestData('listThings', {

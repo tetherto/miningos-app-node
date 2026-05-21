@@ -5,8 +5,8 @@ const {
   HTTP_METHODS,
   AUTH_PERMISSIONS
 } = require('../../constants')
-const schemas = require('../schemas/spareParts.schemas')
-const { registerSparePart, listSpareParts, updateSparePart, getRepairHistory } = require('../handlers/spareParts.handlers')
+const schemas = require('../schemas/spare.parts.schemas')
+const { registerSparePart, listSpareParts, updateSparePart, getRepairHistory } = require('../handlers/spare.parts.handlers')
 const { createAuthRoute, createCachedAuthRoute } = require('../lib/routeHelpers')
 const { stableJsonString } = require('../../utils')
 

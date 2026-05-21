@@ -8,15 +8,15 @@ const {
 } = require('../helpers/routeTestHelpers')
 const { ENDPOINTS, HTTP_METHODS } = require('../../../workers/lib/constants')
 
-const ROUTES_PATH = '../../../workers/lib/server/routes/workOrderFiles.routes'
+const ROUTES_PATH = '../../../workers/lib/server/routes/work.order.files.routes'
 
-test('workOrderFiles.routes: module structure', (t) => {
-  const routes = testModuleStructure(t, ROUTES_PATH, 'workOrderFiles')
-  testHandlerFunctions(t, routes, 'workOrderFiles')
-  testOnRequestFunctions(t, routes, 'workOrderFiles')
+test('work.order.files.routes: module structure', (t) => {
+  const routes = testModuleStructure(t, ROUTES_PATH, 'work.order.files')
+  testHandlerFunctions(t, routes, 'work.order.files')
+  testOnRequestFunctions(t, routes, 'work.order.files')
 })
 
-test('workOrderFiles.routes: registers POST/GET/DELETE on the right urls', (t) => {
+test('work.order.files.routes: registers POST/GET/DELETE on the right urls', (t) => {
   const routes = require(ROUTES_PATH)({})
   for (const e of [
     { method: HTTP_METHODS.POST, url: ENDPOINTS.WORK_ORDER_FILES },

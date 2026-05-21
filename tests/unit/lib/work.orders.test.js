@@ -4,7 +4,7 @@ const test = require('brittle')
 const {
   getWorkOrderRackId,
   submitWorkOrderAction
-} = require('../../../workers/lib/server/lib/workOrders')
+} = require('../../../workers/lib/server/lib/work.orders')
 
 const RACK_ID = 'inventory-work_order-rack-x'
 

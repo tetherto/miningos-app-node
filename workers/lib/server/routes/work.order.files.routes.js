@@ -9,7 +9,7 @@ const {
   uploadWorkOrderFile,
   downloadWorkOrderFile,
   deleteWorkOrderFile
-} = require('../handlers/workOrderFiles.handlers')
+} = require('../handlers/work.order.files.handlers')
 const { createAuthRoute } = require('../lib/routeHelpers')
 
 const idParams = {

@@ -8,15 +8,15 @@ const {
 } = require('../helpers/routeTestHelpers')
 const { ENDPOINTS, HTTP_METHODS } = require('../../../workers/lib/constants')
 
-const ROUTES_PATH = '../../../workers/lib/server/routes/spareParts.routes'
+const ROUTES_PATH = '../../../workers/lib/server/routes/spare.parts.routes'
 
-test('spareParts.routes: module structure', (t) => {
-  const routes = testModuleStructure(t, ROUTES_PATH, 'spareParts')
-  testHandlerFunctions(t, routes, 'spareParts')
-  testOnRequestFunctions(t, routes, 'spareParts')
+test('spare.parts.routes: module structure', (t) => {
+  const routes = testModuleStructure(t, ROUTES_PATH, 'spare.parts')
+  testHandlerFunctions(t, routes, 'spare.parts')
+  testOnRequestFunctions(t, routes, 'spare.parts')
 })
 
-test('spareParts.routes: registers expected endpoints', (t) => {
+test('spare.parts.routes: registers expected endpoints', (t) => {
   const routes = require(ROUTES_PATH)({})
   const expected = [
     { method: HTTP_METHODS.POST, url: ENDPOINTS.SPARE_PARTS },
@@ -30,7 +30,7 @@ test('spareParts.routes: registers expected endpoints', (t) => {
   }
 })
 
-test('spareParts.routes: list cache key includes every filter shortcut', (t) => {
+test('spare.parts.routes: list cache key includes every filter shortcut', (t) => {
   const { createCachedAuthRoute } = require('../../../workers/lib/server/lib/routeHelpers')
   let capturedKeyFn
   const orig = createCachedAuthRoute

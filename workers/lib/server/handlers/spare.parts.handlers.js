@@ -9,7 +9,7 @@ const {
   WORK_ORDER_VALID_DEVICE_TYPES,
   SPARE_PART_INITIAL_LOCATION
 } = require('../../constants')
-const { getWorkOrderRackId } = require('../lib/workOrders')
+const { getWorkOrderRackId } = require('../lib/work.orders')
 
 function _pushErrors (results) {
   return (results || []).flatMap(r => r?.errors || [])

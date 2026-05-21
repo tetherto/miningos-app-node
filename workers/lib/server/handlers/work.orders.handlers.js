@@ -8,8 +8,8 @@ const {
   WORK_ORDER_VALID_DEVICE_TYPES,
   SPARE_PART_INITIAL_LOCATION
 } = require('../../constants')
-const { renderWorkOrderCsv } = require('../lib/workOrderExport')
-const { submitWorkOrderAction, getWorkOrderRackId } = require('../lib/workOrders')
+const { renderWorkOrderCsv } = require('../lib/work.order.export')
+const { submitWorkOrderAction, getWorkOrderRackId } = require('../lib/work.orders')
 
 async function _resolvePartByIdentifier (ctx, identifier) {
   const results = await ctx.dataProxy.requestData('listThings', {

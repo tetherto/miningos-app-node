@@ -5,7 +5,7 @@ const {
   HTTP_METHODS,
   AUTH_PERMISSIONS
 } = require('../../constants')
-const schemas = require('../schemas/workOrders.schemas')
+const schemas = require('../schemas/work.orders.schemas')
 const {
   createWorkOrder,
   listWorkOrders,
@@ -17,7 +17,7 @@ const {
   appendWorkLogEntry,
   getWorkOrderAudit,
   exportWorkOrder
-} = require('../handlers/workOrders.handlers')
+} = require('../handlers/work.orders.handlers')
 const { createAuthRoute, createCachedAuthRoute } = require('../lib/routeHelpers')
 const { stableJsonString } = require('../../utils')
 

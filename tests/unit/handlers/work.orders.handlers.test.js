@@ -1,7 +1,7 @@
 'use strict'
 
 const test = require('brittle')
-const handlers = require('../../../workers/lib/server/handlers/workOrders.handlers')
+const handlers = require('../../../workers/lib/server/handlers/work.orders.handlers')
 const { createMockCtxWithOrks } = require('../helpers/mockHelpers')
 
 const RACK = 'inventory-work_order-rack-x'

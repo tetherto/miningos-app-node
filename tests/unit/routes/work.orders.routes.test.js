@@ -8,15 +8,15 @@ const {
 } = require('../helpers/routeTestHelpers')
 const { ENDPOINTS, HTTP_METHODS } = require('../../../workers/lib/constants')
 
-const ROUTES_PATH = '../../../workers/lib/server/routes/workOrders.routes'
+const ROUTES_PATH = '../../../workers/lib/server/routes/work.orders.routes'
 
-test('workOrders.routes: module structure', (t) => {
-  const routes = testModuleStructure(t, ROUTES_PATH, 'workOrders')
-  testHandlerFunctions(t, routes, 'workOrders')
-  testOnRequestFunctions(t, routes, 'workOrders')
+test('work.orders.routes: module structure', (t) => {
+  const routes = testModuleStructure(t, ROUTES_PATH, 'work.orders')
+  testHandlerFunctions(t, routes, 'work.orders')
+  testOnRequestFunctions(t, routes, 'work.orders')
 })
 
-test('workOrders.routes: registers every WO endpoint', (t) => {
+test('work.orders.routes: registers every WO endpoint', (t) => {
   const routes = require(ROUTES_PATH)({})
   const expected = [
     { method: HTTP_METHODS.POST, url: ENDPOINTS.WORK_ORDERS },
@@ -36,14 +36,14 @@ test('workOrders.routes: registers every WO endpoint', (t) => {
   }
 })
 
-test('workOrders.routes: every route has onRequest auth guard', (t) => {
+test('work.orders.routes: every route has onRequest auth guard', (t) => {
   const routes = require(ROUTES_PATH)({})
   for (const r of routes) {
     t.ok(typeof r.onRequest === 'function', `${r.method} ${r.url} has onRequest`)
   }
 })
 
-test('workOrders.routes: list cache key includes every filter shortcut', (t) => {
+test('work.orders.routes: list cache key includes every filter shortcut', (t) => {
   const { createCachedAuthRoute } = require('../../../workers/lib/server/lib/routeHelpers')
   let capturedKeyFn
   const orig = createCachedAuthRoute
