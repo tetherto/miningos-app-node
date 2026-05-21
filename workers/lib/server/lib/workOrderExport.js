@@ -1,42 +1,5 @@
 'use strict'
 
-// Single source for the CSV schema: each column is a [name, extractor] pair,
-// so the header row and the data rows are derived from one definition rather
-// than two hand-kept-in-sync lists. WO-level columns repeat on every row;
-// move-level columns come from each partsMoves entry.
-const WO_COLUMNS = [
-  ['code', (wo) => wo.code],
-  ['status', (wo) => wo.info?.status],
-  ['type', (wo) => wo.info?.type],
-  ['deviceType', (wo) => wo.info?.deviceType],
-  ['deviceModel', (wo) => wo.info?.deviceModel],
-  ['deviceIdentifier', (wo) => wo.info?.deviceIdentifier],
-  ['issue', (wo) => wo.info?.issue],
-  ['assignedTo', (wo) => wo.info?.assignedTo],
-  ['createdBy', (wo) => wo.info?.createdBy],
-  ['createdAt', (wo) => wo.info?.createdAt],
-  ['finalResult', (wo) => wo.info?.finalResult],
-  ['warrantyVendor', (wo) => wo.info?.warranty?.vendor],
-  ['warrantyFields', (wo) => {
-    const f = wo.info?.warranty?.fields
-    return f ? JSON.stringify(f) : null
-  }]
-]
-
-const MOVE_COLUMNS = [
-  ['moveTs', (m) => m.ts],
-  ['moveUser', (m) => m.user],
-  ['moveRole', (m) => m.role],
-  ['partId', (m) => m.partId],
-  ['partCode', (m) => m.partCode],
-  ['fromLocation', (m) => m.fromLocation],
-  ['toLocation', (m) => m.toLocation],
-  ['fromStatus', (m) => m.fromStatus],
-  ['toStatus', (m) => m.toStatus]
-]
-
-const CSV_HEADERS = [...WO_COLUMNS, ...MOVE_COLUMNS].map(([name]) => name)
-
 function _csvEscape (v) {
   if (v === null || v === undefined) return ''
   const s = typeof v === 'string' ? v : JSON.stringify(v)
@@ -44,20 +7,31 @@ function _csvEscape (v) {
   return s
 }
 
+// Header columns are derived from the work order's own json keys, not a
+// hand-maintained list, so the CSV tracks the worker schema automatically:
+// the top-level `code` plus every `info` field, then each parts-movement
+// entry's keys. One row per movement (or a single row when there are none).
 function renderWorkOrderCsv (wo) {
-  const lines = [CSV_HEADERS.join(',')]
-  const woCells = WO_COLUMNS.map(([, get]) => get(wo))
-  const moves = wo.info?.partsMoves || []
-  if (!moves.length) {
-    const blanks = MOVE_COLUMNS.map(() => '')
-    lines.push([...woCells, ...blanks].map(_csvEscape).join(','))
-  } else {
-    for (const m of moves) {
-      const moveCells = MOVE_COLUMNS.map(([, get]) => get(m))
-      lines.push([...woCells, ...moveCells].map(_csvEscape).join(','))
+  const { partsMoves, ...woFields } = wo.info || {}
+  const base = { code: wo.code, ...woFields }
+  const moves = Array.isArray(partsMoves) ? partsMoves : []
+  const rows = moves.length ? moves.map(move => ({ ...base, ...move })) : [base]
+
+  const headers = []
+  const seen = new Set()
+  for (const row of rows) {
+    for (const key of Object.keys(row)) {
+      if (seen.has(key)) continue
+      seen.add(key)
+      headers.push(key)
     }
+  }
+
+  const lines = [headers.map(_csvEscape).join(',')]
+  for (const row of rows) {
+    lines.push(headers.map(h => _csvEscape(row[h])).join(','))
   }
   return lines.join('\r\n') + '\r\n'
 }
 
-module.exports = { renderWorkOrderCsv, CSV_HEADERS }
+module.exports = { renderWorkOrderCsv }

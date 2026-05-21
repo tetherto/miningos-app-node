@@ -1,7 +1,7 @@
 'use strict'
 
 const test = require('brittle')
-const { renderWorkOrderCsv, CSV_HEADERS } = require('../../../workers/lib/server/lib/workOrderExport')
+const { renderWorkOrderCsv } = require('../../../workers/lib/server/lib/workOrderExport')
 
 const WO = {
   id: 'wo-1',
@@ -25,9 +25,17 @@ const WO = {
   }
 }
 
-test('workOrderExport: CSV header is the documented column set', (t) => {
-  const csv = renderWorkOrderCsv(WO)
-  t.is(csv.split('\r\n')[0], CSV_HEADERS.join(','))
+test('workOrderExport: CSV header is derived from the work order json property names', (t) => {
+  const header = renderWorkOrderCsv(WO).split('\r\n')[0].split(',')
+  const woKeys = ['code', ...Object.keys(WO.info).filter(k => k !== 'partsMoves')]
+  const moveKeys = Object.keys(WO.info.partsMoves[0])
+  t.alike(header, [...woKeys, ...moveKeys], 'header is code + info fields + movement fields, not a hardcoded list')
+})
+
+test('workOrderExport: a new info field appears as a column without code changes', (t) => {
+  const wo = { ...WO, info: { ...WO.info, slaBreached: true } }
+  const header = renderWorkOrderCsv(wo).split('\r\n')[0].split(',')
+  t.ok(header.includes('slaBreached'), 'newly added json field is picked up dynamically')
 })
 
 test('workOrderExport: CSV emits one row per parts-movement entry', (t) => {
