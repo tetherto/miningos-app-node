@@ -12,8 +12,6 @@ const woReq = (email = 'op@test') => ({
   _info: { authToken: 'tok', user: { metadata: { email } } }
 })
 
-// ctx whose dataProxy answers listRacks with `racks` (one ork's worth) and
-// records every method it is asked for plus the last pushAction payload.
 function buildCtx ({ racks = [{ id: RACK_ID }], pushResult = { id: 'action-1', errors: [] }, captured } = {}) {
   return {
     authLib: {

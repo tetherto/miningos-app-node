@@ -7,10 +7,6 @@ function _csvEscape (v) {
   return s
 }
 
-// Header columns are derived from the work order's own json keys, not a
-// hand-maintained list, so the CSV tracks the worker schema automatically:
-// the top-level `code` plus every `info` field, then each parts-movement
-// entry's keys. One row per movement (or a single row when there are none).
 function renderWorkOrderCsv (wo) {
   const { partsMoves, ...woFields } = wo.info || {}
   const base = { code: wo.code, ...woFields }

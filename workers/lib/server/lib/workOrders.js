@@ -3,14 +3,6 @@
 const { WORK_ORDER_THING_TYPE } = require('../../constants')
 const { flattenRpcResults } = require('../../utils')
 
-/**
- * Resolve the Work Order rack id from the ork's rack registry.
- *
- * The rack id is not deployment config — it's discovered by asking the ork
- * which rack carries the `inventory-work_order` type. Resolved once and
- * cached on `ctx` so it costs a single `listRacks` round-trip per process,
- * not one per request.
- */
 async function getWorkOrderRackId (ctx) {
   if (ctx._workOrderRackId) return ctx._workOrderRackId
   const results = await ctx.dataProxy.requestData('listRacks', {
@@ -22,10 +14,6 @@ async function getWorkOrderRackId (ctx) {
   return rack.id
 }
 
-/**
- * Submit a single Work Order action (registerThing / updateThing) through
- * the action-approver pipeline against the resolved WO rack.
- */
 async function submitWorkOrderAction (ctx, req, action, paramObj) {
   const rackId = await getWorkOrderRackId(ctx)
   const { permissions } = await ctx.authLib.getTokenPerms(req._info.authToken)
