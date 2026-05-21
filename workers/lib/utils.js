@@ -127,6 +127,13 @@ function escapeRegex (s) {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+function csvEscape (v) {
+  if (v === null || v === undefined) return ''
+  const s = typeof v === 'string' ? v : JSON.stringify(v)
+  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`
+  return s
+}
+
 function stableJsonString (raw) {
   if (typeof raw !== 'string') return raw
   try {
@@ -188,6 +195,7 @@ module.exports = {
   deduplicateAlerts,
   matchesFilter,
   escapeRegex,
+  csvEscape,
   stableJsonString,
   listThingsWithCount
 }

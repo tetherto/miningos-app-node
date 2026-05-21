@@ -1,11 +1,6 @@
 'use strict'
 
-function _csvEscape (v) {
-  if (v === null || v === undefined) return ''
-  const s = typeof v === 'string' ? v : JSON.stringify(v)
-  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`
-  return s
-}
+const { csvEscape } = require('../../utils')
 
 function renderWorkOrderCsv (wo) {
   const { partsMoves, ...woFields } = wo.info || {}
@@ -23,9 +18,9 @@ function renderWorkOrderCsv (wo) {
     }
   }
 
-  const lines = [headers.map(_csvEscape).join(',')]
+  const lines = [headers.map(csvEscape).join(',')]
   for (const row of rows) {
-    lines.push(headers.map(h => _csvEscape(row[h])).join(','))
+    lines.push(headers.map(h => csvEscape(row[h])).join(','))
   }
   return lines.join('\r\n') + '\r\n'
 }

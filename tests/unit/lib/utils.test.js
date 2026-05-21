@@ -10,6 +10,7 @@ const {
   getAuthTokenFromHeaders,
   parseJsonQueryParam,
   escapeRegex,
+  csvEscape,
   stableJsonString,
   listThingsWithCount
 } = require('../../../workers/lib/utils')
@@ -445,6 +446,17 @@ test('escapeRegex - escapes mingo regex metacharacters', (t) => {
   t.is(escapeRegex('a.b+c*'), 'a\\.b\\+c\\*')
   t.is(escapeRegex('AB:CD:EF'), 'AB:CD:EF', 'preserves non-metachars like ":"')
   t.is(escapeRegex('(x|y)?'), '\\(x\\|y\\)\\?')
+})
+
+test('csvEscape - blanks null/undefined, quotes only when needed, doubles inner quotes', (t) => {
+  t.is(csvEscape(null), '')
+  t.is(csvEscape(undefined), '')
+  t.is(csvEscape('plain'), 'plain', 'no wrapping when no metacharacters')
+  t.is(csvEscape('a,b'), '"a,b"', 'comma forces quoting')
+  t.is(csvEscape('line1\nline2'), '"line1\nline2"', 'newline forces quoting')
+  t.is(csvEscape('say "hi"'), '"say ""hi"""', 'inner quotes doubled')
+  t.is(csvEscape(42), '42', 'non-strings JSON-stringified')
+  t.is(csvEscape({ a: 1 }), '"{""a"":1}"', 'objects stringified then escaped')
 })
 
 test('stableJsonString - sorts top-level keys so semantically-equal queries share cache entries', (t) => {
