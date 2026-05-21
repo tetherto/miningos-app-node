@@ -3,13 +3,13 @@
 const { flattenRpcResults } = require('../../utils')
 const {
   WORK_ORDER_THING_TYPE,
+  WORK_ORDER_TERMINAL_STATUSES,
   FILE_TYPES,
   WORK_ORDER_FILE_COUNT_CAP_DEFAULT,
   WORK_ORDER_FILE_MAX_BYTES_DEFAULT,
   WORK_ORDER_FILE_MIME_ALLOWLIST_DEFAULT
 } = require('../../constants')
-
-const TERMINAL_WO_STATUSES = new Set(['closed', 'cancelled'])
+const { getWorkOrderRackId } = require('../lib/workOrders')
 
 async function _loadWorkOrder (ctx, id) {
   const results = await ctx.dataProxy.requestData('listThings', {
@@ -19,8 +19,7 @@ async function _loadWorkOrder (ctx, id) {
 }
 
 async function _pushWorkOrderUpdate (ctx, req, info) {
-  const rackId = ctx.conf.workOrderRackId
-  if (!rackId) throw new Error('ERR_WORK_ORDER_RACK_ID_NOT_CONFIGURED')
+  const rackId = await getWorkOrderRackId(ctx)
   const { permissions } = await ctx.authLib.getTokenPerms(req._info.authToken)
   return ctx.dataProxy.requestData('pushAction', {
     action: 'updateThing',
@@ -41,7 +40,7 @@ async function uploadWorkOrderFile (ctx, req) {
     err.statusCode = 404
     throw err
   }
-  if (TERMINAL_WO_STATUSES.has(wo.info?.status)) {
+  if (WORK_ORDER_TERMINAL_STATUSES.includes(wo.info?.status)) {
     const err = new Error('ERR_WO_INVALID_STATUS_TRANSITION')
     err.statusCode = 400
     throw err
@@ -77,7 +76,7 @@ async function uploadWorkOrderFile (ctx, req) {
   }
 
   const voter = req._info.user.metadata.email
-  const rackId = ctx.conf.workOrderRackId
+  const rackId = await getWorkOrderRackId(ctx)
   const storeResults = await ctx.dataProxy.requestData('storeFile', {
     type: FILE_TYPES.WORK_ORDER,
     rackId,
@@ -115,7 +114,7 @@ async function downloadWorkOrderFile (ctx, req, rep) {
 
   const loaded = await ctx.dataProxy.requestData('loadFile', {
     type: FILE_TYPES.WORK_ORDER,
-    rackId: ctx.conf.workOrderRackId,
+    rackId: await getWorkOrderRackId(ctx),
     workOrderId: wo.id,
     fileId: req.params.fileId
   })
@@ -138,7 +137,7 @@ async function deleteWorkOrderFile (ctx, req) {
     err.statusCode = 404
     throw err
   }
-  if (TERMINAL_WO_STATUSES.has(wo.info?.status)) {
+  if (WORK_ORDER_TERMINAL_STATUSES.includes(wo.info?.status)) {
     const err = new Error('ERR_WO_INVALID_STATUS_TRANSITION')
     err.statusCode = 400
     throw err
@@ -153,7 +152,7 @@ async function deleteWorkOrderFile (ctx, req) {
 
   const removeResults = await ctx.dataProxy.requestData('removeFile', {
     type: FILE_TYPES.WORK_ORDER,
-    rackId: ctx.conf.workOrderRackId,
+    rackId: await getWorkOrderRackId(ctx),
     workOrderId: wo.id,
     fileId: req.params.fileId
   })

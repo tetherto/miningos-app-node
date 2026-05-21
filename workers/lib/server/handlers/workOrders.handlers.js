@@ -1,13 +1,15 @@
 'use strict'
 
-const { parseJsonQueryParam, flattenRpcResults, submitWorkOrderAction, escapeRegex, listThingsWithCount } = require('../../utils')
+const { parseJsonQueryParam, flattenRpcResults, escapeRegex, listThingsWithCount } = require('../../utils')
 const {
   WORK_ORDER_THING_TYPE,
   WORK_ORDER_TYPES,
+  WORK_ORDER_TERMINAL_STATUSES,
   WORK_ORDER_VALID_DEVICE_TYPES,
   SPARE_PART_INITIAL_LOCATION
 } = require('../../constants')
 const { renderWorkOrderCsv } = require('../lib/workOrderExport')
+const { submitWorkOrderAction, getWorkOrderRackId } = require('../lib/workOrders')
 
 async function _resolvePartByIdentifier (ctx, identifier) {
   const results = await ctx.dataProxy.requestData('listThings', {
@@ -140,8 +142,7 @@ async function getWorkOrder (ctx, req) {
 }
 
 async function appendWorkLogEntry (ctx, req) {
-  const rackId = ctx.conf.workOrderRackId
-  if (!rackId) throw new Error('ERR_WORK_ORDER_RACK_ID_NOT_CONFIGURED')
+  const rackId = await getWorkOrderRackId(ctx)
 
   const wo = await ctx.dataProxy.requestData('listThings', {
     query: { id: req.params.id, type: WORK_ORDER_THING_TYPE }
@@ -152,7 +153,7 @@ async function appendWorkLogEntry (ctx, req) {
     err.statusCode = 404
     throw err
   }
-  if (['closed', 'cancelled'].includes(found.info?.status)) {
+  if (WORK_ORDER_TERMINAL_STATUSES.includes(found.info?.status)) {
     const err = new Error('ERR_WO_INVALID_STATUS_TRANSITION')
     err.statusCode = 400
     throw err

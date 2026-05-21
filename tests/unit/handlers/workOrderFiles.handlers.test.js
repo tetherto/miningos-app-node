@@ -59,7 +59,8 @@ function buildCtx ({ wo = OPEN_WO, storeResult, conf = {} } = {}) {
   }
   const ctx = createMockCtxWithOrks([{ rpcPublicKey: 'k' }], handler)
   ctx.authLib = mockAuthLib
-  ctx.conf = { ...ctx.conf, workOrderRackId: RACK, ...conf }
+  ctx.conf = { ...ctx.conf, ...conf }
+  ctx._workOrderRackId = RACK
   return { ctx, pushed, fileCalls }
 }
 

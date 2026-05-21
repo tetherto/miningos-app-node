@@ -46,6 +46,7 @@ const AUTH_PERMISSIONS = {
 const WORK_ORDER_THING_TYPE = 'inventory-work_order'
 
 const WORK_ORDER_TYPES = { REGISTER: 1, REGULAR: 2 }
+const WORK_ORDER_TERMINAL_STATUSES = ['closed', 'cancelled']
 const WORK_ORDER_VALID_DEVICE_TYPES = ['miner', 'psu', 'hashboard', 'controller']
 const MINER_LOCATIONS = ['Site Warehouse', 'Site Lab', 'Miner Room', 'Vendor', 'Scrapped', 'Disposed']
 const SPARE_PART_INITIAL_LOCATION = 'Site Warehouse'
@@ -752,6 +753,7 @@ module.exports = {
   ELECTRICITY_EXT_DATA_KEYS,
   WORK_ORDER_THING_TYPE,
   WORK_ORDER_TYPES,
+  WORK_ORDER_TERMINAL_STATUSES,
   WORK_ORDER_VALID_DEVICE_TYPES,
   MINER_LOCATIONS,
   SPARE_PART_INITIAL_LOCATION,

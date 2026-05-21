@@ -5,11 +5,11 @@ const { parseJsonQueryParam, flattenRpcResults, escapeRegex, listThingsWithCount
 const {
   WORK_ORDER_THING_TYPE,
   WORK_ORDER_TYPES,
+  WORK_ORDER_TERMINAL_STATUSES,
   WORK_ORDER_VALID_DEVICE_TYPES,
   SPARE_PART_INITIAL_LOCATION
 } = require('../../constants')
-
-const TERMINAL_WO_STATUSES = new Set(['closed', 'cancelled'])
+const { getWorkOrderRackId } = require('../lib/workOrders')
 
 function _pushErrors (results) {
   return (results || []).flatMap(r => r?.errors || [])
@@ -53,7 +53,7 @@ async function updateSparePart (ctx, req) {
       err.statusCode = 400
       throw err
     }
-    if (TERMINAL_WO_STATUSES.has(wo.info?.status)) {
+    if (WORK_ORDER_TERMINAL_STATUSES.includes(wo.info?.status)) {
       const err = new Error('ERR_WO_INVALID_STATUS_TRANSITION')
       err.statusCode = 400
       throw err
@@ -111,7 +111,7 @@ async function updateSparePart (ctx, req) {
     user: voter
   }
 
-  const woRackId = ctx.conf.workOrderRackId
+  const woRackId = await getWorkOrderRackId(ctx)
   const wo = await _loadWorkOrder(ctx, workOrderId)
   const currentMoves = Array.isArray(wo?.info?.partsMoves) ? wo.info.partsMoves : []
 
@@ -155,8 +155,7 @@ async function registerSparePart (ctx, req) {
     err.statusCode = 400
     throw err
   }
-  const workOrderRackId = ctx.conf.workOrderRackId
-  if (!workOrderRackId) throw new Error('ERR_WORK_ORDER_RACK_ID_NOT_CONFIGURED')
+  const workOrderRackId = await getWorkOrderRackId(ctx)
 
   const voter = req._info.user.metadata.email
   const { permissions } = await ctx.authLib.getTokenPerms(req._info.authToken)
@@ -187,7 +186,7 @@ async function registerSparePart (ctx, req) {
     }]
   }
 
-  const pushOne = (rack, id, info) => ctx.dataProxy.requestData('pushAction', {
+  const pushSingleAction = (rack, id, info) => ctx.dataProxy.requestData('pushAction', {
     action: 'registerThing',
     query: { rack },
     params: [{ rackId: rack, id, info }],
@@ -199,8 +198,8 @@ async function registerSparePart (ctx, req) {
   })
 
   const [partResults, woResults] = await Promise.all([
-    pushOne(rackId, partId, partInfo),
-    pushOne(workOrderRackId, woId, woInfo)
+    pushSingleAction(rackId, partId, partInfo),
+    pushSingleAction(workOrderRackId, woId, woInfo)
   ])
 
   return {

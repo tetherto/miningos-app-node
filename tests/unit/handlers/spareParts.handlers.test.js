@@ -48,7 +48,7 @@ function buildCtx ({ wo = OPEN_WO, part = PART, pushResults = {} } = {}) {
   }
   const ctx = createMockCtxWithOrks([{ rpcPublicKey: 'k' }], handler)
   ctx.authLib = mockAuthLib
-  ctx.conf = { ...ctx.conf, workOrderRackId: WO_RACK }
+  ctx._workOrderRackId = WO_RACK
   return { ctx, pushed }
 }
 
@@ -130,7 +130,7 @@ test('handlers: updateSparePart aborts WO append when the part pushAction return
   }
   const ctx = createMockCtxWithOrks([{ rpcPublicKey: 'k' }], handler)
   ctx.authLib = mockAuthLib
-  ctx.conf = { ...ctx.conf, workOrderRackId: WO_RACK }
+  ctx._workOrderRackId = WO_RACK
   await t.exception(
     () => handlers.updateSparePart(ctx, {
       ...userMeta(),
@@ -164,7 +164,7 @@ function buildRegisterCtx ({ pushResult } = {}) {
   }
   const ctx = createMockCtxWithOrks([{ rpcPublicKey: 'k' }], handler)
   ctx.authLib = mockAuthLib
-  ctx.conf = { ...ctx.conf, workOrderRackId: WO_RACK }
+  ctx._workOrderRackId = WO_RACK
   return { ctx, pushed }
 }
 

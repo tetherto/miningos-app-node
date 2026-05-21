@@ -26,7 +26,7 @@ function buildSubmitFlow ({ rackId = RACK, parts = [] } = {}) {
   }
   const ctx = createMockCtxWithOrks([{ rpcPublicKey: 'k' }], handler)
   ctx.authLib = mockAuthLib
-  ctx.conf = { ...ctx.conf, workOrderRackId: rackId }
+  ctx._workOrderRackId = rackId
   return { ctx, get lastPush () { return lastPush } }
 }
 
@@ -210,7 +210,7 @@ test('handlers: appendWorkLogEntry rejects when WO is closed/cancelled', async (
     [{ rpcPublicKey: 'k' }],
     async (_k, method) => method === 'listThings' ? [{ id: 'wo-1', info: { status: 'closed' } }] : null
   )
-  ctx.conf = { workOrderRackId: RACK }
+  ctx._workOrderRackId = RACK
   await t.exception(
     () => handlers.appendWorkLogEntry(ctx, {
       ...userMeta(), params: { id: 'wo-1' }, body: { text: 'late entry' }
@@ -224,7 +224,7 @@ test('handlers: appendWorkLogEntry 404s when WO is missing', async (t) => {
     [{ rpcPublicKey: 'k' }],
     async (_k, method) => method === 'listThings' ? [] : null
   )
-  ctx.conf = { workOrderRackId: RACK }
+  ctx._workOrderRackId = RACK
   await t.exception(
     () => handlers.appendWorkLogEntry(ctx, {
       ...userMeta(), params: { id: 'wo-missing' }, body: { text: 'x' }
@@ -243,7 +243,7 @@ test('handlers: appendWorkLogEntry calls saveThingComment with the right rack/th
       return null
     }
   )
-  ctx.conf = { workOrderRackId: RACK }
+  ctx._workOrderRackId = RACK
   await handlers.appendWorkLogEntry(ctx, {
     ...userMeta(),
     params: { id: 'wo-1' },
