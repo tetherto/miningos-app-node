@@ -123,6 +123,48 @@ function deduplicateAlerts (alerts) {
   return result
 }
 
+function escapeRegex (s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function csvEscape (v) {
+  if (v === null || v === undefined) return ''
+  const s = typeof v === 'string' ? v : JSON.stringify(v)
+  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`
+  return s
+}
+
+function stableJsonString (raw) {
+  if (typeof raw !== 'string') return raw
+  try {
+    const parsed = JSON.parse(raw)
+    if (parsed === null || typeof parsed !== 'object') return raw
+    return JSON.stringify(parsed, Object.keys(parsed).sort())
+  } catch {
+    return raw
+  }
+}
+
+async function listThingsWithCount (ctx, query, { offset = 0, limit = 100, sort, fields } = {}) {
+  const params = { query, offset, limit }
+  if (sort !== undefined) params.sort = sort
+  if (fields !== undefined) params.fields = fields
+
+  const [listResults, countResults] = await Promise.all([
+    ctx.dataProxy.requestData('listThings', params),
+    ctx.dataProxy.requestData('getThingsCount', { query })
+  ])
+
+  // Each ork applies offset/limit locally so the union can be up to N*limit
+  // items across N orks. Cap to the requested page so we never return more
+  // than the caller asked for. Pagination across multiple racks is still
+  // best-effort because each rack uses the same offset locally.
+  const flat = flattenRpcResults(listResults)
+  const data = flat.slice(0, limit)
+  const totalCount = countResults.reduce((acc, c) => acc + (Number(c) || 0), 0)
+  return { data, totalCount, offset, limit, hasMore: offset + limit < totalCount }
+}
+
 function matchesFilter (item, filter, allowedFields) {
   if (!filter) return true
   for (const key of allowedFields) {
@@ -151,5 +193,9 @@ module.exports = {
   safeDiv,
   runParallel,
   deduplicateAlerts,
-  matchesFilter
+  matchesFilter,
+  escapeRegex,
+  csvEscape,
+  stableJsonString,
+  listThingsWithCount
 }

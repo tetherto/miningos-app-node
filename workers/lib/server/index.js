@@ -21,6 +21,9 @@ const coolingSystemRoutes = require('./routes/cooling.system.routes')
 const energySystemRoutes = require('./routes/energy.system.routes')
 const explorerRoutes = require('./routes/explorer.routes')
 const energyRoutes = require('./routes/energy.routes')
+const workOrdersRoutes = require('./routes/work.orders.routes')
+const sparePartsRoutes = require('./routes/spare.parts.routes')
+const workOrderFilesRoutes = require('./routes/work.order.files.routes')
 
 /**
  * Collect all routes into a flat array for server injection.
@@ -48,7 +51,10 @@ function routes (ctx) {
     ...coolingSystemRoutes(ctx),
     ...energySystemRoutes(ctx),
     ...explorerRoutes(ctx),
-    ...energyRoutes(ctx)
+    ...energyRoutes(ctx),
+    ...workOrdersRoutes(ctx),
+    ...sparePartsRoutes(ctx),
+    ...workOrderFilesRoutes(ctx)
   ]
 }
 
