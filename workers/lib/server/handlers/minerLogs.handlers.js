@@ -18,12 +18,6 @@ const { downloadLogFile } = require('./actions.handlers')
  *      Uses the Hypercore P2P pipeline — no buffering.
  */
 
-/**
- * POST /auth/miners/:minerId/download-logs
- *
- * Submits the downloadLogs action for the given miner and returns the jobId
- * (which is the action ID) the client can use to poll status.
- */
 async function startMinerLogDownload (ctx, req, reply) {
   const { minerId } = req.params
 
@@ -98,7 +92,6 @@ async function getMinerLogDownloadStatus (ctx, req, reply) {
     return reply.code(200).send({ status: 'pending', jobId })
   }
 
-  // Walk targets to find the first successful downloadLogs result with a coreKey
   let meta = null
   let firstError = null
 
@@ -141,13 +134,6 @@ async function getMinerLogDownloadStatus (ctx, req, reply) {
   })
 }
 
-/**
- * GET /auth/miners/:minerId/download-logs/:jobId/file
- *
- * Streams the binary miner log directly to the HTTP client via the
- * Hypercore P2P pipeline. Delegates entirely to downloadLogFile which
- * handles action lookup, TTL check, streaming headers, and Hyperswarm transfer.
- */
 function getMinerLogFile (ctx, req, reply) {
   // downloadLogFile expects req.params.id — bridge from our :jobId param
   return downloadLogFile(ctx, { ...req, params: { ...req.params, id: req.params.jobId } }, reply)

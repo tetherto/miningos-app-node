@@ -142,19 +142,11 @@ async function cancelActionsBatch (ctx, req) {
   })
 }
 
-/**
- * Stream a miner log file to the HTTP client.
- *
- * The action result (stored by ork) contains only metadata: { coreKey, byteLength, expiresAt }.
- * The actual log bytes are fetched directly from the wrk-miner via Hypercore/Hyperswarm P2P,
- * bypassing the HRPC action pipeline entirely.
- *
- * Route: GET /auth/download-logs/:id
- */
+// Action result contains only metadata (coreKey, byteLength, expiresAt) — actual bytes
+// come directly from wrk-miner over Hypercore/Hyperswarm, bypassing the HRPC pipeline.
 async function downloadLogFile (ctx, req, reply) {
   const { id } = req.params
 
-  // Fetch the completed action from ork
   const results = await ctx.dataProxy.requestData('getAction', { id, type: 'done' })
   const action = Array.isArray(results) ? results.find(r => r && !r.error) : results
 
@@ -162,7 +154,6 @@ async function downloadLogFile (ctx, req, reply) {
     return reply.code(404).send({ error: 'ERR_ACTION_NOT_FOUND' })
   }
 
-  // Walk targets to find the first successful downloadLogs result
   let meta = null
   for (const rack of Object.values(action.targets)) {
     for (const call of (rack.calls || [])) {
@@ -182,7 +173,7 @@ async function downloadLogFile (ctx, req, reply) {
     return reply.code(410).send({ error: 'ERR_LOG_EXPIRED' })
   }
 
-  // Set streaming headers — Content-Length enables browser download progress
+  // Content-Length lets the browser show download progress
   const filename = `miner-log-${meta.minerId || 'unknown'}-${id}.log`
   reply.header('Content-Type', 'application/octet-stream')
   reply.header('Content-Disposition', `attachment; filename="${filename}"`)
