@@ -91,7 +91,6 @@ class WrkServerHttp extends TetherWrkBase {
     async.series([
       next => { super._start(next) },
       async () => {
-        // Facilities are ready — construct LogDownloader with live facility references
         this.logDownloader = new LogDownloader({
           netFac: this.net_r0,
           storeFac: this.store_s0,

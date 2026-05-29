@@ -29,9 +29,6 @@ class LogDownloader {
     this._swarmReady = false
   }
 
-  /**
-   * Ensure the swarm is started and our (one-time) connection handler is registered.
-   */
   async _ensureSwarm () {
     if (!this._netFac.swarm) {
       await this._netFac.startSwarm()
@@ -40,7 +37,6 @@ class LogDownloader {
     if (this._swarmReady) return
     this._swarmReady = true
 
-    // Route each new connection to the matching in-flight download core.
     this._netFac.swarm.on('connection', (socket, peerInfo) => {
       const topics = new Set(
         (peerInfo.topics || []).map(t => Buffer.from(t).toString('hex'))
@@ -64,14 +60,12 @@ class LogDownloader {
   async stream (coreKeyHex, byteLength) {
     await this._ensureSwarm()
 
-    // Open a read-only Corestore session for the remote core — no temp dir needed
     const core = this._storeFac.getCore({ key: Buffer.from(coreKeyHex, 'hex') })
     await core.ready()
 
     const discoveryKeyHex = core.discoveryKey.toString('hex')
     this._downloads.set(coreKeyHex, { core, discoveryKeyHex })
 
-    // Join the DHT topic to find the wrk-miner serving this core
     const discovery = this._netFac.swarm.join(core.discoveryKey, { server: false, client: true })
     const peersDone = core.findingPeers()
     this._netFac.swarm.flush().then(peersDone, peersDone)
@@ -103,7 +97,6 @@ class LogDownloader {
     this._downloads.delete(coreKeyHex)
     try { await discovery.destroy() } catch {}
     try {
-      // Free downloaded blocks from Corestore storage, then close the session
       if (core.length > 0) await core.clear(0, core.length)
       await core.close()
     } catch {}
