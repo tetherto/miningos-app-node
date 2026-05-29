@@ -112,6 +112,12 @@ const ENDPOINTS = {
   ACTIONS_VOTING_BATCH: '/auth/actions/voting/batch',
   ACTIONS_VOTE: '/auth/actions/voting/:id/vote',
   ACTIONS_CANCEL: '/auth/actions/voting/cancel',
+  DOWNLOAD_LOGS: '/auth/download-logs/:id',
+
+  // Miner log download flow (start → poll status → stream file)
+  MINER_DOWNLOAD_LOGS_START: '/auth/miners/:minerId/download-logs',
+  MINER_DOWNLOAD_LOGS_STATUS: '/auth/miners/:minerId/download-logs/:jobId/status',
+  MINER_DOWNLOAD_LOGS_FILE: '/auth/miners/:minerId/download-logs/:jobId/file',
 
   // Logs endpoints
   TAIL_LOG: '/auth/tail-log',

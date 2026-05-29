@@ -14,6 +14,7 @@ const { AlertsService } = require('./lib/alerts')
 const { auditLogger } = require('./lib/server/lib/auditLogger')
 const { createDataProxy } = require('./lib/data.proxy')
 const { AUTH_CACHE_TTL } = require('./lib/constants')
+const LogDownloader = require('./lib/log-downloader')
 
 class WrkServerHttp extends TetherWrkBase {
   constructor (conf, ctx) {
@@ -32,6 +33,7 @@ class WrkServerHttp extends TetherWrkBase {
     this.isRpcMode = ctx.isRpcMode !== false
     if (ctx.ork) this.ork = ctx.ork
     this.dataProxy = createDataProxy(this)
+    this.logDownloader = null // initialised in _start() after facilities are ready
 
     this.init()
     this.start()
@@ -89,6 +91,13 @@ class WrkServerHttp extends TetherWrkBase {
     async.series([
       next => { super._start(next) },
       async () => {
+        // Facilities are ready — construct LogDownloader with live facility references
+        this.logDownloader = new LogDownloader({
+          netFac: this.net_r0,
+          storeFac: this.store_s0,
+          peerTimeoutMs: this.conf?.logDownloader?.peerTimeoutMs
+        })
+
         await this.net_r0.startRpcServer()
 
         const httpd = this.httpd_h0

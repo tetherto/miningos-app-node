@@ -16,6 +16,7 @@ const devicesRoutes = require('./routes/devices.routes')
 const metricsRoutes = require('./routes/metrics.routes')
 const alertsRoutes = require('./routes/alerts.routes')
 const minersRoutes = require('./routes/miners.routes')
+const minerLogsRoutes = require('./routes/minerLogs.routes')
 const groupsRoutes = require('./routes/groups.routes')
 const coolingSystemRoutes = require('./routes/cooling.system.routes')
 const energySystemRoutes = require('./routes/energy.system.routes')
@@ -47,6 +48,7 @@ function routes (ctx) {
     ...metricsRoutes(ctx),
     ...alertsRoutes(ctx),
     ...minersRoutes(ctx),
+    ...minerLogsRoutes(ctx),
     ...groupsRoutes(ctx),
     ...coolingSystemRoutes(ctx),
     ...energySystemRoutes(ctx),

@@ -11,9 +11,10 @@ const {
   pushAction,
   voteAction,
   cancelActionsBatch,
-  pushActionsBatch
+  pushActionsBatch,
+  downloadLogFile
 } = require('../handlers/actions.handlers')
-const { createAuthRoute, createCachedAuthRoute } = require('../lib/routeHelpers')
+const { createAuthRoute, createCachedAuthRoute, createAuthOnRequest } = require('../lib/routeHelpers')
 
 module.exports = (ctx) => {
   return [
@@ -154,6 +155,21 @@ module.exports = (ctx) => {
         }
       },
       ...createAuthRoute(ctx, cancelActionsBatch)
+    },
+    {
+      method: HTTP_METHODS.GET,
+      url: ENDPOINTS.DOWNLOAD_LOGS,
+      schema: {
+        params: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' }
+          },
+          required: ['id']
+        }
+      },
+      onRequest: createAuthOnRequest(ctx),
+      handler: (req, reply) => downloadLogFile(ctx, req, reply)
     }
   ]
 }

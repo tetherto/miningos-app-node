@@ -1,0 +1,335 @@
+'use strict'
+
+const test = require('brittle')
+const {
+  startMinerLogDownload,
+  getMinerLogDownloadStatus
+} = require('../../../workers/lib/server/handlers/minerLogs.handlers')
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+function makeMockReply () {
+  let _code = 200
+  let _body = null
+  const reply = {
+    get statusCode () { return _code },
+    get body () { return _body },
+    code (statusCode) {
+      _code = statusCode
+      return reply
+    },
+    send (body) {
+      _body = body
+      return body
+    }
+  }
+  return reply
+}
+
+function makeMockReq (minerId = 'miner-001', jobId = null, token = 'test-token') {
+  const req = {
+    params: { minerId },
+    _info: {
+      authToken: token,
+      user: { metadata: { email: 'ops@example.com' } }
+    }
+  }
+  if (jobId !== null) req.params.jobId = jobId
+  return req
+}
+
+function makeMockCtx ({ write = true, permissions = ['admin'], requestDataResult = null } = {}) {
+  return {
+    authLib: {
+      getTokenPerms: async () => ({ write, permissions })
+    },
+    dataProxy: {
+      requestData: async (method, payload, callback) => {
+        if (requestDataResult === null) return []
+        if (typeof callback === 'function') {
+          const arr = []
+          const items = Array.isArray(requestDataResult) ? requestDataResult : [requestDataResult]
+          for (const item of items) callback(item, arr)
+          return arr
+        }
+        return Array.isArray(requestDataResult) ? requestDataResult : [requestDataResult]
+      }
+    }
+  }
+}
+
+function makeActionResult (overrides = {}) {
+  return {
+    targets: {
+      'rack-001': {
+        calls: [
+          {
+            result: {
+              success: true,
+              data: {
+                coreKey: 'a'.repeat(64),
+                byteLength: 1024,
+                expiresAt: Date.now() + 3600000,
+                minerId: 'miner-001',
+                ...overrides.data
+              }
+            }
+          }
+        ]
+      }
+    },
+    ...overrides
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// startMinerLogDownload
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('startMinerLogDownload - returns 202 with jobId on success', async (t) => {
+  const ctx = makeMockCtx({ requestDataResult: { id: '12345' } })
+  const req = makeMockReq('miner-001')
+  const reply = makeMockReply()
+
+  await startMinerLogDownload(ctx, req, reply)
+
+  t.is(reply.statusCode, 202, 'should return 202 Accepted')
+  t.is(reply.body.jobId, '12345', 'should include jobId')
+  t.ok(reply.body.statusUrl.includes('/status'), 'should include statusUrl')
+  t.ok(reply.body.fileUrl.includes('/file'), 'should include fileUrl')
+  t.ok(reply.body.statusUrl.includes('miner-001'), 'statusUrl should include minerId')
+  t.ok(reply.body.fileUrl.includes('miner-001'), 'fileUrl should include minerId')
+  t.pass()
+})
+
+test('startMinerLogDownload - returns 403 when token has no write permission', async (t) => {
+  const ctx = makeMockCtx({ write: false })
+  const req = makeMockReq('miner-001')
+  const reply = makeMockReply()
+
+  await startMinerLogDownload(ctx, req, reply)
+
+  t.is(reply.statusCode, 403, 'should return 403 Forbidden')
+  t.is(reply.body.error, 'ERR_WRITE_PERM_REQUIRED', 'should return ERR_WRITE_PERM_REQUIRED')
+  t.pass()
+})
+
+test('startMinerLogDownload - returns 400 when action submit fails', async (t) => {
+  const ctx = makeMockCtx({ requestDataResult: { id: null, errors: ['ERR_MINER_NOT_FOUND'] } })
+  const req = makeMockReq('miner-001')
+  const reply = makeMockReply()
+
+  await startMinerLogDownload(ctx, req, reply)
+
+  t.is(reply.statusCode, 400, 'should return 400 when action has no valid id')
+  t.ok(reply.body.error, 'should include error message')
+  t.pass()
+})
+
+test('startMinerLogDownload - returns 400 with error from result when available', async (t) => {
+  const ctx = makeMockCtx({ requestDataResult: { id: null, errors: ['ERR_SPECIFIC_FAILURE'] } })
+  const req = makeMockReq('miner-001')
+  const reply = makeMockReply()
+
+  await startMinerLogDownload(ctx, req, reply)
+
+  t.is(reply.statusCode, 400, 'should return 400')
+  t.is(reply.body.error, 'ERR_SPECIFIC_FAILURE', 'should propagate the action error message')
+  t.pass()
+})
+
+test('startMinerLogDownload - returns 500 on unexpected dataProxy error', async (t) => {
+  const ctx = {
+    authLib: { getTokenPerms: async () => ({ write: true, permissions: [] }) },
+    dataProxy: {
+      requestData: async () => { throw new Error('connection refused') }
+    }
+  }
+  const req = makeMockReq('miner-001')
+  const reply = makeMockReply()
+
+  await startMinerLogDownload(ctx, req, reply)
+
+  t.is(reply.statusCode, 500, 'should return 500 on unexpected error')
+  t.ok(reply.body.error, 'should include error message')
+  t.pass()
+})
+
+test('startMinerLogDownload - uses minerId from route params', async (t) => {
+  let capturedPayload = null
+  const ctx = {
+    authLib: { getTokenPerms: async () => ({ write: true, permissions: ['admin'] }) },
+    dataProxy: {
+      requestData: async (method, payload, callback) => {
+        capturedPayload = payload
+        const arr = []
+        callback({ id: '99' }, arr)
+        return arr
+      }
+    }
+  }
+  const req = makeMockReq('specific-miner-id')
+  const reply = makeMockReply()
+
+  await startMinerLogDownload(ctx, req, reply)
+
+  t.is(capturedPayload.query.id, 'specific-miner-id', 'should use minerId from route params')
+  t.is(capturedPayload.action, 'downloadLogs', 'should submit downloadLogs action')
+  t.pass()
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// getMinerLogDownloadStatus
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('getMinerLogDownloadStatus - returns pending when action not in done bucket', async (t) => {
+  const ctx = makeMockCtx({ requestDataResult: [] })
+  const req = makeMockReq('miner-001', '42')
+  const reply = makeMockReply()
+
+  await getMinerLogDownloadStatus(ctx, req, reply)
+
+  t.is(reply.statusCode, 200, 'should return 200')
+  t.is(reply.body.status, 'pending', 'should return pending status')
+  t.is(reply.body.jobId, '42', 'should echo jobId')
+  t.pass()
+})
+
+test('getMinerLogDownloadStatus - returns ready with metadata when log is available', async (t) => {
+  const expiresAt = Date.now() + 3600000
+  const ctx = {
+    authLib: { getTokenPerms: async () => ({}) },
+    dataProxy: {
+      requestData: async () => [makeActionResult({ data: { expiresAt, byteLength: 2048 } })]
+    }
+  }
+  const req = makeMockReq('miner-001', '42')
+  const reply = makeMockReply()
+
+  await getMinerLogDownloadStatus(ctx, req, reply)
+
+  t.is(reply.statusCode, 200, 'should return 200')
+  t.is(reply.body.status, 'ready', 'should return ready status')
+  t.is(reply.body.jobId, '42', 'should echo jobId')
+  t.is(reply.body.byteLength, 2048, 'should include byteLength')
+  t.is(reply.body.expiresAt, expiresAt, 'should include expiresAt')
+  t.ok(reply.body.fileUrl.includes('/file'), 'should include fileUrl')
+  t.pass()
+})
+
+test('getMinerLogDownloadStatus - returns failed when no coreKey in targets', async (t) => {
+  const action = {
+    targets: {
+      'rack-001': {
+        calls: [
+          { result: { success: false, error_msg: 'ERR_MINER_UNREACHABLE' } }
+        ]
+      }
+    }
+  }
+  const ctx = {
+    authLib: { getTokenPerms: async () => ({}) },
+    dataProxy: { requestData: async () => [action] }
+  }
+  const req = makeMockReq('miner-001', '42')
+  const reply = makeMockReply()
+
+  await getMinerLogDownloadStatus(ctx, req, reply)
+
+  t.is(reply.statusCode, 200, 'should return 200')
+  t.is(reply.body.status, 'failed', 'should return failed status')
+  t.is(reply.body.error, 'ERR_MINER_UNREACHABLE', 'should propagate error message from action result')
+  t.pass()
+})
+
+test('getMinerLogDownloadStatus - returns failed with generic error when no error_msg', async (t) => {
+  const action = {
+    targets: {
+      'rack-001': {
+        calls: [{ result: { success: false } }]
+      }
+    }
+  }
+  const ctx = {
+    authLib: { getTokenPerms: async () => ({}) },
+    dataProxy: { requestData: async () => [action] }
+  }
+  const req = makeMockReq('miner-001', '42')
+  const reply = makeMockReply()
+
+  await getMinerLogDownloadStatus(ctx, req, reply)
+
+  t.is(reply.body.status, 'failed', 'should return failed status')
+  t.is(reply.body.error, 'ERR_LOG_NOT_AVAILABLE', 'should use fallback error code')
+  t.pass()
+})
+
+test('getMinerLogDownloadStatus - returns expired when TTL has passed', async (t) => {
+  const ctx = {
+    authLib: { getTokenPerms: async () => ({}) },
+    dataProxy: {
+      requestData: async () => [makeActionResult({ data: { expiresAt: Date.now() - 1000 } })]
+    }
+  }
+  const req = makeMockReq('miner-001', '42')
+  const reply = makeMockReply()
+
+  await getMinerLogDownloadStatus(ctx, req, reply)
+
+  t.is(reply.statusCode, 200, 'should return 200')
+  t.is(reply.body.status, 'expired', 'should return expired status')
+  t.is(reply.body.error, 'ERR_LOG_EXPIRED', 'should return ERR_LOG_EXPIRED')
+  t.pass()
+})
+
+test('getMinerLogDownloadStatus - returns 500 on unexpected dataProxy error', async (t) => {
+  const ctx = {
+    authLib: { getTokenPerms: async () => ({}) },
+    dataProxy: {
+      requestData: async () => { throw new Error('redis timeout') }
+    }
+  }
+  const req = makeMockReq('miner-001', '42')
+  const reply = makeMockReply()
+
+  await getMinerLogDownloadStatus(ctx, req, reply)
+
+  t.is(reply.statusCode, 500, 'should return 500 on unexpected error')
+  t.ok(reply.body.error, 'should include error message')
+  t.pass()
+})
+
+test('getMinerLogDownloadStatus - finds successful result across multiple racks', async (t) => {
+  const expiresAt = Date.now() + 3600000
+  const action = {
+    targets: {
+      'rack-001': {
+        calls: [{ result: { success: false, error_msg: 'offline' } }]
+      },
+      'rack-002': {
+        calls: [
+          {
+            result: {
+              success: true,
+              data: { coreKey: 'b'.repeat(64), byteLength: 512, expiresAt, minerId: 'miner-002' }
+            }
+          }
+        ]
+      }
+    }
+  }
+  const ctx = {
+    authLib: { getTokenPerms: async () => ({}) },
+    dataProxy: { requestData: async () => [action] }
+  }
+  const req = makeMockReq('miner-002', '77')
+  const reply = makeMockReply()
+
+  await getMinerLogDownloadStatus(ctx, req, reply)
+
+  t.is(reply.body.status, 'ready', 'should return ready when at least one rack has a result')
+  t.is(reply.body.byteLength, 512, 'should return correct byteLength from second rack')
+  t.pass()
+})
