@@ -172,9 +172,14 @@ async function listMiners (ctx, req) {
   }
 }
 
+async function listFirmwares (ctx, req) {
+  return await ctx.dataProxy.requestDataMap('listFirmwares', {})
+}
+
 module.exports = {
   listMiners,
   formatMiner,
   extractPoolWorkers,
-  buildOrkProjection
+  buildOrkProjection,
+  listFirmwares
 }

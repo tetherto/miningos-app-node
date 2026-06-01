@@ -6,7 +6,7 @@ const {
   AUTH_CAPS,
   AUTH_LEVELS
 } = require('../../constants')
-const { listMiners } = require('../handlers/miners.handlers')
+const { listMiners, listFirmwares } = require('../handlers/miners.handlers')
 const { createCachedAuthRoute } = require('../lib/routeHelpers')
 
 module.exports = (ctx) => [
@@ -40,6 +40,16 @@ module.exports = (ctx) => [
       ENDPOINTS.MINERS,
       listMiners,
       [`${AUTH_CAPS.m}:${AUTH_LEVELS.READ}`]
+    )
+  },
+  {
+    method: HTTP_METHODS.GET,
+    url: ENDPOINTS.LIST_FIRMWARES,
+    ...createCachedAuthRoute(
+      ctx,
+      (req) => ['list-firmwares'],
+      ENDPOINTS.LIST_FIRMWARES,
+      listFirmwares
     )
   }
 ]

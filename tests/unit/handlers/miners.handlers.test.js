@@ -5,7 +5,8 @@ const {
   listMiners,
   formatMiner,
   extractPoolWorkers,
-  buildOrkProjection
+  buildOrkProjection,
+  listFirmwares
 } = require('../../../workers/lib/server/handlers/miners.handlers')
 const {
   MINER_FIELD_MAP,
@@ -525,5 +526,61 @@ test('listMiners - maps user fields to ork projection and filters response', asy
   t.is(miner.hashrate, undefined, 'excludes unrequested hashrate')
   t.is(miner.power, undefined, 'excludes unrequested power')
   t.is(miner.efficiency, undefined, 'excludes unrequested efficiency')
+  t.pass()
+})
+
+// --- listFirmwares ---
+
+test('listFirmwares - returns data from requestDataMap', async (t) => {
+  const firmwareData = [
+    [
+      { model: 'antminer-s19xp', version: '2024.01.15', url: 'http://example.com/fw1.bin' },
+      { model: 'antminer-s19', version: '2023.11.01', url: 'http://example.com/fw2.bin' }
+    ]
+  ]
+  const ctx = {
+    dataProxy: {
+      requestDataMap: async (method, payload) => {
+        if (method === 'listFirmwares') return firmwareData
+        return []
+      }
+    }
+  }
+
+  const result = await listFirmwares(ctx, {})
+
+  t.alike(result, firmwareData)
+  t.pass()
+})
+
+test('listFirmwares - calls requestDataMap with listFirmwares method and empty payload', async (t) => {
+  const capturedCalls = []
+  const ctx = {
+    dataProxy: {
+      requestDataMap: async (method, payload) => {
+        capturedCalls.push({ method, payload })
+        return [[]]
+      }
+    }
+  }
+
+  await listFirmwares(ctx, {})
+
+  t.is(capturedCalls.length, 1)
+  t.is(capturedCalls[0].method, 'listFirmwares')
+  t.alike(capturedCalls[0].payload, {})
+  t.pass()
+})
+
+test('listFirmwares - returns empty array when no firmwares exist', async (t) => {
+  const ctx = {
+    dataProxy: {
+      requestDataMap: async () => [[]]
+    }
+  }
+
+  const result = await listFirmwares(ctx, {})
+
+  t.alike(result, [[]])
   t.pass()
 })

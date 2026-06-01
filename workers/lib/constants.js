@@ -174,6 +174,7 @@ const ENDPOINTS = {
   ALERTS_HISTORY: '/auth/alerts/history',
 
   MINERS: '/auth/miners',
+  LIST_FIRMWARES: '/auth/list-firmwares',
   // Cooling System endpoints
   COOLING_SYSTEM: '/auth/dcs/cooling-system',
   // Energy System endpoints

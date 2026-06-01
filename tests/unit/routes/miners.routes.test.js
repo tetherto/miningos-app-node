@@ -16,6 +16,7 @@ test('miners routes - route definitions', (t) => {
 
   const routeUrls = routes.map(route => route.url)
   t.ok(routeUrls.includes('/auth/miners'), 'should have miners route')
+  t.ok(routeUrls.includes('/auth/list-firmwares'), 'should have list-firmwares route')
 
   t.pass()
 })
@@ -25,6 +26,9 @@ test('miners routes - HTTP methods', (t) => {
 
   const minersRoute = routes.find(r => r.url === '/auth/miners')
   t.is(minersRoute.method, 'GET', 'miners route should be GET')
+
+  const firmwaresRoute = routes.find(r => r.url === '/auth/list-firmwares')
+  t.is(firmwaresRoute.method, 'GET', 'list-firmwares route should be GET')
 
   t.pass()
 })
