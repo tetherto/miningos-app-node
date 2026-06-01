@@ -1,6 +1,6 @@
 'use strict'
 
-const DEFAULT_PEER_TIMEOUT_MS = 30000
+const DEFAULT_PEER_TIMEOUT_MS = 60000
 
 /**
  * Downloads miner log files from wrk-miner via Hypercore/Hyperswarm P2P.
@@ -16,8 +16,9 @@ const DEFAULT_PEER_TIMEOUT_MS = 30000
  *   3. Returns a Readable byte stream suitable for piping directly to an HTTP response
  *   4. Clears downloaded blocks and closes the Corestore session after the stream ends
  *
- * One shared connection handler on net_r0.swarm routes connections to the correct
- * in-flight download by matching peerInfo.topics against active download discoveryKeys.
+ * One shared connection handler on net_r0.swarm replicates all active downloads on
+ * every connection (net_r0.swarm is not shared with the RPC layer, so all connections
+ * on this swarm are log-transfer peers).
  */
 class LogDownloader {
   constructor ({ netFac, storeFac, peerTimeoutMs } = {}) {
@@ -37,14 +38,9 @@ class LogDownloader {
     if (this._swarmReady) return
     this._swarmReady = true
 
-    this._netFac.swarm.on('connection', (socket, peerInfo) => {
-      const topics = new Set(
-        (peerInfo.topics || []).map(t => Buffer.from(t).toString('hex'))
-      )
+    this._netFac.swarm.on('connection', (socket) => {
       for (const [, entry] of this._downloads) {
-        if (topics.has(entry.discoveryKeyHex)) {
-          entry.core.replicate(socket)
-        }
+        entry.core.replicate(socket)
       }
     })
   }
@@ -68,17 +64,21 @@ class LogDownloader {
 
     const discovery = this._netFac.swarm.join(core.discoveryKey, { server: false, client: true })
     const peersDone = core.findingPeers()
-    this._netFac.swarm.flush().then(peersDone, peersDone)
+    const peersDoneTimer = setTimeout(peersDone, this._peerTimeoutMs)
 
-    // Wait for the remote core's block tree to arrive (core.length > 0 required)
-    const updateResult = await Promise.race([
-      core.update(),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('ERR_LOG_PEER_TIMEOUT')), this._peerTimeoutMs)
-      )
-    ])
+    try {
+      await Promise.race([
+        core.update(),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('ERR_LOG_PEER_TIMEOUT')), this._peerTimeoutMs)
+        )
+      ])
+    } finally {
+      clearTimeout(peersDoneTimer)
+      peersDone()
+    }
 
-    if (!core.length && (!updateResult || !updateResult.changed)) {
+    if (!core.length) {
       await this._cleanup(coreKeyHex, core, discovery)
       throw new Error('ERR_LOG_PEER_NOT_FOUND')
     }

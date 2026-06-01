@@ -173,13 +173,6 @@ async function downloadLogFile (ctx, req, reply) {
     return reply.code(410).send({ error: 'ERR_LOG_EXPIRED' })
   }
 
-  // Content-Length lets the browser show download progress
-  const filename = `miner-log-${meta.minerId || 'unknown'}-${id}.log`
-  reply.header('Content-Type', 'application/octet-stream')
-  reply.header('Content-Disposition', `attachment; filename="${filename}"`)
-  reply.header('Content-Length', meta.byteLength)
-  reply.header('Cache-Control', 'no-store')
-
   let stream
   try {
     stream = await ctx.logDownloader.stream(meta.coreKey, meta.byteLength)
@@ -189,6 +182,15 @@ async function downloadLogFile (ctx, req, reply) {
       : 500
     return reply.code(code).send({ error: err.message })
   }
+
+  // Set headers only after stream is ready — if set before the try-catch and stream()
+  // throws, the error response would carry application/octet-stream content-type and
+  // Fastify would refuse to serialize the JSON error object.
+  const filename = `miner-log-${meta.minerId || 'unknown'}-${id}.log`
+  reply.header('Content-Type', 'application/octet-stream')
+  reply.header('Content-Disposition', `attachment; filename="${filename}"`)
+  reply.header('Content-Length', meta.byteLength)
+  reply.header('Cache-Control', 'no-store')
 
   // Fastify pipes a Readable stream directly to the HTTP response — no buffering
   return reply.send(stream)
