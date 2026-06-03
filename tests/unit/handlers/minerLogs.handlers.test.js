@@ -165,7 +165,8 @@ test('startMinerLogDownload - uses minerId from route params', async (t) => {
       requestData: async (method, payload, callback) => {
         capturedPayload = payload
         const arr = []
-        callback({ id: '99' }, arr)
+        const res = { id: '99' }
+        callback(res, arr)
         return arr
       }
     }

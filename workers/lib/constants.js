@@ -193,6 +193,7 @@ const ENDPOINTS = {
   EXPLORER_RACKS: '/auth/explorer/racks',
   // Energy endpoints
   ENERGY_FORECAST: '/auth/energy/forecast',
+  ENERGY_FORECAST_HISTORY: '/auth/energy/forecast/history',
   ENERGY_AVAILABLE: '/auth/energy/available',
   // Work Order endpoints
   WORK_ORDERS: '/auth/work-orders',
@@ -577,7 +578,8 @@ const MINERPOOL_EXT_DATA_KEYS = {
 
 const ELECTRICITY_EXT_DATA_KEYS = {
   FORECAST: 'forecast',
-  AVAIL_ENERGY_MWH: 'availableEnergyMWh'
+  FORECAST_HISTORY: 'forecast-history',
+  AVAIL_ENERGY: 'availableEnergy'
 }
 
 const NON_METRIC_KEYS = [
@@ -697,6 +699,7 @@ const EXPLORER_RACK_AGGR_FIELDS = {
 
 const EXPLORER_RACK_DEFAULT_LIMIT = 20
 const EXPLORER_RACK_MAX_LIMIT = 100
+const MICROSOFT_AUTH_SCOPE = ['openid', 'profile', 'email', 'User.Read']
 
 module.exports = {
   SUPER_ADMIN_ROLE,
@@ -772,5 +775,6 @@ module.exports = {
   WORK_ORDER_FILE_MAX_BYTES_DEFAULT,
   WORK_ORDER_FILE_COUNT_CAP_DEFAULT,
   WORK_ORDER_FILE_MIME_ALLOWLIST_DEFAULT,
-  WORK_ORDER_EXPORT_FORMATS
+  WORK_ORDER_EXPORT_FORMATS,
+  MICROSOFT_AUTH_SCOPE
 }

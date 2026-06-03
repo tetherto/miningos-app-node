@@ -105,9 +105,9 @@ test('LogDownloader - constructor stores facilities', (t) => {
   t.pass()
 })
 
-test('LogDownloader - constructor defaults peerTimeoutMs to 30s', (t) => {
+test('LogDownloader - constructor defaults peerTimeoutMs to 60s', (t) => {
   const dl = new LogDownloader({ netFac: makeNetFac(), storeFac: makeStoreFac() })
-  t.is(dl._peerTimeoutMs, 30000, 'should default to 30000ms')
+  t.is(dl._peerTimeoutMs, 60000, 'should default to 60000ms')
   t.pass()
 })
 
@@ -305,7 +305,7 @@ test('LogDownloader - stream cleans up after stream end', async (t) => {
   t.is(dl._downloads.size, 1, 'precondition: download tracked before stream ends')
 
   rs.emit('end')
-  await new Promise(r => setImmediate(r))
+  await new Promise(resolve => setImmediate(resolve))
 
   t.is(dl._downloads.size, 0, 'should remove download from map after stream end')
   t.ok(coreClosed, 'should close core after stream end')
@@ -331,7 +331,7 @@ test('LogDownloader - stream cleans up after stream error', async (t) => {
   await dl.stream(TEST_KEY_HEX, 100)
 
   rs.emit('error', new Error('connection dropped'))
-  await new Promise(r => setImmediate(r))
+  await new Promise(resolve => setImmediate(resolve))
 
   t.is(dl._downloads.size, 0, 'should remove download from map after stream error')
   t.ok(coreClosed, 'should close core after stream error')
@@ -339,10 +339,10 @@ test('LogDownloader - stream cleans up after stream error', async (t) => {
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-// connection handler — topic-based routing
+// connection handler — replicate all active downloads
 // ─────────────────────────────────────────────────────────────────────────────
 
-test('LogDownloader - connection handler replicates core with matching topic', async (t) => {
+test('LogDownloader - connection handler replicates core on swarm connection', async (t) => {
   const swarm = makeSwarm()
   const netFac = { get swarm () { return swarm }, startSwarm: async () => {} }
 
@@ -362,12 +362,12 @@ test('LogDownloader - connection handler replicates core with matching topic', a
   const fakeSocket = {}
   swarm.emit('connection', fakeSocket, { topics: [discoveryKeyBuf] })
 
-  t.is(replicateCalls.length, 1, 'should replicate when topic matches discoveryKey')
+  t.is(replicateCalls.length, 1, 'should replicate active download on connection')
   t.ok(replicateCalls[0] === fakeSocket, 'should pass socket to replicate')
   t.pass()
 })
 
-test('LogDownloader - connection handler skips core with non-matching topic', async (t) => {
+test('LogDownloader - connection handler replicates without inspecting peer topics', async (t) => {
   const swarm = makeSwarm()
   const netFac = { get swarm () { return swarm }, startSwarm: async () => {} }
 
@@ -381,14 +381,13 @@ test('LogDownloader - connection handler skips core with non-matching topic', as
   const dl = new LogDownloader({ netFac, storeFac })
   await dl.stream(TEST_KEY_HEX, 100)
 
-  // Emit connection with a completely different topic
   swarm.emit('connection', {}, { topics: [Buffer.alloc(32).fill(0xff)] })
 
-  t.is(replicateCalls.length, 0, 'should not replicate when topic does not match')
+  t.is(replicateCalls.length, 1, 'should replicate on every swarm connection')
   t.pass()
 })
 
-test('LogDownloader - connection handler handles empty topics list', async (t) => {
+test('LogDownloader - connection handler replicates when connection has no topics', async (t) => {
   const swarm = makeSwarm()
   const netFac = { get swarm () { return swarm }, startSwarm: async () => {} }
 
@@ -402,9 +401,9 @@ test('LogDownloader - connection handler handles empty topics list', async (t) =
   const dl = new LogDownloader({ netFac, storeFac })
   await dl.stream(TEST_KEY_HEX, 100)
 
-  swarm.emit('connection', {}, { topics: [] })
+  swarm.emit('connection', {})
 
-  t.is(replicateCalls.length, 0, 'should not replicate when topics list is empty')
+  t.is(replicateCalls.length, 1, 'should replicate without peer topic metadata')
   t.pass()
 })
 
