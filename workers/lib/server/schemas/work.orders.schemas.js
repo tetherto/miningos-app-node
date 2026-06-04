@@ -22,7 +22,17 @@ const create = {
       deviceIdentifier: { type: 'string', minLength: 1, maxLength: 200 },
       issue: { type: 'string', minLength: 1, maxLength: 2000 },
       assignedTo: { type: ['string', 'null'], maxLength: 200 },
-      warranty
+      warranty,
+      info: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          notes: { type: 'string', maxLength: 4000 },
+          remarks: { type: 'string', maxLength: 4000 },
+          site: { type: 'string', maxLength: 200 },
+          location: { type: 'string', maxLength: 200 }
+        }
+      }
     },
     if: { properties: { type: { const: 2 } } },
     then: { required: ['issue'] }
@@ -73,7 +83,17 @@ const update = {
       deviceIdentifier: { type: 'string', minLength: 1, maxLength: 200 },
       assignedTo: { type: ['string', 'null'], maxLength: 200 },
       finalResult: { type: ['string', 'null'], maxLength: 4000 },
-      warranty
+      warranty,
+      info: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          notes: { type: 'string', maxLength: 4000 },
+          remarks: { type: 'string', maxLength: 4000 },
+          site: { type: 'string', maxLength: 200 },
+          location: { type: 'string', maxLength: 200 }
+        }
+      }
     }
   }
 }

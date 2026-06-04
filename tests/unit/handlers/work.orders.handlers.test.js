@@ -48,6 +48,32 @@ test('handlers: createWorkOrder Type 2 resolves part and forwards body as info',
   t.is(flow.lastPush.params[0].info.partsMoves[0].role, 'diagnosis')
 })
 
+test('handlers: createWorkOrder merges info.notes, info.remarks, info.site, info.location into thing info', async (t) => {
+  const flow = buildSubmitFlow({ parts: [{ id: 'part-1', code: 'PSU-1', type: 'inventory-miner_part-psu', info: { serialNum: 'SN-1' } }] })
+  await handlers.createWorkOrder(flow.ctx, {
+    ...userMeta(),
+    body: {
+      type: 1,
+      deviceType: 'psu',
+      deviceModel: 'PSU-WM-CB6_V5',
+      deviceIdentifier: 'SN-1',
+      info: {
+        notes: 'batch registration',
+        remarks: 'test remark',
+        site: 'Ivinhema',
+        location: 'Site Warehouse'
+      }
+    }
+  })
+  const info = flow.lastPush.params[0].info
+  t.is(info.notes, 'batch registration')
+  t.is(info.remarks, 'test remark')
+  t.is(info.site, 'Ivinhema')
+  t.is(info.location, 'Site Warehouse')
+  t.is(info.deviceType, 'psu', 'top-level fields still present')
+  t.ok(!info.info, 'no nested info.info')
+})
+
 test('handlers: createWorkOrder rejects unknown deviceType with ERR_INVALID_DEVICE_TYPE', async (t) => {
   const flow = buildSubmitFlow()
   await t.exception(

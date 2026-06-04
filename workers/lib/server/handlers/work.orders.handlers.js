@@ -35,7 +35,8 @@ async function createWorkOrder (ctx, req) {
   }
 
   const voter = req._info.user.metadata.email
-  const info = { ...req.body, createdBy: voter, createdAt: Date.now() }
+  const { info: extraInfo, ...body } = req.body
+  const info = { ...body, ...extraInfo, createdBy: voter, createdAt: Date.now() }
 
   if (type === WORK_ORDER_TYPES.REGULAR) {
     const part = await _resolvePartByIdentifier(ctx, deviceIdentifier)
@@ -73,7 +74,8 @@ async function createWorkOrder (ctx, req) {
 }
 
 async function updateWorkOrder (ctx, req) {
-  return submitWorkOrderAction(ctx, req, 'updateThing', { id: req.params.id, info: { ...req.body } })
+  const { info: extraInfo, ...body } = req.body
+  return submitWorkOrderAction(ctx, req, 'updateThing', { id: req.params.id, info: { ...body, ...extraInfo } })
 }
 
 async function closeWorkOrder (ctx, req) {
