@@ -348,6 +348,34 @@ test('AuthLib - tokenHasPerms with matchAll=false', async (t) => {
   t.pass()
 })
 
+test('AuthLib - tokenHasPerms auto-qualifies bare perm names', async (t) => {
+  const mockAuth = {
+    getTokenPerms: function () {
+      return { superadmin: false, perms: ['work_order:rw', 'actions:rw'] }
+    },
+    conf: {
+      superAdminPerms: []
+    }
+  }
+  const authLib = new AuthLib({
+    httpc: {},
+    httpd: {},
+    userService: {},
+    auth: mockAuth
+  })
+
+  const resultWrite = await authLib.tokenHasPerms('token', true, ['work_order'])
+  t.is(resultWrite, true, 'bare perm with write=true should resolve to work_order:rw')
+
+  const resultRead = await authLib.tokenHasPerms('token', false, ['work_order'])
+  t.is(resultRead, true, 'bare perm with write=false should resolve to work_order:r')
+
+  const resultMissing = await authLib.tokenHasPerms('token', true, ['inventory'])
+  t.is(resultMissing, false, 'bare perm not in user perms should return false')
+
+  t.pass()
+})
+
 test('AuthLib - cleanupTokens', async (t) => {
   let cleanupTokensCalled = false
   const mockAuth = {
