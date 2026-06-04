@@ -33,6 +33,15 @@ const setAvailableEnergy = async (ctx, req) => {
     })
 }
 
+const getForecastSettings = async (ctx, req) => {
+  return await ctx.dataProxy.requestDataMap(
+    RPC_METHODS.GET_WRK_EXT_DATA,
+    {
+      type: WORKER_TYPES.ELECTRICITY,
+      query: { key: ELECTRICITY_EXT_DATA_KEYS.FORECAST_SETTINGS }
+    })
+}
+
 const setForecastSettings = async (ctx, req) => {
   return await ctx.dataProxy.requestDataMap(
     RPC_METHODS.SET_WRK_EXT_DATA,
@@ -47,5 +56,6 @@ module.exports = {
   getEnergyForecast,
   setAvailableEnergy,
   getEnergyForecastHistory,
-  setForecastSettings
+  setForecastSettings,
+  getForecastSettings
 }

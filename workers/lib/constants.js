@@ -579,9 +579,9 @@ const MINERPOOL_EXT_DATA_KEYS = {
 
 const ELECTRICITY_EXT_DATA_KEYS = {
   FORECAST: 'forecast',
-  FORECAST_HISTORY: 'forecast-history',
-  AVAIL_ENERGY: 'availableEnergy',
-  FORECAST_SETTINGS: 'forecastSettings'
+  FORECAST_SETTINGS: 'forecastSettings',
+  FORECAST_HISTORY: 'forecastHistory',
+  AVAIL_ENERGY: 'availableEnergy'
 }
 
 const NON_METRIC_KEYS = [
