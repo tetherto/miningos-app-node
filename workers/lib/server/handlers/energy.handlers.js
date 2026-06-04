@@ -11,17 +11,30 @@ const getEnergyForecast = async (ctx, req) => {
     })
 }
 
+const getEnergyForecastHistory = async (ctx, req) => {
+  const { start, end } = req.query
+  return await ctx.dataProxy.requestDataMap(
+    RPC_METHODS.GET_WRK_EXT_DATA,
+    {
+      type: WORKER_TYPES.ELECTRICITY,
+      query: { key: ELECTRICITY_EXT_DATA_KEYS.FORECAST_HISTORY },
+      start,
+      end
+    })
+}
+
 const setAvailableEnergy = async (ctx, req) => {
   return await ctx.dataProxy.requestDataMap(
     RPC_METHODS.SET_WRK_EXT_DATA,
     {
       type: WORKER_TYPES.ELECTRICITY,
-      key: ELECTRICITY_EXT_DATA_KEYS.AVAIL_ENERGY_MWH,
+      key: ELECTRICITY_EXT_DATA_KEYS.AVAIL_ENERGY,
       value: req.body.data
     })
 }
 
 module.exports = {
   getEnergyForecast,
-  setAvailableEnergy
+  setAvailableEnergy,
+  getEnergyForecastHistory
 }

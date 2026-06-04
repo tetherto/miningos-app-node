@@ -69,7 +69,7 @@ class LogDownloader {
     try {
       await Promise.race([
         core.update(),
-        new Promise((_, reject) =>
+        new Promise((resolve, reject) =>
           setTimeout(() => reject(new Error('ERR_LOG_PEER_TIMEOUT')), this._peerTimeoutMs)
         )
       ])

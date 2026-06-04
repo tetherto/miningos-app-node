@@ -3,7 +3,7 @@
 const async = require('async')
 const WebsocketPlugin = require('@fastify/websocket')
 const MultipartPlugin = require('@fastify/multipart')
-const { WORK_ORDER_FILE_MAX_BYTES_DEFAULT } = require('./lib/constants')
+const { WORK_ORDER_FILE_MAX_BYTES_DEFAULT, MICROSOFT_AUTH_SCOPE } = require('./lib/constants')
 const TetherWrkBase = require('@tetherto/tether-wrk-base/workers/base.wrk.tether')
 const AuthLib = require('./lib/auth')
 const debug = require('debug')('store:aggr')
@@ -105,7 +105,7 @@ class WrkServerHttp extends TetherWrkBase {
 
         if (!this.noAuth) {
           httpd.addPlugin(httpdAuth.injection())
-          httpd.addPlugin(httpdAuthMicrosoft.injection())
+          httpd.addPlugin(httpdAuthMicrosoft.injection({ scope: MICROSOFT_AUTH_SCOPE }))
         }
 
         httpd.addPlugin([WebsocketPlugin, {}])
