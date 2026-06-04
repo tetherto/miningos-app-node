@@ -1,7 +1,7 @@
 'use strict'
 
 const { ENDPOINTS, HTTP_METHODS, AUTH_CAPS } = require('../../constants')
-const { getEnergyForecast, setAvailableEnergy, getEnergyForecastHistory } = require('../handlers/energy.handlers')
+const { getEnergyForecast, setAvailableEnergy, getEnergyForecastHistory, setForecastSettings } = require('../handlers/energy.handlers')
 const { createCachedAuthRoute, createAuthRoute } = require('../lib/routeHelpers')
 const schemas = require('../schemas/energy.schemas')
 
@@ -44,6 +44,16 @@ module.exports = (ctx) => [
     }, [`${AUTH_CAPS.m}:w`]),
     schema: {
       body: schemas.body.availableEnergy
+    }
+  },
+  {
+    method: HTTP_METHODS.POST,
+    url: ENDPOINTS.ENERGY_FORECAST_SETTINGS,
+    ...createAuthRoute(ctx, async (ctx, req) => {
+      return await setForecastSettings(ctx, req)
+    }, [`${AUTH_CAPS.m}:w`]),
+    schema: {
+      body: schemas.body.forecastSettings
     }
   }
 ]

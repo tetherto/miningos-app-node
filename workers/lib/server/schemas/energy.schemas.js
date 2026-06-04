@@ -10,6 +10,33 @@ const schemas = {
         }
       },
       required: ['data']
+    },
+    forecastSettings: {
+      type: 'object',
+      properties: {
+        miningRevenueTaxFees: {
+          type: 'object'
+        },
+        sellingEnergyTaxFees: {
+          type: 'object'
+        },
+        buyingEnergyTaxFees: {
+          type: 'object'
+        },
+        lcoe: {
+          type: 'object'
+        },
+        siteEfficiency: {
+          type: 'object'
+        }
+      },
+      required: [
+        'miningRevenueTaxFees',
+        'sellingEnergyTaxFees',
+        'buyingEnergyTaxFees',
+        'lcoe',
+        'siteEfficiency'
+      ]
     }
   }
 }
