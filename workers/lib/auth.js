@@ -88,7 +88,11 @@ class AuthLib {
       return false
     }
 
-    const resolved = requestedPerms.map(perm => this._permsMatch(perms.permissions, perm))
+    const level = write ? 'rw' : 'r'
+    const resolved = requestedPerms.map(perm => {
+      const qualified = perm.includes(':') ? perm : `${perm}:${level}`
+      return this._permsMatch(perms.permissions, qualified)
+    })
 
     return matchAll
       ? resolved.every(res => res)
