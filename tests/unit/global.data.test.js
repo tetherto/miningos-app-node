@@ -266,10 +266,10 @@ test('GlobalDataLib - setContainerSettingsData adds new setting to empty hashtab
 
   t.is(result, true, 'should return true')
   t.ok(typeof savedData === 'object', 'saved data should be an object')
-  t.ok(savedData['container-bd-d40_Test'], 'should have entry with model_site key')
-  t.is(savedData['container-bd-d40_Test'].model, 'container-bd-d40', 'should save correct model')
-  t.is(savedData['container-bd-d40_Test'].site, 'Test', 'should save correct site')
-  t.is(savedData['container-bd-d40_Test'].thresholds.oilTemperature.alarm, 45, 'should save correct threshold')
+  t.ok(savedData['container-bd-d40_test-site'], 'should have entry with model_site key')
+  t.is(savedData['container-bd-d40_test-site'].model, 'container-bd-d40', 'should save correct model')
+  t.is(savedData['container-bd-d40_test-site'].site, 'Test', 'should save correct site')
+  t.is(savedData['container-bd-d40_test-site'].thresholds.oilTemperature.alarm, 45, 'should save correct threshold')
 
   t.pass()
 })
@@ -303,7 +303,7 @@ test('GlobalDataLib - setContainerSettingsData adds new setting to existing hash
   t.ok(typeof savedData === 'object', 'saved data should be an object')
   t.is(Object.keys(savedData).length, 2, 'hashtable should have two entries')
   t.is(savedData['existing-model_existing-site'].model, 'existing-model', 'should preserve existing entry')
-  t.is(savedData['new-model_new-site'].model, 'new-model', 'should add new entry')
+  t.is(savedData['new-model_test-site'].model, 'new-model', 'should add new entry')
 
   t.pass()
 })
@@ -324,7 +324,7 @@ test('GlobalDataLib - setContainerSettingsData updates existing setting by model
     })
   }
 
-  const globalDataLib = new GlobalDataLib(mockBeeWithData, 'test-site')
+  const globalDataLib = new GlobalDataLib(mockBeeWithData, 'site-1')
 
   const data = {
     model: 'model-a',
@@ -371,7 +371,7 @@ test('GlobalDataLib - setContainerSettingsData handles existing object data and 
   t.ok(typeof savedData === 'object', 'saved data should be an object')
   t.is(Object.keys(savedData).length, 2, 'hashtable should have two entries (legacy + new)')
   t.is(savedData['legacy-model_legacy-site'].model, 'legacy-model', 'should preserve legacy entry')
-  t.is(savedData['new-model_new-site'].model, 'new-model', 'should add new entry')
+  t.is(savedData['new-model_test-site'].model, 'new-model', 'should add new entry')
 
   t.pass()
 })

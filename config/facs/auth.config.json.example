@@ -1,7 +1,8 @@
 {
   "a0": {
-    "superAdmin": "",
-    "ttl": 86400,
+    "superAdmin": "test@localhost",
+    "ttl": 900,
+    "jwtSecret": "REPLACE_WITH_LONG_RANDOM_HEX_SECRET",
     "saltRounds": 10,
     "superAdminPerms": [
       "miner:rw",
@@ -23,7 +24,10 @@
       "reporting:rw",
       "settings:rw",
       "ticket:rw",
-      "power_spot_forecast:rw"
+      "power_spot_forecast:rw",
+      "pool_config:rw",
+      "pool_config_approve:rw",
+      "work_order:rw"
     ],
     "roles": {
       "admin": [
@@ -46,7 +50,10 @@
         "reporting:rw",
         "settings:rw",
         "ticket:rw",
-        "power_spot_forecast:rw"
+        "power_spot_forecast:rw",
+        "pool_config:rw",
+        "pool_config_approve:rw",
+        "work_order:rw"
       ],
       "reporting_tool_manager": [
         "revenue:rw",
@@ -71,7 +78,8 @@
         "inventory:rw",
         "reporting:rw",
         "settings:rw",
-        "ticket:rw"
+        "ticket:rw",
+        "work_order:rw"
       ],
       "site_operator": [
         "miner:rw",
@@ -88,7 +96,8 @@
         "comments:rw",
         "settings:rw",
         "ticket:rw",
-        "alerts:rw"
+        "alerts:rw",
+        "work_order:rw"
       ],
       "field_operator": [
         "miner:r",
@@ -104,7 +113,8 @@
         "comments:rw",
         "settings:r",
         "ticket:r",
-        "alerts:r"
+        "alerts:r",
+        "work_order:r"
       ],
       "repair_technician": [
         "miner:r",
@@ -120,7 +130,8 @@
         "comments:rw",
         "settings:r",
         "ticket:r",
-        "alerts:r"
+        "alerts:r",
+        "work_order:rw"
       ],
       "read_only_user": [
         "miner:r",
@@ -136,8 +147,14 @@
         "comments:r",
         "settings:r",
         "ticket:r",
-        "alerts:r"
-      ]      
+        "alerts:r",
+        "work_order:r"
+      ],
+      "pool_manager": [
+        "pool_config:rw",
+        "miner:r",
+        "actions:rw"
+      ]
     },
     "roleManagement": {
       "admin": [
@@ -146,7 +163,8 @@
         "reporting_tool_manager",
         "field_operator",
         "repair_technician",
-        "read_only_user"
+        "read_only_user",
+        "pool_manager"
       ]
     }
   }

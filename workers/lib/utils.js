@@ -1,7 +1,8 @@
 'use strict'
 
 const async = require('async')
-const { RPC_TIMEOUT, RPC_CONCURRENCY_LIMIT } = require('./constants')
+const { RPC_TIMEOUT } = require('./constants')
+const { getStartOfDay } = require('./period.utils')
 
 const dateNowSec = () => Math.floor(Date.now() / 1000)
 
@@ -38,7 +39,7 @@ const isValidJsonObject = (data) => {
 }
 
 const isValidEmail = (email) => {
-  const emailRegex = /^[a-zA-Z0-9.!#$%&’*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*$/
+  const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*$/
   return emailRegex.test(email)
 }
 
@@ -71,61 +72,112 @@ const parseJsonQueryParam = (jsonString, errorCode = 'ERR_INVALID_JSON') => {
   }
 }
 
-/**
- * Executes RPC requests across multiple orks
- * @param {Object} ctx - Context object
- * @param {string} method - RPC method name
- * @param {Object} payload - RPC payload
- * @param {Function} errorHandler - Optional error handler function
- * @returns {Promise<Array>} Array of results
- */
-const requestRpcEachLimit = async (ctx, method, payload, errorHandler = null) => {
-  const results = []
-  const concurrency = ctx.conf?.rpcConcurrencyLimit || RPC_CONCURRENCY_LIMIT
-
-  await async.eachLimit(ctx.conf.orks, concurrency, async (store) => {
-    try {
-      const res = await ctx.net_r0.jRequest(
-        store.rpcPublicKey,
-        method,
-        payload,
-        { timeout: getRpcTimeout(ctx.conf) }
-      )
-      if (errorHandler) {
-        errorHandler(res, results)
-      } else {
-        results.push(res)
-      }
-    } catch (err) {
-      if (errorHandler) {
-        errorHandler({ error: err.message }, results)
-      } else {
-        results.push({ error: err.message })
-      }
-    }
+const runParallel = (tasks) =>
+  new Promise((resolve, reject) => {
+    async.parallel(tasks, (err, results) => {
+      if (err) reject(err)
+      else resolve(results)
+    })
   })
 
-  return results
+const flattenRpcResults = (results) => {
+  const items = []
+  const seen = new Set()
+  if (!Array.isArray(results)) return items
+
+  for (const orkResult of results) {
+    if (!orkResult || orkResult.error) continue
+    const data = Array.isArray(orkResult) ? orkResult : (orkResult.data || orkResult.result || [])
+    if (!Array.isArray(data)) continue
+
+    for (const item of data) {
+      if (!item) continue
+      const id = item.id || item._id
+      if (id && seen.has(id)) continue
+      if (id) seen.add(id)
+      items.push(item)
+    }
+  }
+
+  return items
 }
 
-/**
- * Executes RPC requests across multiple orks
- * @param {Object} ctx - Context object
- * @param {string} method - RPC method name
- * @param {Object} payload - RPC payload
- * @returns {Promise<Array>} Array of results
- */
-const requestRpcMapLimit = async (ctx, method, payload) => {
-  const concurrency = ctx.conf?.rpcConcurrencyLimit || RPC_CONCURRENCY_LIMIT
+const safeDiv = (numerator, denominator) =>
+  typeof numerator === 'number' &&
+    typeof denominator === 'number' &&
+    denominator !== 0
+    ? numerator / denominator
+    : null
 
-  return await async.mapLimit(ctx.conf.orks, concurrency, async (store) => {
-    return ctx.net_r0.jRequest(
-      store.rpcPublicKey,
-      method,
-      payload,
-      { timeout: getRpcTimeout(ctx.conf) }
-    )
-  })
+function deduplicateAlerts (alerts) {
+  const seen = new Set()
+  const result = []
+  for (const alert of alerts) {
+    if (!alert.uuid) {
+      result.push(alert)
+    } else if (!seen.has(alert.uuid)) {
+      seen.add(alert.uuid)
+      result.push(alert)
+    }
+  }
+  return result
+}
+
+function escapeRegex (s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function csvEscape (v) {
+  if (v === null || v === undefined) return ''
+  const s = typeof v === 'string' ? v : JSON.stringify(v)
+  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`
+  return s
+}
+
+function stableJsonString (raw) {
+  if (typeof raw !== 'string') return raw
+  try {
+    const parsed = JSON.parse(raw)
+    if (parsed === null || typeof parsed !== 'object') return raw
+    return JSON.stringify(parsed, Object.keys(parsed).sort())
+  } catch {
+    return raw
+  }
+}
+
+async function listThingsWithCount (ctx, query, { offset = 0, limit = 100, sort, fields } = {}) {
+  const params = { query, offset, limit }
+  if (sort !== undefined) params.sort = sort
+  if (fields !== undefined) params.fields = fields
+
+  const [listResults, countResults] = await Promise.all([
+    ctx.dataProxy.requestData('listThings', params),
+    ctx.dataProxy.requestData('getThingsCount', { query })
+  ])
+
+  // Each ork applies offset/limit locally so the union can be up to N*limit
+  // items across N orks. Cap to the requested page so we never return more
+  // than the caller asked for. Pagination across multiple racks is still
+  // best-effort because each rack uses the same offset locally.
+  const flat = flattenRpcResults(listResults)
+  const data = flat.slice(0, limit)
+  const totalCount = countResults.reduce((acc, c) => acc + (Number(c) || 0), 0)
+  return { data, totalCount, offset, limit, hasMore: offset + limit < totalCount }
+}
+
+function matchesFilter (item, filter, allowedFields) {
+  if (!filter) return true
+  for (const key of allowedFields) {
+    if (filter[key] === undefined) continue
+    const filterVal = filter[key]
+    const itemVal = item[key]
+    if (Array.isArray(filterVal)) {
+      if (!filterVal.includes(itemVal)) return false
+    } else if (itemVal !== filterVal) {
+      return false
+    }
+  }
+  return true
 }
 
 module.exports = {
@@ -136,6 +188,14 @@ module.exports = {
   getRpcTimeout,
   getAuthTokenFromHeaders,
   parseJsonQueryParam,
-  requestRpcEachLimit,
-  requestRpcMapLimit
+  getStartOfDay,
+  flattenRpcResults,
+  safeDiv,
+  runParallel,
+  deduplicateAlerts,
+  matchesFilter,
+  escapeRegex,
+  csvEscape,
+  stableJsonString,
+  listThingsWithCount
 }

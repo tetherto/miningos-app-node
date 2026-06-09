@@ -1,10 +1,6 @@
 'use strict'
 
-const {
-  parseJsonQueryParam,
-  requestRpcMapLimit,
-  requestRpcEachLimit
-} = require('../../utils')
+const { parseJsonQueryParam } = require('../../utils')
 
 async function tailLogRoute (ctx, req, rep) {
   if (req.query.fields) {
@@ -23,7 +19,7 @@ async function tailLogRoute (ctx, req, rep) {
     }
   }
 
-  return await requestRpcMapLimit(ctx, 'tailLog', req.query)
+  return await ctx.dataProxy.requestDataMap('tailLog', req.query)
 }
 
 async function tailLogMultiRoute (ctx, req, rep) {
@@ -51,11 +47,11 @@ async function tailLogMultiRoute (ctx, req, rep) {
     }
   }
 
-  return await requestRpcMapLimit(ctx, 'tailLogMulti', req.query)
+  return await ctx.dataProxy.requestDataMap('tailLogMulti', req.query)
 }
 
 async function tailLogRangeAggrRoute (ctx, req, rep) {
-  return await requestRpcEachLimit(ctx, 'tailLogCustomRangeAggr', req.query)
+  return await ctx.dataProxy.requestData('tailLogCustomRangeAggr', req.query)
 }
 
 async function getHistoryLogRoute (ctx, req) {
@@ -66,7 +62,7 @@ async function getHistoryLogRoute (ctx, req) {
     req.query.query = parseJsonQueryParam(req.query.query, 'ERR_QUERY_INVALID_JSON')
   }
 
-  return await requestRpcMapLimit(ctx, 'getHistoricalLogs', req.query)
+  return await ctx.dataProxy.requestDataMap('getHistoricalLogs', req.query)
 }
 
 module.exports = {

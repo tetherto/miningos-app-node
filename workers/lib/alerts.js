@@ -1,14 +1,12 @@
 'use strict'
 
-const async = require('async')
-const { RPC_CONCURRENCY_LIMIT } = require('./constants')
 class AlertsService {
-  constructor ({ orks, net }) {
-    this.orks = orks
-    this.net = net
+  constructor ({ dataProxy }) {
+    this.dataProxy = dataProxy
   }
 
   async broadcastAlerts (clients) {
+    if (!clients.size) return
     const alerts = await this.fetchAlerts()
     const payload = JSON.stringify(alerts)
 
@@ -44,16 +42,9 @@ class AlertsService {
     }
 
     try {
-      const res = await async.mapLimit(this.orks, RPC_CONCURRENCY_LIMIT, async (store) => {
-        return this.net.jRequest(
-          store.rpcPublicKey,
-          'listThings',
-          query
-        )
-      })
+      const res = await this.dataProxy.requestDataMap('listThings', query)
 
       const alerts = []
-      // res is an array of arrays (one array per ork), so we need to flatten it
       const things = res.flat()
       for (const thing of things) {
         if (Array.isArray(thing?.last?.alerts)) {

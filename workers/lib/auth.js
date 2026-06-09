@@ -9,6 +9,12 @@ class AuthLib {
     this._auth = auth
   }
 
+  _permsMatch (perms, perm) {
+    const [key, required] = perm.split(':')
+    const av = perms.find(p => p.startsWith(`${key}:`))?.split(':')[1] ?? ''
+    return [...required].every(c => av.includes(c))
+  }
+
   async migrateUsers (httpdAuth) {
     const users = await this._auth.listUsers()
     if (users.length > 1) {
@@ -18,7 +24,6 @@ class AuthLib {
     }
 
     try {
-      console.log('Starting user migration')
       const oldUsers = httpdAuth.conf.users || []
 
       const superAdmin = users.find(user => user.id.toString() === SUPER_ADMIN_ID)
@@ -36,8 +41,6 @@ class AuthLib {
           console.error('ERR_MIGRATE_USER', error)
         }
       }))
-
-      console.log('Migration complete')
     } catch (error) {
       console.error('Unexpected error occurred during migration. Migration Failed!', error)
       throw error
@@ -46,7 +49,8 @@ class AuthLib {
 
   async start () {
     this._auth.addHandlers({
-      google: this._resolveOAuthGoogle.bind(this)
+      google: this._resolveOAuthGoogle.bind(this),
+      microsoft: this._resolveOAuthMicrosoft.bind(this)
     })
   }
 
@@ -67,7 +71,7 @@ class AuthLib {
 
   async getTokenPerms (token) {
     const { superadmin: superAdmin, perms = [] } = this._auth.getTokenPerms(token)
-    const write = superAdmin || (await this._auth.tokenHasPerms(token, 'actions:w'))
+    const write = superAdmin || this._permsMatch(perms, 'actions:w')
     const applicablePerms = superAdmin ? (this._auth.conf.superAdminPerms ?? []) : perms
     const caps = applicablePerms.map(perm => perm.split(':')[0])
 
@@ -84,7 +88,11 @@ class AuthLib {
       return false
     }
 
-    const resolved = await Promise.all(requestedPerms.map(perm => this._auth.tokenHasPerms(token, perm)))
+    const level = write ? 'rw' : 'r'
+    const resolved = requestedPerms.map(perm => {
+      const qualified = perm.includes(':') ? perm : `${perm}:${level}`
+      return this._permsMatch(perms.permissions, qualified)
+    })
 
     return matchAll
       ? resolved.every(res => res)
@@ -112,6 +120,58 @@ class AuthLib {
     return {
       email: info.email
     }
+  }
+
+  async _resolveOAuthMicrosoft (ctx, req) {
+    let accessToken
+    try {
+      const oauthRes = await this._httpd.server.microsoftOAuth2.getAccessTokenFromAuthorizationCodeFlow(req)
+      accessToken = oauthRes?.token?.access_token
+    } catch (err) {
+      const msg = err?.response?.body?.error_description || err?.message || 'ERR_MICROSOFT_TOKEN_EXCHANGE_FAILED'
+      throw new Error(msg)
+    }
+
+    if (!accessToken) {
+      throw new Error('ERR_MICROSOFT_TOKEN_MISSING')
+    }
+
+    const graphRes = await fetch('https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName,otherMails', {
+      headers: { authorization: 'Bearer ' + accessToken }
+    })
+
+    if (!graphRes.ok) {
+      const bodyText = await graphRes.text()
+      throw new Error(`ERR_MICROSOFT_GRAPH_${graphRes.status}: ${bodyText}`)
+    }
+
+    const profile = await graphRes.json()
+
+    if (!profile) {
+      return null
+    }
+
+    const isAzureGuestUpn = (value) => typeof value === 'string' && value.includes('#EXT#')
+    const { mail, userPrincipalName, otherMails } = profile
+
+    let email = null
+    if (mail && !isAzureGuestUpn(mail)) {
+      email = mail
+    } else if (Array.isArray(otherMails) && otherMails[0]) {
+      email = otherMails[0]
+    } else if (mail) {
+      email = mail
+    } else if (userPrincipalName && !isAzureGuestUpn(userPrincipalName)) {
+      email = userPrincipalName
+    } else {
+      email = userPrincipalName || null
+    }
+
+    if (!email) {
+      return null
+    }
+
+    return { email: email.toLowerCase() }
   }
 }
 

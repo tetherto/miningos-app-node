@@ -1,7 +1,8 @@
 'use strict'
 const {
   ENDPOINTS,
-  HTTP_METHODS
+  HTTP_METHODS,
+  ACTIONS_QUERIES_MAX_LENGTH
 } = require('../../constants')
 const {
   queryActions,
@@ -10,9 +11,10 @@ const {
   pushAction,
   voteAction,
   cancelActionsBatch,
-  pushActionsBatch
+  pushActionsBatch,
+  downloadLogFile
 } = require('../handlers/actions.handlers')
-const { createAuthRoute, createCachedAuthRoute } = require('../lib/routeHelpers')
+const { createAuthRoute, createCachedAuthRoute, createAuthOnRequest } = require('../lib/routeHelpers')
 
 module.exports = (ctx) => {
   return [
@@ -23,10 +25,10 @@ module.exports = (ctx) => {
         querystring: {
           type: 'object',
           properties: {
-            queries: { type: 'string' },
+            queries: { type: 'string', maxLength: ACTIONS_QUERIES_MAX_LENGTH },
             overwriteCache: { type: 'boolean' },
             groupBatch: { type: 'boolean' },
-            suffix: { type: 'string' }
+            suffix: { type: 'string', maxLength: 200 }
           },
           required: ['queries']
         }
@@ -109,7 +111,7 @@ module.exports = (ctx) => {
           properties: {
             batchActionsPayload: { type: 'array' },
             batchActionUID: { type: 'string' },
-            suffix: { type: 'string' }
+            suffix: { type: 'string', maxLength: 200 }
           },
           required: ['batchActionsPayload', 'batchActionUID']
         }
@@ -153,6 +155,21 @@ module.exports = (ctx) => {
         }
       },
       ...createAuthRoute(ctx, cancelActionsBatch)
+    },
+    {
+      method: HTTP_METHODS.GET,
+      url: ENDPOINTS.DOWNLOAD_LOGS,
+      schema: {
+        params: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' }
+          },
+          required: ['id']
+        }
+      },
+      onRequest: createAuthOnRequest(ctx),
+      handler: (req, reply) => downloadLogFile(ctx, req, reply)
     }
   ]
 }

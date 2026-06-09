@@ -37,8 +37,26 @@ const AUTH_PERMISSIONS = {
   REPORTING: 'reporting',
   SETTINGS: 'settings',
   TICKETS: 'tickets',
-  POWER_SPOT_FORECAST: 'power_spot_forecast'
+  POWER_SPOT_FORECAST: 'power_spot_forecast',
+  POOL_CONFIG: 'pool_config',
+  POOL_CONFIG_APPROVE: 'pool_config_approve',
+  WORK_ORDER: 'work_order'
 }
+
+const WORK_ORDER_THING_TYPE = 'inventory-work_order'
+
+const WORK_ORDER_TYPES = { REGISTER: 1, REGULAR: 2 }
+const WORK_ORDER_TERMINAL_STATUSES = ['closed', 'cancelled']
+const WORK_ORDER_VALID_DEVICE_TYPES = ['miner', 'psu', 'hashboard', 'controller']
+const MINER_LOCATIONS = ['Site Warehouse', 'Site Lab', 'Miner Room', 'Vendor', 'Scrapped', 'Disposed']
+const SPARE_PART_INITIAL_LOCATION = 'Site Warehouse'
+const FILE_TYPES = { WORK_ORDER: 'work_order' }
+const WORK_ORDER_FILE_MAX_BYTES_DEFAULT = 10 * 1024 * 1024
+const WORK_ORDER_FILE_COUNT_CAP_DEFAULT = 20
+const WORK_ORDER_FILE_MIME_ALLOWLIST_DEFAULT = [
+  'image/png', 'image/jpeg', 'image/webp', 'image/gif',
+  'application/pdf', 'text/plain', 'text/csv', 'application/json'
+]
 
 const AUTH_LEVELS = {
   READ: 'r',
@@ -65,6 +83,7 @@ const COMMENT_ACTION = {
 const ENDPOINTS = {
   // OAuth endpoints
   OAUTH_GOOGLE_CALLBACK: '/oauth/google/callback',
+  OAUTH_MICROSOFT_CALLBACK: '/oauth/microsoft/callback',
 
   // Auth endpoints
   USERINFO: '/auth/userinfo',
@@ -76,6 +95,7 @@ const ENDPOINTS = {
   USERS: '/auth/users',
   USERS_DELETE: '/auth/users/delete',
   USER_SETTINGS: '/auth/user/settings',
+  ROLES_PERMISSIONS: '/auth/roles/permissions',
 
   // Global endpoints
   GLOBAL_CONFIG: '/auth/global-config',
@@ -92,6 +112,12 @@ const ENDPOINTS = {
   ACTIONS_VOTING_BATCH: '/auth/actions/voting/batch',
   ACTIONS_VOTE: '/auth/actions/voting/:id/vote',
   ACTIONS_CANCEL: '/auth/actions/voting/cancel',
+  DOWNLOAD_LOGS: '/auth/download-logs/:id',
+
+  // Miner log download flow (start → poll status → stream file)
+  MINER_DOWNLOAD_LOGS_START: '/auth/miners/:minerId/download-logs',
+  MINER_DOWNLOAD_LOGS_STATUS: '/auth/miners/:minerId/download-logs/:jobId/status',
+  MINER_DOWNLOAD_LOGS_FILE: '/auth/miners/:minerId/download-logs/:jobId/file',
 
   // Logs endpoints
   TAIL_LOG: '/auth/tail-log',
@@ -108,8 +134,87 @@ const ENDPOINTS = {
   THING_CONFIG: '/auth/thing-config',
 
   // WebSocket endpoint
-  WEBSOCKET: '/ws'
+  WEBSOCKET: '/ws',
+
+  // Finance endpoints
+  FINANCE_ENERGY_BALANCE: '/auth/finance/energy-balance',
+  FINANCE_EBITDA: '/auth/finance/ebitda',
+  FINANCE_COST_SUMMARY: '/auth/finance/cost-summary',
+  FINANCE_SUBSIDY_FEES: '/auth/finance/subsidy-fees',
+  FINANCE_REVENUE: '/auth/finance/revenue',
+  FINANCE_REVENUE_SUMMARY: '/auth/finance/revenue-summary',
+  FINANCE_HASH_REVENUE: '/auth/finance/hash-revenue',
+
+  // Pools endpoints
+  POOLS: '/auth/pools',
+  POOLS_BALANCE_HISTORY: '/auth/pools/:pool/balance-history',
+  POOLS_THING_CONFIG: '/auth/pools/config/:id',
+  POOLS_CONTAINERS_STATS: '/auth/pools/stats/containers',
+
+  SITE_STATUS_LIVE: '/auth/site/status/live',
+
+  // Generic Config endpoints (type passed as parameter)
+  // Note: Config mutations (register, update, delete) go through pushAction endpoint
+  CONFIGS: '/auth/configs/:type',
+  // Device listing endpoints
+  CONTAINERS: '/auth/containers',
+  CABINETS: '/auth/cabinets',
+  CABINET_BY_ID: '/auth/cabinets/:id',
+
+  // Metrics endpoints
+  METRICS_HASHRATE: '/auth/metrics/hashrate',
+  METRICS_CONSUMPTION: '/auth/metrics/consumption',
+  METRICS_EFFICIENCY: '/auth/metrics/efficiency',
+  METRICS_MINER_STATUS: '/auth/metrics/miner-status',
+  METRICS_POWER_MODE: '/auth/metrics/power-mode',
+  METRICS_POWER_MODE_TIMELINE: '/auth/metrics/power-mode/timeline',
+  METRICS_TEMPERATURE: '/auth/metrics/temperature',
+  METRICS_CONTAINER_TELEMETRY: '/auth/metrics/containers/:id',
+  METRICS_CONTAINER_HISTORY: '/auth/metrics/containers/:id/history',
+
+  // Groups endpoints
+  MINERS_GROUPS_STATS: '/auth/miners/groups/stats',
+
+  // Alerts endpoints
+  ALERTS_SITE: '/auth/alerts/site',
+  ALERTS_HISTORY: '/auth/alerts/history',
+
+  MINERS: '/auth/miners',
+  LIST_FIRMWARES: '/auth/list-firmwares',
+  // Cooling System endpoints
+  COOLING_SYSTEM: '/auth/dcs/cooling-system',
+  // Energy System endpoints
+  ENERGY_SYSTEM: '/auth/dcs/energy-system',
+  // Site Overview endpoints
+  SITE_OVERVIEW_GROUPS: '/auth/site/overview/groups',
+  // Site Efficiency endpoint
+  SITE_EFFICIENCY: '/auth/site/efficiency',
+  // Explorer endpoints
+  EXPLORER_RACKS: '/auth/explorer/racks',
+  // Energy endpoints
+  ENERGY_FORECAST: '/auth/energy/forecast',
+  ENERGY_FORECAST_HISTORY: '/auth/energy/forecast/history',
+  ENERGY_FORECAST_SETTINGS: '/auth/energy/forecast/settings',
+  ENERGY_AVAILABLE: '/auth/energy/available',
+  // Work Order endpoints
+  WORK_ORDERS: '/auth/work-orders',
+  WORK_ORDER_BY_ID: '/auth/work-orders/:id',
+  WORK_ORDER_AUDIT: '/auth/work-orders/:id/audit',
+  WORK_ORDER_LOG: '/auth/work-orders/:id/log',
+  WORK_ORDER_FILES: '/auth/work-orders/:id/files',
+  WORK_ORDER_FILE_BY_ID: '/auth/work-orders/:id/files/:fileId',
+  WORK_ORDER_ASSIGN: '/auth/work-orders/:id/assign',
+  WORK_ORDER_CLOSE: '/auth/work-orders/:id/close',
+  WORK_ORDER_CANCEL: '/auth/work-orders/:id/cancel',
+  // Spare Part endpoints
+  SPARE_PARTS: '/auth/spare-parts',
+  SPARE_PART_BY_ID: '/auth/spare-parts/:id',
+  SPARE_PART_REPAIR_HISTORY: '/auth/spare-parts/:id/repair-history',
+  // Work Order export
+  WORK_ORDER_EXPORT: '/auth/work-orders/:id/export'
 }
+
+const WORK_ORDER_EXPORT_FORMATS = ['pdf', 'csv', 'docx']
 
 const HTTP_METHODS = {
   GET: 'GET',
@@ -122,51 +227,28 @@ const HTTP_METHODS = {
 const OPERATIONS = {
   // Auth operations
   AUTH_USERINFO_READ: 'auth.userinfo.read',
-  AUTH_TOKEN_GENERATE: 'auth.token.generate',
-  AUTH_PERMISSIONS_READ: 'auth.permissions.read',
-  AUTH_EXT_DATA_READ: 'auth.extData.read',
 
   // User operations
-  USER_READ: 'user.read',
   USER_CREATE: 'user.create',
   USER_UPDATE: 'user.update',
   USER_DELETE: 'user.delete',
 
-  // Global operations
-  GLOBAL_CONFIG_READ: 'global.config.read',
-  GLOBAL_CONFIG_WRITE: 'global.config.write',
-  GLOBAL_DATA_READ: 'global.data.read',
-  GLOBAL_DATA_WRITE: 'global.data.write',
-  GLOBAL_FEATURE_CONFIG_READ: 'global.featureConfig.read',
-  GLOBAL_FEATURES_READ: 'global.features.read',
-  GLOBAL_FEATURES_WRITE: 'global.features.write',
-  GLOBAL_SITE_CONFIG_READ: 'global.siteConfig.read',
-
   // Actions operations
   ACTIONS_QUERY: 'actions.query',
-  ACTIONS_BATCH_QUERY: 'actions.batch.query',
-  ACTIONS_SINGLE_READ: 'actions.single.read',
   ACTIONS_VOTING: 'actions.voting',
   ACTIONS_VOTING_BATCH: 'actions.voting.batch',
   ACTIONS_VOTE: 'actions.vote',
   ACTIONS_CANCEL: 'actions.cancel',
 
-  // Logs operations
-  LOGS_TAIL_READ: 'logs.tail.read',
-  LOGS_TAIL_MULTI_READ: 'logs.tail.multi.read',
-  LOGS_TAIL_RANGE_AGGR_READ: 'logs.tail.range.aggr.read',
-  LOGS_HISTORY_READ: 'logs.history.read',
-
   // Things operations
-  THINGS_LIST_READ: 'things.list.read',
-  RACKS_LIST_READ: 'racks.list.read',
-  THING_COMMENT_READ: 'thing.comment.read',
   THING_COMMENT_WRITE: 'thing.comment.write',
-  THING_COMMENT_DELETE: 'thing.comment.delete',
-  THING_SETTINGS_READ: 'thing.settings.read',
-  THING_SETTINGS_WRITE: 'thing.settings.write',
-  WORKER_CONFIG_READ: 'worker.config.read',
-  THING_CONFIG_READ: 'thing.config.read'
+
+  WORK_ORDER_CREATE: 'work_order.create',
+  WORK_ORDER_READ: 'work_order.read',
+  WORK_ORDER_UPDATE: 'work_order.update',
+  WORK_ORDER_CLOSE: 'work_order.close',
+  WORK_ORDER_CANCEL: 'work_order.cancel',
+  WORK_ORDER_ASSIGN: 'work_order.assign'
 }
 
 const DEFAULTS = {
@@ -183,8 +265,443 @@ const STATUS_CODES = {
   INTERNAL_SERVER_ERROR: 500
 }
 
+const LIST_THINGS = 'listThings'
+const GET_HISTORICAL_LOGS = 'getHistoricalLogs'
+
+const RPC_METHODS = {
+  TAIL_LOG_RANGE_AGGR: 'tailLogCustomRangeAggr',
+  GET_WRK_EXT_DATA: 'getWrkExtData',
+  SET_WRK_EXT_DATA: 'setWrkExtData',
+  LIST_THINGS: 'listThings',
+  GET_HISTORICAL_LOGS: 'getHistoricalLogs',
+  TAIL_LOG: 'tailLog',
+  GLOBAL_CONFIG: 'getGlobalConfig',
+  GET_CONFIGS: 'getConfigs'
+}
+
+const WORKER_TYPES = {
+  MINER: 'miner',
+  CONTAINER: 'container',
+  POWERMETER: 'powermeter',
+  MINERPOOL: 'minerpool',
+  MEMPOOL: 'mempool',
+  ELECTRICITY: 'electricity'
+}
+
+const SEVERITY_LEVELS = new Set(['critical', 'high', 'medium', 'low'])
+
+const ALERTS_DEFAULT_LIMIT = 100
+const ALERTS_MAX_SITE_LIMIT = 200
+const ALERTS_MAX_HISTORY_LIMIT = 1000
+
+const SITE_ALERTS_FILTER_FIELDS = ['severity', 'type', 'container', 'deviceId']
+const SITE_ALERTS_SEARCH_FIELDS = ['id', 'code', 'container']
+
+const HISTORY_FILTER_FIELDS = ['severity', 'code', 'deviceType', 'container', 'deviceId', 'tags']
+const HISTORY_SEARCH_FIELDS = ['name', 'description', 'position', 'code']
+
+const POOL_ALERT_TYPES = [
+  'all_pools_dead',
+  'wrong_miner_pool',
+  'wrong_miner_subaccount',
+  'wrong_worker_name',
+  'ip_worker_name'
+]
+
+const MINER_POOL_STATUS = {
+  ONLINE: 'online',
+  OFFLINE: 'offline',
+  INACTIVE: 'inactive'
+}
+
+const METRICS_TIME = {
+  ONE_DAY_MS: 24 * 60 * 60 * 1000,
+  TWO_DAYS_MS: 2 * 24 * 60 * 60 * 1000,
+  NINETY_DAYS_MS: 90 * 24 * 60 * 60 * 1000,
+  THREE_HOURS_MS: 3 * 60 * 60 * 1000,
+  ONE_MONTH_MS: 30 * 24 * 60 * 60 * 1000
+}
+
+const METRICS_DEFAULTS = {
+  CONTAINER_HISTORY_LIMIT: 10080
+}
+
+const MINER_CATEGORIES = {
+  LOW: 'low',
+  NORMAL: 'normal',
+  HIGH: 'high',
+  SLEEP: 'sleep',
+  OFFLINE: 'offline',
+  ERROR: 'error',
+  NOT_MINING: 'notMining',
+  MAINTENANCE: 'maintenance'
+}
+
+const LOG_KEYS = {
+  STAT_RTD: 'stat-rtd',
+  STAT_3H: 'stat-3h',
+  STAT_5M: 'stat-5m',
+  STAT_1D: 'stat-1D'
+}
+
+const WORKER_TAGS = {
+  MINER: 't-miner',
+  CONTAINER: 't-container',
+  POWERMETER: 't-powermeter',
+  TEMP_SENSOR: 't-sensor-temp'
+}
+
+const DEVICE_LIST_FIELDS = {
+  id: 1, type: 1, code: 1, ip: 1, tags: 1, info: 1, rack: 1
+}
+
+// Cooling system field projections by type/view
+const COOLING_SYSTEM_PROJECTIONS = {
+  base: { id: 1, code: 1, type: 1, tags: 1, rack: 1 },
+  equipment: {
+    pumps: { 'last.snap.stats.dcs_specific.equipment.pumps': 1 },
+    temperatures: { 'last.snap.stats.dcs_specific.equipment.temperatures': 1 },
+    pressures: { 'last.snap.stats.dcs_specific.equipment.pressures': 1 },
+    flows: { 'last.snap.stats.dcs_specific.equipment.flows': 1 },
+    levels: { 'last.snap.stats.dcs_specific.equipment.levels': 1 },
+    valves: { 'last.snap.stats.dcs_specific.equipment.valves': 1 },
+    heat_exchangers: { 'last.snap.stats.dcs_specific.equipment.heat_exchangers': 1 },
+    cooling_towers: { 'last.snap.stats.dcs_specific.equipment.cooling_towers': 1 },
+    tanks: { 'last.snap.stats.dcs_specific.equipment.tanks': 1 },
+    chillers: { 'last.snap.stats.dcs_specific.equipment.chillers': 1 },
+    fan_coils: { 'last.snap.stats.dcs_specific.equipment.fan_coils': 1 },
+    humidity_sensors: { 'last.snap.stats.dcs_specific.equipment.humidity_sensors': 1 },
+    vibration_sensors: { 'last.snap.stats.dcs_specific.equipment.vibration_sensors': 1 },
+    flow_switches: { 'last.snap.stats.dcs_specific.equipment.flow_switches': 1 }
+  },
+  config: { 'last.snap.config': 1 },
+  stats: {
+    flow: { 'last.snap.stats.flow': 1 },
+    temperature: { 'last.snap.stats.temperature': 1 },
+    humidity: { 'last.snap.stats.humidity': 1 }
+  },
+  miners: {
+    circuit1: {
+      'last.snap.stats.dcs_specific.equipment.pumps': 1,
+      'last.snap.stats.dcs_specific.equipment.temperatures': 1,
+      'last.snap.stats.dcs_specific.equipment.pressures': 1,
+      'last.snap.stats.dcs_specific.equipment.flows': 1,
+      'last.snap.stats.dcs_specific.equipment.heat_exchangers': 1,
+      'last.snap.stats.dcs_specific.equipment.valves': 1,
+      'last.snap.config.cooling_system': 1
+    },
+    circuit2: {
+      'last.snap.stats.dcs_specific.equipment.pumps': 1,
+      'last.snap.stats.dcs_specific.equipment.temperatures': 1,
+      'last.snap.stats.dcs_specific.equipment.levels': 1,
+      'last.snap.stats.dcs_specific.equipment.heat_exchangers': 1,
+      'last.snap.stats.dcs_specific.equipment.cooling_towers': 1,
+      'last.snap.stats.dcs_specific.equipment.valves': 1,
+      'last.snap.stats.dcs_specific.equipment.tanks': 1,
+      'last.snap.stats.dcs_specific.equipment.vibration_sensors': 1,
+      'last.snap.stats.dcs_specific.equipment.fans': 1,
+      'last.snap.config.cooling_system': 1
+    },
+    layout: {
+      'last.snap.stats.dcs_specific.equipment.pumps': 1,
+      'last.snap.stats.dcs_specific.equipment.temperatures': 1,
+      'last.snap.stats.dcs_specific.equipment.pressures': 1,
+      'last.snap.stats.dcs_specific.equipment.flows': 1,
+      'last.snap.stats.dcs_specific.equipment.levels': 1,
+      'last.snap.stats.dcs_specific.equipment.heat_exchangers': 1,
+      'last.snap.stats.dcs_specific.equipment.cooling_towers': 1,
+      'last.snap.stats.dcs_specific.equipment.valves': 1,
+      'last.snap.stats.dcs_specific.equipment.tanks': 1,
+      'last.snap.stats.dcs_specific.equipment.vibration_sensors': 1,
+      'last.snap.stats.dcs_specific.equipment.fans': 1,
+      'last.snap.stats.flow': 1,
+      'last.snap.config.cooling_system': 1,
+      'last.snap.config.mining': 1
+    }
+  },
+  hvac: {
+    circuit1: {
+      'last.snap.stats.dcs_specific.equipment.pumps': 1,
+      'last.snap.stats.dcs_specific.equipment.temperatures': 1,
+      'last.snap.stats.dcs_specific.equipment.pressures': 1,
+      'last.snap.stats.dcs_specific.equipment.flows': 1,
+      'last.snap.stats.dcs_specific.equipment.levels': 1,
+      'last.snap.stats.dcs_specific.equipment.chillers': 1,
+      'last.snap.stats.dcs_specific.equipment.fan_coils': 1,
+      'last.snap.stats.dcs_specific.equipment.fans': 1,
+      'last.snap.stats.dcs_specific.equipment.valves': 1,
+      'last.snap.stats.dcs_specific.equipment.tanks': 1,
+      'last.snap.stats.dcs_specific.equipment.flow_switches': 1,
+      'last.snap.config.cooling_system': 1
+    },
+    circuit2: {
+      'last.snap.stats.dcs_specific.equipment.pumps': 1,
+      'last.snap.stats.dcs_specific.equipment.temperatures': 1,
+      'last.snap.stats.dcs_specific.equipment.flows': 1,
+      'last.snap.stats.dcs_specific.equipment.levels': 1,
+      'last.snap.stats.dcs_specific.equipment.cooling_towers': 1,
+      'last.snap.stats.dcs_specific.equipment.vibration_sensors': 1,
+      'last.snap.config.cooling_system': 1
+    },
+    layout: {
+      'last.snap.stats.dcs_specific.equipment.pumps': 1,
+      'last.snap.stats.dcs_specific.equipment.temperatures': 1,
+      'last.snap.stats.dcs_specific.equipment.pressures': 1,
+      'last.snap.stats.dcs_specific.equipment.flows': 1,
+      'last.snap.stats.dcs_specific.equipment.levels': 1,
+      'last.snap.stats.dcs_specific.equipment.chillers': 1,
+      'last.snap.stats.dcs_specific.equipment.cooling_towers': 1,
+      'last.snap.stats.dcs_specific.equipment.fan_coils': 1,
+      'last.snap.stats.dcs_specific.equipment.fans': 1,
+      'last.snap.stats.dcs_specific.equipment.valves': 1,
+      'last.snap.stats.dcs_specific.equipment.tanks': 1,
+      'last.snap.stats.dcs_specific.equipment.flow_switches': 1,
+      'last.snap.stats.dcs_specific.equipment.vibration_sensors': 1,
+      'last.snap.config.cooling_system': 1
+    },
+    ambient: {
+      'last.snap.stats.dcs_specific.equipment.fan_coils': 1,
+      'last.snap.stats.dcs_specific.equipment.humidity_sensors': 1,
+      'last.snap.stats.humidity': 1,
+      'last.snap.config.cooling_system': 1
+    }
+  }
+}
+
+const ENERGY_SYSTEM_PROJECTIONS = {
+  base: { id: 1, code: 1, type: 1, tags: 1, rack: 1 },
+  miners: {
+    'last.snap.stats.dcs_specific.equipment.power_meters': 1,
+    'last.snap.stats.energy': 1,
+    'last.snap.config.energy_layout': 1
+  },
+  cooling_auxiliary: {
+    'last.snap.stats.dcs_specific.equipment.power_meters': 1,
+    'last.snap.stats.energy': 1,
+    'last.snap.config.energy_layout': 1
+  },
+  layout: {
+    'last.snap.stats.dcs_specific.equipment.power_meters': 1,
+    'last.snap.stats.dcs_specific.equipment.protection_relays': 1,
+    'last.snap.stats.dcs_specific.equipment.transformers': 1,
+    'last.snap.stats.dcs_specific.equipment.distribution_boards': 1,
+    'last.snap.stats.energy': 1,
+    'last.snap.config.energy_layout': 1
+  }
+}
+
+// Site Overview aggregation fields for group-level stats
+const SITE_OVERVIEW_AGGR_FIELDS = {
+  hashrate_mhs_5m_container_group_sum_aggr: 1,
+  hashrate_mhs_5m_rack_group_sum_aggr: 1,
+  power_w_container_group_sum_aggr: 1,
+  power_w_rack_group_sum_aggr: 1,
+  efficiency_w_ths_container_group_avg_aggr: 1,
+  efficiency_w_ths_pdu_rack_group_avg_aggr: 1,
+  hashrate_mhs_5m_pdu_rack_group_avg_aggr: 1,
+  power_w_pdu_rack_group_sum_aggr: 1,
+  offline_cnt: 1,
+  error_cnt: 1,
+  not_mining_cnt: 1,
+  power_mode_sleep_cnt: 1,
+  power_mode_low_cnt: 1,
+  power_mode_normal_cnt: 1,
+  power_mode_high_cnt: 1,
+  hashrate_mhs_5m_active_container_group_cnt: 1
+}
+
+// DCS power meter field projections for site overview
+const DCS_POWER_METER_FIELDS = {
+  'last.snap.stats.dcs_specific.equipment.power_meters': 1,
+  'last.snap.config.mining': 1,
+  'last.snap.config.energy_layout': 1
+}
+
+// DCS field projections for site efficiency
+const DCS_EFFICIENCY_FIELDS = {
+  'last.snap.stats.dcs_specific.equipment.power_meters': 1,
+  'last.snap.stats.dcs_specific.equipment.distribution_boards': 1,
+  'last.snap.stats.dcs_specific.equipment.transformers': 1,
+  'last.snap.config.mining': 1,
+  'last.snap.config.energy_layout': 1
+}
+
+const LOG_FIELDS = {
+  HASHRATE_SUM_TYPE_GROUP: 'hashrate_mhs_5m_type_group_sum',
+  HASHRATE_SUM_CONTAINER_GROUP: 'hashrate_mhs_5m_container_group_sum',
+  HASHRATE_SUM_RACK_GROUP: 'hashrate_mhs_5m_pdu_rack_group_sum',
+  POWER_W_TYPE_GROUP_SUM: 'power_w_type_group_sum',
+  POWER_W_CONTAINER_GROUP_SUM: 'power_w_container_group_sum',
+  POWER_W_RACK_GROUP_SUM: 'power_w_pdu_rack_group_sum'
+}
+
+const AGGR_FIELDS = {
+  HASHRATE_SUM: 'hashrate_mhs_5m_sum_aggr',
+  HASHRATE_SUM_TYPE_GROUP_AGGR: 'hashrate_mhs_5m_type_group_sum_aggr',
+  HASHRATE_SUM_CONTAINER_GROUP_AGGR: 'hashrate_mhs_5m_container_group_sum_aggr',
+  HASHRATE_SUM_RACK_GROUP_AGGR: 'hashrate_mhs_5m_pdu_rack_group_sum_aggr',
+  SITE_POWER: 'site_power_w',
+  ENERGY_AGGR: 'energy_aggr',
+  ACTIVE_ENERGY_IN: 'active_energy_in_aggr',
+  UTE_ENERGY: 'ute_energy_aggr',
+  EFFICIENCY: 'efficiency_w_ths_avg_aggr',
+  POWER_MODE_GROUP: 'power_mode_group_aggr',
+  STATUS_GROUP: 'status_group_aggr',
+  TEMP_MAX: 'temperature_c_group_max_aggr',
+  TEMP_AVG: 'temperature_c_group_avg_aggr',
+  TYPE_CNT: 'type_cnt',
+  OFFLINE_CNT: 'offline_cnt',
+  SLEEP_CNT: 'power_mode_sleep_cnt',
+  MAINTENANCE_CNT: 'maintenance_type_cnt',
+  CONTAINER_SPECIFIC_STATS: 'container_specific_stats_group_aggr',
+  HASHRATE_1M_CONTAINER_GROUP_SUM: 'hashrate_mhs_1m_container_group_sum_aggr',
+  POWER_W_CONTAINER_GROUP_SUM: 'power_w_container_group_sum_aggr',
+  POWER_W_TYPE_GROUP_SUM: 'power_w_type_group_sum_aggr',
+  POWER_W_RACK_GROUP_SUM: 'power_w_pdu_rack_group_sum_aggr',
+  POWER_MODE_LOW_CNT: 'power_mode_low_cnt',
+  POWER_MODE_NORMAL_CNT: 'power_mode_normal_cnt',
+  POWER_MODE_HIGH_CNT: 'power_mode_high_cnt',
+  ERROR_CNT: 'error_cnt',
+  NOT_MINING_CNT: 'not_mining_cnt'
+}
+
+const PERIOD_TYPES = {
+  DAILY: 'daily',
+  WEEKLY: 'weekly',
+  MONTHLY: 'monthly',
+  YEARLY: 'yearly'
+}
+
+const MINERPOOL_EXT_DATA_KEYS = {
+  TRANSACTIONS: 'transactions',
+  STATS: 'stats'
+}
+
+const ELECTRICITY_EXT_DATA_KEYS = {
+  FORECAST: 'forecast',
+  FORECAST_SETTINGS: 'forecastSettings',
+  FORECAST_HISTORY: 'forecastHistory',
+  AVAIL_ENERGY: 'availableEnergy'
+}
+
+const NON_METRIC_KEYS = [
+  'ts',
+  'site',
+  'year',
+  'monthName',
+  'month',
+  'period'
+]
+
+const BTC_SATS = 100000000
+
+const RANGE_BUCKETS = {
+  '1D': 86400000,
+  '1W': 604800000,
+  '1M': 2592000000
+}
+
 const RPC_TIMEOUT = 15000
 const RPC_CONCURRENCY_LIMIT = 2
+const RPC_PAGE_LIMIT = 100
+
+const AUTH_CACHE_TTL = 60 * 1000
+
+const ACTIONS_MAX_QUERIES = 10
+const ACTIONS_QUERIES_MAX_LENGTH = 1000
+
+// Allowed config types for generic config CRUD
+const CONFIG_TYPES = {
+  POOL: 'pool'
+}
+
+const MINER_FIELD_MAP = {
+  status: 'last.snap.stats.status',
+  hashrate: 'last.snap.stats.hashrate_mhs',
+  power: 'last.snap.stats.power_w',
+  efficiency: 'last.snap.stats.efficiency_w_ths',
+  temperature: 'last.snap.stats.temperature_c',
+  powerMode: 'last.snap.config.power_mode',
+  firmware: 'last.snap.config.firmware_ver',
+  model: 'last.snap.model',
+  ip: 'opts.address',
+  container: 'info.container',
+  rack: 'rack',
+  serialNum: 'info.serialNum',
+  macAddress: 'info.macAddress',
+  pool: 'last.snap.config.pool_config.url',
+  led: 'last.snap.config.led_status',
+  alerts: 'last.alerts',
+  poolConfig: 'info.poolConfig'
+}
+
+const MINER_PROJECTION_MAP = {
+  id: ['id'],
+  type: ['type'],
+  model: ['last.snap.model', 'type'],
+  code: ['code'],
+  ip: ['opts.address'],
+  container: ['info.container'],
+  rack: ['rack'],
+  position: ['info.pos'],
+  status: ['last.snap.stats.status'],
+  hashrate: ['last.snap.stats.hashrate_mhs'],
+  power: ['last.snap.stats.power_w'],
+  temperature: ['last.snap.stats.temperature_c'],
+  efficiency: ['last.snap.stats.efficiency_w_ths'],
+  uptime: ['last.uptime'],
+  firmware: ['last.snap.config.firmware_ver'],
+  powerMode: ['last.snap.config.power_mode'],
+  ledStatus: ['last.snap.config.led_status'],
+  poolConfig: ['last.snap.config.pool_config'],
+  alerts: ['last.alerts'],
+  comments: ['comments'],
+  serialNum: ['info.serialNum'],
+  macAddress: ['info.macAddress'],
+  lastSeen: ['last.ts', 'ts']
+}
+
+const MINER_SEARCH_FIELDS = [
+  'id',
+  'opts.address',
+  'info.serialNum',
+  'info.macAddress',
+  'info.container',
+  'code',
+  'type'
+]
+
+const MINER_DEFAULT_FIELDS = {
+  id: 1,
+  type: 1,
+  code: 1,
+  info: 1,
+  tags: 1,
+  rack: 1,
+  comments: 1,
+  'last.alerts': 1,
+  'last.snap.stats': 1,
+  'last.snap.config': 1,
+  'last.snap.model': 1,
+  'last.uptime': 1,
+  'last.ts': 1,
+  'opts.address': 1,
+  ts: 1
+}
+
+const MINER_MAX_LIMIT = 200
+const MINER_DEFAULT_LIMIT = 50
+
+// Explorer racks aggregation fields
+const EXPLORER_RACK_AGGR_FIELDS = {
+  hashrate_mhs_5m_pdu_rack_group_avg_aggr: 1,
+  power_w_pdu_rack_group_sum_aggr: 1,
+  efficiency_w_ths_pdu_rack_group_avg_aggr: 1
+}
+
+const EXPLORER_RACK_DEFAULT_LIMIT = 20
+const EXPLORER_RACK_MAX_LIMIT = 100
+const MICROSOFT_AUTH_SCOPE = ['openid', 'profile', 'email', 'User.Read']
 
 module.exports = {
   SUPER_ADMIN_ROLE,
@@ -202,5 +719,64 @@ module.exports = {
   STATUS_CODES,
   RPC_TIMEOUT,
   RPC_CONCURRENCY_LIMIT,
-  USER_SETTINGS_TYPE
+  RPC_PAGE_LIMIT,
+  AUTH_CACHE_TTL,
+  ACTIONS_MAX_QUERIES,
+  ACTIONS_QUERIES_MAX_LENGTH,
+  USER_SETTINGS_TYPE,
+  LIST_THINGS,
+  GET_HISTORICAL_LOGS,
+  RPC_METHODS,
+  WORKER_TYPES,
+  POOL_ALERT_TYPES,
+  MINER_POOL_STATUS,
+  AGGR_FIELDS,
+  PERIOD_TYPES,
+  MINERPOOL_EXT_DATA_KEYS,
+  NON_METRIC_KEYS,
+  BTC_SATS,
+  RANGE_BUCKETS,
+  CONFIG_TYPES,
+  METRICS_TIME,
+  METRICS_DEFAULTS,
+  MINER_CATEGORIES,
+  LOG_KEYS,
+  WORKER_TAGS,
+  SEVERITY_LEVELS,
+  ALERTS_DEFAULT_LIMIT,
+  ALERTS_MAX_SITE_LIMIT,
+  ALERTS_MAX_HISTORY_LIMIT,
+  SITE_ALERTS_FILTER_FIELDS,
+  SITE_ALERTS_SEARCH_FIELDS,
+  HISTORY_FILTER_FIELDS,
+  HISTORY_SEARCH_FIELDS,
+  DEVICE_LIST_FIELDS,
+  MINER_FIELD_MAP,
+  MINER_PROJECTION_MAP,
+  MINER_SEARCH_FIELDS,
+  MINER_DEFAULT_FIELDS,
+  MINER_MAX_LIMIT,
+  MINER_DEFAULT_LIMIT,
+  COOLING_SYSTEM_PROJECTIONS,
+  ENERGY_SYSTEM_PROJECTIONS,
+  SITE_OVERVIEW_AGGR_FIELDS,
+  DCS_POWER_METER_FIELDS,
+  DCS_EFFICIENCY_FIELDS,
+  EXPLORER_RACK_AGGR_FIELDS,
+  EXPLORER_RACK_DEFAULT_LIMIT,
+  EXPLORER_RACK_MAX_LIMIT,
+  LOG_FIELDS,
+  ELECTRICITY_EXT_DATA_KEYS,
+  WORK_ORDER_THING_TYPE,
+  WORK_ORDER_TYPES,
+  WORK_ORDER_TERMINAL_STATUSES,
+  WORK_ORDER_VALID_DEVICE_TYPES,
+  MINER_LOCATIONS,
+  SPARE_PART_INITIAL_LOCATION,
+  FILE_TYPES,
+  WORK_ORDER_FILE_MAX_BYTES_DEFAULT,
+  WORK_ORDER_FILE_COUNT_CAP_DEFAULT,
+  WORK_ORDER_FILE_MIME_ALLOWLIST_DEFAULT,
+  WORK_ORDER_EXPORT_FORMATS,
+  MICROSOFT_AUTH_SCOPE
 }

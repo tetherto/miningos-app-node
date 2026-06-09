@@ -131,6 +131,8 @@ test('AuthLib - start adds OAuth handlers', async (t) => {
   t.ok(handlersAdded, 'should call addHandlers')
   t.ok(handlersAdded.google, 'should add google handler')
   t.ok(typeof handlersAdded.google === 'function', 'google handler should be function')
+  t.ok(handlersAdded.microsoft, 'should add microsoft handler')
+  t.ok(typeof handlersAdded.microsoft === 'function', 'microsoft handler should be function')
 
   t.pass()
 })
@@ -231,10 +233,7 @@ test('AuthLib - getTokenPerms with super admin', async (t) => {
 test('AuthLib - getTokenPerms with regular user', async (t) => {
   const mockAuth = {
     getTokenPerms: function (token) {
-      return { superadmin: false, perms: ['actions:r', 'miner:r'] }
-    },
-    tokenHasPerms: async (token, perm) => {
-      return perm === 'actions:w'
+      return { superadmin: false, perms: ['actions:rw', 'miner:r'] }
     },
     conf: {
       superAdminPerms: []
@@ -262,7 +261,6 @@ test('AuthLib - tokenHasPerms with super admin', async (t) => {
     getTokenPerms: function () {
       return { superadmin: true, perms: [] }
     },
-    tokenHasPerms: async () => false,
     conf: {
       superAdminPerms: []
     }
@@ -274,7 +272,7 @@ test('AuthLib - tokenHasPerms with super admin', async (t) => {
     auth: mockAuth
   })
 
-  const result = await authLib.tokenHasPerms('token', true, ['perm1', 'perm2'])
+  const result = await authLib.tokenHasPerms('token', true, ['perm1:r', 'perm2:r'])
 
   t.is(result, true, 'should return true for super admin')
 
@@ -286,7 +284,6 @@ test('AuthLib - tokenHasPerms without write permission', async (t) => {
     getTokenPerms: function () {
       return { superadmin: false, perms: [] }
     },
-    tokenHasPerms: async () => false,
     conf: {
       superAdminPerms: []
     }
@@ -298,7 +295,7 @@ test('AuthLib - tokenHasPerms without write permission', async (t) => {
     auth: mockAuth
   })
 
-  const result = await authLib.tokenHasPerms('token', true, ['perm1'])
+  const result = await authLib.tokenHasPerms('token', true, ['perm1:r'])
 
   t.is(result, false, 'should return false when write required but not available')
 
@@ -308,10 +305,7 @@ test('AuthLib - tokenHasPerms without write permission', async (t) => {
 test('AuthLib - tokenHasPerms with matchAll=true', async (t) => {
   const mockAuth = {
     getTokenPerms: function () {
-      return { superadmin: false, perms: [] }
-    },
-    tokenHasPerms: async (token, perm) => {
-      return perm === 'perm1'
+      return { superadmin: false, perms: ['perm1:r'] }
     },
     conf: {
       superAdminPerms: []
@@ -324,7 +318,7 @@ test('AuthLib - tokenHasPerms with matchAll=true', async (t) => {
     auth: mockAuth
   })
 
-  const result = await authLib.tokenHasPerms('token', false, ['perm1', 'perm2'], true)
+  const result = await authLib.tokenHasPerms('token', false, ['perm1:r', 'perm2:r'], true)
 
   t.is(result, false, 'should return false when matchAll and not all perms match')
 
@@ -334,10 +328,7 @@ test('AuthLib - tokenHasPerms with matchAll=true', async (t) => {
 test('AuthLib - tokenHasPerms with matchAll=false', async (t) => {
   const mockAuth = {
     getTokenPerms: function () {
-      return { superadmin: false, perms: [] }
-    },
-    tokenHasPerms: async (token, perm) => {
-      return perm === 'perm1'
+      return { superadmin: false, perms: ['perm1:r'] }
     },
     conf: {
       superAdminPerms: []
@@ -350,9 +341,37 @@ test('AuthLib - tokenHasPerms with matchAll=false', async (t) => {
     auth: mockAuth
   })
 
-  const result = await authLib.tokenHasPerms('token', false, ['perm1', 'perm2'], false)
+  const result = await authLib.tokenHasPerms('token', false, ['perm1:r', 'perm2:r'], false)
 
   t.is(result, true, 'should return true when matchAll=false and at least one perm matches')
+
+  t.pass()
+})
+
+test('AuthLib - tokenHasPerms auto-qualifies bare perm names', async (t) => {
+  const mockAuth = {
+    getTokenPerms: function () {
+      return { superadmin: false, perms: ['work_order:rw', 'actions:rw'] }
+    },
+    conf: {
+      superAdminPerms: []
+    }
+  }
+  const authLib = new AuthLib({
+    httpc: {},
+    httpd: {},
+    userService: {},
+    auth: mockAuth
+  })
+
+  const resultWrite = await authLib.tokenHasPerms('token', true, ['work_order'])
+  t.is(resultWrite, true, 'bare perm with write=true should resolve to work_order:rw')
+
+  const resultRead = await authLib.tokenHasPerms('token', false, ['work_order'])
+  t.is(resultRead, true, 'bare perm with write=false should resolve to work_order:r')
+
+  const resultMissing = await authLib.tokenHasPerms('token', true, ['inventory'])
+  t.is(resultMissing, false, 'bare perm not in user perms should return false')
 
   t.pass()
 })
@@ -445,6 +464,133 @@ test('AuthLib - _resolveOAuthGoogle with null info', async (t) => {
   const result = await authLib._resolveOAuthGoogle({}, {})
 
   t.is(result, null, 'should return null when info is null')
+
+  t.pass()
+})
+
+test('AuthLib - _resolveOAuthMicrosoft with valid profile mail', async (t) => {
+  const originalFetch = global.fetch
+  global.fetch = async (url, opts) => {
+    t.is(url, 'https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName,otherMails', 'should call graph /me endpoint')
+    t.is(opts.headers.authorization, 'Bearer ms-token-123', 'should pass bearer token')
+    return {
+      ok: true,
+      json: async () => ({ mail: 'microsoft.user@example.com' })
+    }
+  }
+
+  const authLib = new AuthLib({
+    httpc: {},
+    httpd: {
+      server: {
+        microsoftOAuth2: {
+          getAccessTokenFromAuthorizationCodeFlow: async () => ({ token: { access_token: 'ms-token-123' } })
+        }
+      }
+    },
+    userService: {},
+    auth: {}
+  })
+
+  try {
+    const result = await authLib._resolveOAuthMicrosoft({}, {})
+    t.alike(result, { email: 'microsoft.user@example.com' }, 'should return email from profile mail')
+  } finally {
+    global.fetch = originalFetch
+  }
+
+  t.pass()
+})
+
+test('AuthLib - _resolveOAuthMicrosoft prefers otherMails for guest mail', async (t) => {
+  const originalFetch = global.fetch
+  global.fetch = async () => ({
+    ok: true,
+    json: async () => ({
+      mail: 'guest_user_example.com#EXT#@tenant.onmicrosoft.com',
+      userPrincipalName: 'guest_user_example.com#EXT#@tenant.onmicrosoft.com',
+      otherMails: ['primary.user@example.com']
+    })
+  })
+
+  const authLib = new AuthLib({
+    httpc: {},
+    httpd: {
+      server: {
+        microsoftOAuth2: {
+          getAccessTokenFromAuthorizationCodeFlow: async () => ({ token: { access_token: 'ms-token-123' } })
+        }
+      }
+    },
+    userService: {},
+    auth: {}
+  })
+
+  try {
+    const result = await authLib._resolveOAuthMicrosoft({}, {})
+    t.alike(result, { email: 'primary.user@example.com' }, 'should prefer non-guest email from otherMails')
+  } finally {
+    global.fetch = originalFetch
+  }
+
+  t.pass()
+})
+
+test('AuthLib - _resolveOAuthMicrosoft throws when token exchange fails', async (t) => {
+  const authLib = new AuthLib({
+    httpc: {},
+    httpd: {
+      server: {
+        microsoftOAuth2: {
+          getAccessTokenFromAuthorizationCodeFlow: async () => {
+            throw new Error('token exchange failed')
+          }
+        }
+      }
+    },
+    userService: {},
+    auth: {}
+  })
+
+  try {
+    await authLib._resolveOAuthMicrosoft({}, {})
+    t.fail('should throw on token exchange failure')
+  } catch (err) {
+    t.is(err.message, 'token exchange failed', 'should bubble token exchange error message')
+  }
+
+  t.pass()
+})
+
+test('AuthLib - _resolveOAuthMicrosoft throws when graph request fails', async (t) => {
+  const originalFetch = global.fetch
+  global.fetch = async () => ({
+    ok: false,
+    status: 401,
+    text: async () => 'unauthorized'
+  })
+
+  const authLib = new AuthLib({
+    httpc: {},
+    httpd: {
+      server: {
+        microsoftOAuth2: {
+          getAccessTokenFromAuthorizationCodeFlow: async () => ({ token: { access_token: 'ms-token-123' } })
+        }
+      }
+    },
+    userService: {},
+    auth: {}
+  })
+
+  try {
+    await authLib._resolveOAuthMicrosoft({}, {})
+    t.fail('should throw on graph failure')
+  } catch (err) {
+    t.is(err.message, 'ERR_MICROSOFT_GRAPH_401: unauthorized', 'should include graph status and body')
+  } finally {
+    global.fetch = originalFetch
+  }
 
   t.pass()
 })

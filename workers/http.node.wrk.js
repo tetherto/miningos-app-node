@@ -2,6 +2,8 @@
 
 const async = require('async')
 const WebsocketPlugin = require('@fastify/websocket')
+const MultipartPlugin = require('@fastify/multipart')
+const { WORK_ORDER_FILE_MAX_BYTES_DEFAULT, MICROSOFT_AUTH_SCOPE } = require('./lib/constants')
 const TetherWrkBase = require('@tetherto/tether-wrk-base/workers/base.wrk.tether')
 const AuthLib = require('./lib/auth')
 const debug = require('debug')('store:aggr')
@@ -10,6 +12,9 @@ const GlobalDataLib = require('./lib/globalData')
 const { UserService } = require('./lib/users')
 const { AlertsService } = require('./lib/alerts')
 const { auditLogger } = require('./lib/server/lib/auditLogger')
+const { createDataProxy } = require('./lib/data.proxy')
+const { AUTH_CACHE_TTL } = require('./lib/constants')
+const LogDownloader = require('./lib/log-downloader')
 
 class WrkServerHttp extends TetherWrkBase {
   constructor (conf, ctx) {
@@ -25,6 +30,11 @@ class WrkServerHttp extends TetherWrkBase {
     this.queuedRequests = new Map()
     this.wsClients = new Set()
 
+    this.isRpcMode = ctx.isRpcMode !== false
+    if (ctx.ork) this.ork = ctx.ork
+    this.dataProxy = createDataProxy(this)
+    this.logDownloader = null // initialised in _start() after facilities are ready
+
     this.init()
     this.start()
   }
@@ -39,6 +49,7 @@ class WrkServerHttp extends TetherWrkBase {
       ['fac', '@bitfinex/bfx-facs-lru', '10s', '10s', { max: 10000, maxAge: 10000 }],
       ['fac', '@bitfinex/bfx-facs-lru', '15s', '15s', { max: 10000, maxAge: 15000 }],
       ['fac', '@bitfinex/bfx-facs-lru', '30s', '30s', { max: 10000, maxAge: 30000 }],
+      ['fac', '@bitfinex/bfx-facs-lru', '1m', '1m', { max: 10000, maxAge: AUTH_CACHE_TTL }],
       ['fac', '@bitfinex/bfx-facs-lru', '15m', '15m', { max: 10000, maxAge: 60000 * 15 }],
       ['fac', '@bitfinex/bfx-facs-db-sqlite', 'auth', 'auth', { name: 'miningos-app-node', persist: true }],
       ['fac', '@bitfinex/bfx-facs-http', 'c0', 'c0', { timeout: 30000, debug: false }, 0],
@@ -51,6 +62,7 @@ class WrkServerHttp extends TetherWrkBase {
         trustProxy: true
       }, 0],
       ['fac', '@tetherto/svc-facs-httpd-oauth2', 'h0', 'h0', {}, 0],
+      ['fac', '@tetherto/svc-facs-httpd-oauth2', 'h1', 'h1', {}, 0],
       ['fac', '@tetherto/svc-facs-auth', 'a0', 'a0', () => ({
         sqlite: this.dbSqlite_auth,
         lru: this.lru_15m
@@ -79,16 +91,27 @@ class WrkServerHttp extends TetherWrkBase {
     async.series([
       next => { super._start(next) },
       async () => {
+        this.logDownloader = new LogDownloader({
+          netFac: this.net_r0,
+          storeFac: this.store_s0,
+          peerTimeoutMs: this.conf?.logDownloader?.peerTimeoutMs
+        })
+
         await this.net_r0.startRpcServer()
 
         const httpd = this.httpd_h0
         const httpdAuth = this.httpdOauth2_h0
+        const httpdAuthMicrosoft = this.httpdOauth2_h1
 
         if (!this.noAuth) {
           httpd.addPlugin(httpdAuth.injection())
+          httpd.addPlugin(httpdAuthMicrosoft.injection({ scope: MICROSOFT_AUTH_SCOPE }))
         }
 
         httpd.addPlugin([WebsocketPlugin, {}])
+        httpd.addPlugin([MultipartPlugin, {
+          limits: { fileSize: this.conf.workOrderFileMaxBytes || WORK_ORDER_FILE_MAX_BYTES_DEFAULT, files: 1 }
+        }])
 
         libServer.routes(this).forEach(r => {
           httpd.addRoute(r)
@@ -99,10 +122,17 @@ class WrkServerHttp extends TetherWrkBase {
         })
 
         httpd.addHook('onError', async (request, reply, error) => {
+          const isSafe = error.message && error.message.startsWith('ERR_')
+          const message = isSafe ? error.message : 'Bad Request'
+
+          if (!isSafe) {
+            debug('onError handler:', error.message)
+          }
+
           return reply.status(400).send({
             statusCode: 400,
             error: 'Bad Request',
-            message: error.message
+            message
           })
         })
 
@@ -137,7 +167,7 @@ class WrkServerHttp extends TetherWrkBase {
           }, 15 * 60 * 1000)
         }
 
-        this.alertsService = new AlertsService({ orks: this.conf.orks, net: this.net_r0 })
+        this.alertsService = new AlertsService({ dataProxy: this.dataProxy })
         this.interval_0.add('broadcastAlerts', async () => {
           try {
             await this.alertsService.broadcastAlerts(this.wsClients)
