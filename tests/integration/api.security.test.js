@@ -48,7 +48,10 @@ test('Api security', { timeout: 90000 }, async (main) => {
     const commonConf = { dir_log: 'logs', debug: 0, orks: { 'cluster-1': { rpcPublicKey: '' } }, cacheTiming: {}, featureConfig: {} }
     const netConf = { r0: {} }
     const httpdConf = { h0: {} }
-    const httpdOauthConf = { h0: { method: 'google', credentials: { client: { id: 'i', secret: 's' } }, users: [{ email: readonlyUser }, { email: tokenExpiredUser }, { email: siteOperatorUser, write: true }] } }
+    const httpdOauthConf = {
+      h0: { method: 'google', credentials: { client: { id: 'i', secret: 's' } }, users: [{ email: readonlyUser }, { email: tokenExpiredUser }, { email: siteOperatorUser, write: true }] },
+      h1: { method: 'microsoft', credentials: { client: { id: 'i', secret: 's' }, tenant: 'test-tenant' }, users: [] }
+    }
     const authConf = require('../../config/facs/auth.config.json')
     superadminUser = authConf.a0.superAdmin
 
@@ -83,7 +86,7 @@ test('Api security', { timeout: 90000 }, async (main) => {
     worker.worker.authLib._auth.addHandlers({
       google: () => { return { email } }
     })
-    const token = await worker.worker.auth_a0.authCallbackHandler('google', { ip })
+    const token = await worker.worker.auth_a0.authCallbackHandler('google', { socket: { remoteAddress: ip } })
     return token
   }
 

@@ -1,13 +1,14 @@
 'use strict'
 
-const { requestRpcEachLimit, parseJsonQueryParam } = require('../../utils')
+const { parseJsonQueryParam } = require('../../utils')
+const { ACTIONS_MAX_QUERIES } = require('../../constants')
 
 async function queryActionsBatch (ctx, req) {
   const payload = {
     ids: req.query.ids.split(',')
   }
 
-  return await requestRpcEachLimit(ctx, 'getActionsBatch', payload, (res, resultsArray) => {
+  return await ctx.dataProxy.requestData('getActionsBatch', payload, (res, resultsArray) => {
     if (res.error) {
       console.error(new Date().toISOString(), res.error)
     } else {
@@ -21,6 +22,12 @@ async function queryActions (ctx, req, rep) {
 
   if (req.query.queries) {
     payload.queries = parseJsonQueryParam(req.query.queries, 'ERR_QUERIES_INVALID_JSON')
+    if (!Array.isArray(payload.queries)) {
+      throw new Error('ERR_QUERIES_INVALID')
+    }
+    if (payload.queries.length > ACTIONS_MAX_QUERIES) {
+      throw new Error('ERR_QUERIES_LIMIT_EXCEEDED')
+    }
   }
   if (req.query.groupBatch) {
     payload.groupBatch = req.query.groupBatch
@@ -29,7 +36,7 @@ async function queryActions (ctx, req, rep) {
     payload.suffix = req.query.suffix
   }
 
-  return await requestRpcEachLimit(ctx, 'queryActions', payload)
+  return await ctx.dataProxy.requestData('queryActions', payload)
 }
 
 async function getAction (ctx, req) {
@@ -38,7 +45,7 @@ async function getAction (ctx, req) {
     type: req.params.type
   }
 
-  return await requestRpcEachLimit(ctx, 'getAction', payload)
+  return await ctx.dataProxy.requestData('getAction', payload)
 }
 
 async function pushActionsBatch (ctx, req, rep) {
@@ -61,7 +68,7 @@ async function pushActionsBatch (ctx, req, rep) {
     authPerms: permissions
   }
 
-  return await requestRpcEachLimit(ctx, 'pushActionsBatch', payload, (res, resultsArray) => {
+  return await ctx.dataProxy.requestData('pushActionsBatch', payload, (res, resultsArray) => {
     if (res.error) {
       resultsArray.push({ id: null, errors: [res.error] })
     } else {
@@ -84,7 +91,7 @@ async function pushAction (ctx, req) {
     authPerms: permissions
   }
 
-  return await requestRpcEachLimit(ctx, 'pushAction', payload, (res, resultsArray) => {
+  return await ctx.dataProxy.requestData('pushAction', payload, (res, resultsArray) => {
     if (res.error) {
       resultsArray.push({ id: null, errors: [res.error] })
     } else {
@@ -106,7 +113,7 @@ async function voteAction (ctx, req) {
     authPerms: caps
   }
 
-  return await requestRpcEachLimit(ctx, 'voteAction', payload, (res, resultsArray) => {
+  return await ctx.dataProxy.requestData('voteAction', payload, (res, resultsArray) => {
     if (res.error) {
       resultsArray.push({ res: { success: false, error: res.error } })
     } else {
@@ -126,13 +133,67 @@ async function cancelActionsBatch (ctx, req) {
     voter: req._info.user.metadata.email
   }
 
-  return await requestRpcEachLimit(ctx, 'cancelActionsBatch', payload, (res, resultsArray) => {
+  return await ctx.dataProxy.requestData('cancelActionsBatch', payload, (res, resultsArray) => {
     if (res.error) {
       resultsArray.push({ res: { success: false, error: res.error } })
     } else {
       resultsArray.push({ res })
     }
   })
+}
+
+// Action result contains only metadata (coreKey, byteLength, expiresAt) — actual bytes
+// come directly from wrk-miner over Hypercore/Hyperswarm, bypassing the HRPC pipeline.
+async function downloadLogFile (ctx, req, reply) {
+  const { id } = req.params
+
+  const results = await ctx.dataProxy.requestData('getAction', { id, type: 'done' })
+  const action = Array.isArray(results) ? results.find(r => r && !r.error) : results
+
+  if (!action || !action.targets) {
+    return reply.code(404).send({ error: 'ERR_ACTION_NOT_FOUND' })
+  }
+
+  let meta = null
+  for (const rack of Object.values(action.targets)) {
+    for (const call of (rack.calls || [])) {
+      if (call.result?.success && call.result?.data?.coreKey) {
+        meta = call.result.data
+        break
+      }
+    }
+    if (meta) break
+  }
+
+  if (!meta) {
+    return reply.code(404).send({ error: 'ERR_LOG_NOT_AVAILABLE' })
+  }
+
+  if (meta.expiresAt && Date.now() > meta.expiresAt) {
+    return reply.code(410).send({ error: 'ERR_LOG_EXPIRED' })
+  }
+
+  let stream
+  try {
+    stream = await ctx.logDownloader.stream(meta.coreKey, meta.byteLength)
+  } catch (err) {
+    const code = err.message === 'ERR_LOG_PEER_TIMEOUT' || err.message === 'ERR_LOG_PEER_NOT_FOUND'
+      ? 503
+      : 500
+    return reply.code(code).send({ error: err.message })
+  }
+
+  // Set headers only after stream is ready — if set before the try-catch and stream()
+  // throws, the error response would carry application/octet-stream content-type and
+  // Fastify would refuse to serialize the JSON error object.
+  const filename = `miner-log-${meta.minerId || 'unknown'}-${id}.log`
+  reply.header('Content-Type', 'application/octet-stream')
+  reply.header('Content-Disposition', `attachment; filename="${filename}"`)
+  reply.header('Content-Length', meta.byteLength)
+  reply.header('Cache-Control', 'no-store')
+
+  // Fastify pipes a Readable stream directly to the HTTP response — no buffering
+  return reply.send(stream)
 }
 
 module.exports = {
@@ -142,5 +203,6 @@ module.exports = {
   pushAction,
   voteAction,
   cancelActionsBatch,
-  pushActionsBatch
+  pushActionsBatch,
+  downloadLogFile
 }

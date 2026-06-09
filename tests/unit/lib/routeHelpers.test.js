@@ -69,7 +69,7 @@ test('createAuthOnRequest - calls capCheck when perms provided', async (t) => {
     noAuth: false,
     authLib: {
       resolveToken: async () => ({ userId: 'test' }),
-      tokenHasPerms: async () => true
+      tokenHasPerms: async () => { capCheckCalled = true; return true }
     }
   }
 

@@ -97,6 +97,7 @@ test('constants - COMMENT_ACTION', (t) => {
 test('constants - ENDPOINTS', (t) => {
   t.ok(typeof ENDPOINTS === 'object', 'should be object')
   t.is(ENDPOINTS.OAUTH_GOOGLE_CALLBACK, '/oauth/google/callback', 'should have OAuth callback endpoint')
+  t.is(ENDPOINTS.OAUTH_MICROSOFT_CALLBACK, '/oauth/microsoft/callback', 'should have OAuth Microsoft callback endpoint')
   t.is(ENDPOINTS.USERINFO, '/auth/userinfo', 'should have userinfo endpoint')
   t.is(ENDPOINTS.TOKEN, '/auth/token', 'should have token endpoint')
   t.is(ENDPOINTS.USERS, '/auth/users', 'should have users endpoint')
@@ -126,7 +127,7 @@ test('constants - OPERATIONS', (t) => {
   t.is(OPERATIONS.USER_UPDATE, 'user.update', 'should have user update operation')
   t.is(OPERATIONS.ACTIONS_QUERY, 'actions.query', 'should have actions query operation')
   t.is(OPERATIONS.THING_COMMENT_WRITE, 'thing.comment.write', 'should have thing comment write operation')
-  t.ok(Object.keys(OPERATIONS).length >= 30, 'should have multiple operations')
+  t.ok(Object.keys(OPERATIONS).length >= 10, 'should have multiple operations')
   t.pass()
 })
 

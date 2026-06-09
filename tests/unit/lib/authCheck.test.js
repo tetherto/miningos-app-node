@@ -1,6 +1,7 @@
 'use strict'
 
 const test = require('brittle')
+const LRU = require('lru')
 const { authCheck } = require('../../../workers/lib/server/lib/authCheck')
 
 test('authCheck - noAuth mode', async (t) => {
@@ -74,6 +75,7 @@ test('authCheck - cached token', async (t) => {
     conf: {
       ttl: 3600
     },
+    lru_1m: new Map(),
     authLib: {
       resolveToken: async (token, ips) => {
         t.is(token, 'cached-token', 'should use cached token')
@@ -179,6 +181,36 @@ test('authCheck - resolveToken throws error', async (t) => {
     t.is(err.message, 'ERR_AUTH_FAIL', 'should throw ERR_AUTH_FAIL')
   }
   t.pass()
+})
+
+test('authCheck - LRU evicts when max capacity reached', async (t) => {
+  let resolveTokenCalls = 0
+  const mockCtx = {
+    noAuth: false,
+    conf: { ttl: 3600 },
+    lru_1m: new LRU({ max: 1 }),
+    authLib: {
+      resolveToken: async () => {
+        resolveTokenCalls++
+        return { userId: 'test-user' }
+      }
+    }
+  }
+
+  const makeReq = (token) => ({
+    headers: { authorization: `Bearer ${token}` },
+    ip: '127.0.0.1',
+    _info: {}
+  })
+
+  await authCheck(mockCtx, makeReq('token-a'), {})
+  t.is(resolveTokenCalls, 1, 'token-a resolved on first call')
+
+  await authCheck(mockCtx, makeReq('token-b'), {})
+  t.is(resolveTokenCalls, 2, 'token-b resolved; evicts token-a at max=1')
+
+  await authCheck(mockCtx, makeReq('token-a'), {})
+  t.is(resolveTokenCalls, 3, 'token-a re-resolved after eviction proves LRU is bounded')
 })
 
 test('authCheck - no authLib', async (t) => {

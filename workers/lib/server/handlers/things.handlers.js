@@ -4,7 +4,7 @@ const {
   AUTH_LEVELS,
   COMMENT_ACTION
 } = require('../../constants')
-const { parseJsonQueryParam, requestRpcMapLimit, requestRpcEachLimit } = require('../../utils')
+const { parseJsonQueryParam } = require('../../utils')
 
 async function listThingsRoute (ctx, req, rep) {
   if (req.query.query) {
@@ -18,7 +18,7 @@ async function listThingsRoute (ctx, req, rep) {
     req.query.fields = parseJsonQueryParam(req.query.fields, 'ERR_FIELDS_INVALID_JSON')
   }
 
-  return await requestRpcMapLimit(ctx, 'listThings', req.query)
+  return await ctx.dataProxy.requestDataMap('listThings', req.query)
 }
 
 async function listRacksRoute (ctx, req, rep) {
@@ -30,7 +30,7 @@ async function listRacksRoute (ctx, req, rep) {
     throw new Error('ERR_KEYS_NOT_ALLOWED')
   }
 
-  return await requestRpcMapLimit(ctx, 'listRacks', req.query)
+  return await ctx.dataProxy.requestDataMap('listRacks', req.query)
 }
 
 async function getThingSettings (ctx, req, rep) {
@@ -38,7 +38,7 @@ async function getThingSettings (ctx, req, rep) {
     rackId: req.query.rackId
   }
 
-  return await requestRpcEachLimit(ctx, 'getWrkSettings', payload, (res, resultsArray) => {
+  return await ctx.dataProxy.requestData('getWrkSettings', payload, (res, resultsArray) => {
     if (res.error) {
       resultsArray.push({ error: res.error })
     } else {
@@ -58,7 +58,7 @@ async function saveThingSettings (ctx, req, rep) {
     entries: req.body.entries
   }
 
-  return await requestRpcEachLimit(ctx, 'saveWrkSettings', payload, (res, resultsArray) => {
+  return await ctx.dataProxy.requestData('saveWrkSettings', payload, (res, resultsArray) => {
     if (res.error) {
       resultsArray.push({ error: res.error })
     } else {
@@ -84,7 +84,7 @@ async function processThingComment (ctx, req, operation = COMMENT_ACTION.ADD) {
     user: req._info.user.metadata.email
   }
 
-  return await requestRpcEachLimit(ctx, operation, payload, (res, resultsArray) => {
+  return await ctx.dataProxy.requestData(operation, payload, (res, resultsArray) => {
     if (res.error) {
       resultsArray.push({ error: res.error })
     } else {
@@ -98,11 +98,11 @@ async function getWorkerConfig (ctx, req, rep) {
     req.query.fields = parseJsonQueryParam(req.query.fields, 'ERR_FIELDS_INVALID_JSON')
   }
 
-  return await requestRpcMapLimit(ctx, 'getWrkConf', req.query)
+  return await ctx.dataProxy.requestDataMap('getWrkConf', req.query)
 }
 
 async function getThingConfig (ctx, req, rep) {
-  return await requestRpcMapLimit(ctx, 'getThingConf', req.query)
+  return await ctx.dataProxy.requestDataMap('getThingConf', req.query)
 }
 
 module.exports = {

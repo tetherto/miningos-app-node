@@ -64,7 +64,8 @@ async function updateUser (ctx, req, res) {
     throw new Error('ERR_USER_NOT_FOUND')
   }
 
-  const result = await ctx.userService.updateUser({ id, email, name, role })
+  const callerRoles = JSON.parse(req._info.user.metadata.roles)
+  const result = await ctx.userService.updateUser({ id, email, name, role, callerRoles })
 
   // Audit logging for sensitive operations
   auditLogger.logUserUpdate(id, email, updatedBy, {
@@ -149,11 +150,31 @@ async function getUserSettings (ctx, req, res) {
   return await ctx.globalDataLib.getUserSettings(userId)
 }
 
+function getRolesPermissions (ctx, req) {
+  const { roles, roleManagement } = ctx.auth_a0.conf
+  const userRole = JSON.parse(req._info.user.metadata.roles)[0]
+
+  if (userRole === SUPER_ADMIN_ROLE) {
+    return { roles }
+  }
+
+  const allowedRoles = roleManagement[userRole] || []
+  const filteredRoles = {}
+  for (const role of allowedRoles) {
+    if (roles[role]) {
+      filteredRoles[role] = roles[role]
+    }
+  }
+
+  return { roles: filteredRoles }
+}
+
 module.exports = {
   createUser,
   deleteUser,
   listUsers,
   updateUser,
   saveUserSettings,
-  getUserSettings
+  getUserSettings,
+  getRolesPermissions
 }

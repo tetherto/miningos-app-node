@@ -3,9 +3,10 @@
 const test = require('brittle')
 const { getGlobalConfig, setGlobalConfig, getFeatureConfig, getFeatures, setFeatures, getGlobalData, setGlobalData } = require('../../../workers/lib/server/handlers/global.handlers')
 const { GLOBAL_DATA_TYPES } = require('../../../workers/lib/constants')
+const { withDataProxy } = require('../helpers/mockHelpers')
 
 test('getGlobalConfig - with fields query param', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: {
       orks: [
         { rpcPublicKey: 'key1' },
@@ -15,7 +16,7 @@ test('getGlobalConfig - with fields query param', async (t) => {
     net_r0: {
       jRequest: async () => ({ config: 'test' })
     }
-  }
+  })
 
   const mockReq = {
     query: {
@@ -30,7 +31,7 @@ test('getGlobalConfig - with fields query param', async (t) => {
 })
 
 test('getGlobalConfig - without fields query param', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: {
       orks: [
         { rpcPublicKey: 'key1' }
@@ -39,7 +40,7 @@ test('getGlobalConfig - without fields query param', async (t) => {
     net_r0: {
       jRequest: async () => ({ config: 'test' })
     }
-  }
+  })
 
   const mockReq = {
     query: {}
@@ -51,7 +52,7 @@ test('getGlobalConfig - without fields query param', async (t) => {
 })
 
 test('setGlobalConfig - basic functionality', async (t) => {
-  const mockCtx = {
+  const mockCtx = withDataProxy({
     conf: {
       orks: [
         { rpcPublicKey: 'key1' },
@@ -61,7 +62,7 @@ test('setGlobalConfig - basic functionality', async (t) => {
     net_r0: {
       jRequest: async () => ({ success: true })
     }
-  }
+  })
 
   const mockReq = {
     body: {
