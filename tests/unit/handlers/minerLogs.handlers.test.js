@@ -3,7 +3,8 @@
 const test = require('brittle')
 const {
   startMinerLogDownload,
-  getMinerLogDownloadStatus
+  getMinerLogDownloadStatus,
+  getMinerLogFile
 } = require('../../../workers/lib/server/handlers/minerLogs.handlers')
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -299,6 +300,101 @@ test('getMinerLogDownloadStatus - returns 500 on unexpected dataProxy error', as
 
   t.is(reply.statusCode, 500, 'should return 500 on unexpected error')
   t.ok(reply.body.error, 'should include error message')
+  t.pass()
+})
+
+test('getMinerLogDownloadStatus - failed status carries the worker error code and a readable message', async (t) => {
+  const workerErrors = [
+    'ERR_DOWNLOAD_LOGS_PARSE_FAILED',
+    'ERR_DOWNLOAD_LOGS_FAILED: Code 45',
+    'ERR_DOWNLOAD_LOGS_EMPTY',
+    'ERR_DOWNLOAD_LOGS_TIMEOUT',
+    'ERR_DOWNLOAD_LOGS_INCOMPLETE: connection closed after 10/100 bytes',
+    'ERR_DOWNLOAD_LOGS_CONNECT_FAILED: connect ECONNREFUSED'
+  ]
+
+  for (const errMsg of workerErrors) {
+    const action = {
+      targets: {
+        'rack-001': { calls: [{ result: { success: false, error_msg: errMsg } }] }
+      }
+    }
+    const ctx = {
+      authLib: { getTokenPerms: async () => ({}) },
+      dataProxy: { requestData: async () => [action] }
+    }
+    const req = makeMockReq('miner-001', '42')
+    const reply = makeMockReply()
+
+    await getMinerLogDownloadStatus(ctx, req, reply)
+
+    t.is(reply.body.status, 'failed', `status should be failed for ${errMsg}`)
+    t.is(reply.body.error, errMsg, 'error should carry the raw worker error code')
+    t.ok(typeof reply.body.message === 'string' && reply.body.message.length > 0,
+      `should include a human-readable message for ${errMsg}`)
+    t.not(reply.body.message, errMsg, 'message should not just repeat the raw code')
+  }
+  t.pass()
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// getMinerLogFile
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('getMinerLogFile - bridges :jobId to downloadLogFile and returns 404 for unknown action', async (t) => {
+  let capturedParams = null
+  const ctx = {
+    dataProxy: {
+      requestData: async (method, params) => {
+        capturedParams = { method, params }
+        return []
+      }
+    }
+  }
+  const req = makeMockReq('miner-001', '42')
+  const reply = makeMockReply()
+
+  await getMinerLogFile(ctx, req, reply)
+
+  t.is(capturedParams.method, 'getAction', 'should fetch the action')
+  t.is(capturedParams.params.id, '42', 'should pass the jobId as the action id')
+  t.is(reply.statusCode, 404, 'should return 404 for unknown action')
+  t.is(reply.body.error, 'ERR_ACTION_NOT_FOUND', 'should return ERR_ACTION_NOT_FOUND')
+  t.pass()
+})
+
+test('getMinerLogFile - returns 410 when log TTL has expired', async (t) => {
+  const ctx = {
+    dataProxy: {
+      requestData: async () => [makeActionResult({ data: { expiresAt: Date.now() - 1000 } })]
+    }
+  }
+  const req = makeMockReq('miner-001', '42')
+  const reply = makeMockReply()
+
+  await getMinerLogFile(ctx, req, reply)
+
+  t.is(reply.statusCode, 410, 'should return 410 Gone')
+  t.is(reply.body.error, 'ERR_LOG_EXPIRED', 'should return ERR_LOG_EXPIRED')
+  t.pass()
+})
+
+test('getMinerLogFile - returns 503 when the log peer is unreachable', async (t) => {
+  const ctx = {
+    dataProxy: {
+      requestData: async () => [makeActionResult()]
+    },
+    logDownloader: {
+      stream: async () => { throw new Error('ERR_LOG_PEER_TIMEOUT') }
+    }
+  }
+  const req = makeMockReq('miner-001', '42')
+  const reply = makeMockReply()
+
+  await getMinerLogFile(ctx, req, reply)
+
+  t.is(reply.statusCode, 503, 'should return 503 when peer unreachable')
+  t.is(reply.body.error, 'ERR_LOG_PEER_TIMEOUT', 'should propagate the peer error code')
   t.pass()
 })
 
