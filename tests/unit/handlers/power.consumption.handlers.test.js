@@ -347,3 +347,143 @@ test('getSitePowerConsumption - matches getConsumptionGraphData min/max/avg', as
   t.is(result.summary.avg.value, expectedAvg, 'avg matches UI')
   t.pass()
 })
+
+// ==================== Central DCS branch ====================
+
+// Mock ctx with centralDCSSetup enabled. jRequest branches by method:
+// listThings -> the DCS thing; tailLog -> the site_power_w stat series.
+const buildDcsCtx = ({ tailLogPoints = [], dcsThing = null, onTailLog, tag = 't-dcs', tailLogThrows = false } = {}) => {
+  return withDataProxy({
+    conf: {
+      orks: [{ rpcPublicKey: 'key1' }],
+      featureConfig: { centralDCSSetup: { enabled: true, tag } }
+    },
+    net_r0: {
+      jRequest: async (key, method, payload) => {
+        if (method === 'listThings') return dcsThing ? [dcsThing] : []
+        if (method === 'tailLog') {
+          if (onTailLog) onTailLog(payload)
+          if (tailLogThrows) throw new Error('ERR_TYPE_AGGR_INVALID')
+          return tailLogPoints
+        }
+        return []
+      }
+    }
+  })
+}
+
+const makeDcsThing = (siteKw) => ({
+  type: 'dcs-siemens',
+  last: {
+    snap: {
+      stats: {
+        dcs_specific: {
+          equipment: {
+            power_meters: [
+              { equipment: 'PM-RACK-1', role: 'rack', power: { value: 50, unit: 'kW' } },
+              { equipment: 'PM-MV', role: 'site_main', power: { value: siteKw, unit: 'kW' } }
+            ]
+          }
+        }
+      }
+    }
+  }
+})
+
+test('getSitePowerConsumption - centralDCS: history from site_power_w tail-log, current from DCS snapshot', async (t) => {
+  let captured = null
+  const ctx = buildDcsCtx({
+    dcsThing: makeDcsThing(16700), // 16700 kW
+    tailLogPoints: [
+      { ts: 1, site_power_w: 16000000 },
+      { ts: 2, site_power_w: 17000000 },
+      { ts: 3, site_power_w: 16500000 }
+    ],
+    onTailLog: (p) => { captured = p }
+  })
+
+  const result = await getSitePowerConsumption(ctx, {
+    query: { ...RANGE, tag: 't-powermeter', interval: '5m' }
+  })
+
+  // queries the DCS thing's tail-log stat
+  t.is(captured.key, 'stat-5m', 'builds stat-<interval> key')
+  t.is(captured.type, 'dcs-siemens', 'routes by the DCS thing type')
+  t.is(captured.tag, 't-dcs', 'uses the configured DCS tag')
+  t.is(captured.aggrFields.site_power_w, 1, 'requests the site_power_w stat')
+
+  t.is(result.log.length, 3, 'history sourced from DCS tail-log')
+  t.alike(result.log[0], { ts: 1, value: 16000000, unit: 'W' }, 'watts log point')
+  t.is(result.summary.min.value, 16000000, 'min')
+  t.is(result.summary.max.value, 17000000, 'max')
+  t.is(result.summary.avg.value, 16500000, 'avg')
+  t.is(result.summary.current.value, 16700 * 1000, 'current = DCS site_main kW*1000')
+  t.is(result.summary.current.unit, 'W', 'normalized to watts')
+  t.pass()
+})
+
+test('getSitePowerConsumption - centralDCS: tail-log error degrades to current-only', async (t) => {
+  const ctx = buildDcsCtx({ dcsThing: makeDcsThing(15000), tailLogThrows: true })
+
+  const result = await getSitePowerConsumption(ctx, { query: { ...RANGE, tag: 't-powermeter' } })
+
+  t.is(result.log.length, 0, 'empty log when DCS tail-log not yet available')
+  t.is(result.summary.min.value, null, 'min null')
+  t.is(result.summary.avg.value, null, 'avg null')
+  t.is(result.summary.current.value, 15000 * 1000, 'current still from DCS snapshot')
+  t.pass()
+})
+
+test('getSitePowerConsumption - centralDCS: empty tail-log -> current-only', async (t) => {
+  const ctx = buildDcsCtx({ dcsThing: makeDcsThing(0), tailLogPoints: [] })
+
+  const result = await getSitePowerConsumption(ctx, { query: { ...RANGE, tag: 't-powermeter' } })
+
+  t.is(result.log.length, 0, 'empty log')
+  t.is(result.summary.avg.value, null, 'avg null')
+  t.is(result.summary.current.value, 0, 'no site_main value -> 0')
+  t.pass()
+})
+
+test('getSitePowerConsumption - centralDCS does not affect miner tag', async (t) => {
+  let listThingsCalled = false
+  const ctx = withDataProxy({
+    conf: {
+      orks: [{ rpcPublicKey: 'key1' }],
+      featureConfig: { centralDCSSetup: { enabled: true, tag: 't-dcs' } }
+    },
+    net_r0: {
+      jRequest: async (key, method) => {
+        if (method === 'tailLog') return [{ ts: 1, power_w_sum_aggr: 4321 }]
+        if (method === 'listThings') { listThingsCalled = true; return [] }
+        return []
+      }
+    }
+  })
+
+  const result = await getSitePowerConsumption(ctx, { query: { ...RANGE, tag: 't-miner' } })
+
+  t.is(result.log[0].value, 4321, 'miner path unaffected by centralDCS')
+  t.is(result.summary.current.value, 4321, 'current = last miner point')
+  t.absent(listThingsCalled, 'no DCS/list-things fetch for the miner tag')
+  t.pass()
+})
+
+test('getSitePowerConsumption - centralDCS disabled: powermeter uses legacy site_power_w path', async (t) => {
+  const ctx = withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] }, // no centralDCSSetup
+    net_r0: {
+      jRequest: async (key, method) => {
+        if (method === 'tailLog') return [{ ts: 1, site_power_w: 5000 }]
+        if (method === 'listThings') return [{ last: { snap: { stats: { power_w: 8888 } } } }]
+        return []
+      }
+    }
+  })
+
+  const result = await getSitePowerConsumption(ctx, { query: { ...RANGE, tag: 't-powermeter' } })
+
+  t.is(result.summary.max.value, 5000, 'legacy powermeter site_power_w history')
+  t.is(result.summary.current.value, 8888, 'current from list-things (legacy), not DCS')
+  t.pass()
+})
