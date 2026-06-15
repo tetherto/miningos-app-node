@@ -211,7 +211,8 @@ const ENDPOINTS = {
   SPARE_PART_BY_ID: '/auth/spare-parts/:id',
   SPARE_PART_REPAIR_HISTORY: '/auth/spare-parts/:id/repair-history',
   // Work Order export
-  WORK_ORDER_EXPORT: '/auth/work-orders/:id/export'
+  WORK_ORDER_EXPORT: '/auth/work-orders/:id/export',
+  WORK_ORDER_EXPORT_RMA: '/auth/work-orders/export/rma'
 }
 
 const WORK_ORDER_EXPORT_FORMATS = ['pdf', 'csv', 'docx']

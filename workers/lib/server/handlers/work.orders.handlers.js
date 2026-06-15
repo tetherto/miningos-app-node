@@ -8,7 +8,7 @@ const {
   WORK_ORDER_VALID_DEVICE_TYPES,
   SPARE_PART_INITIAL_LOCATION
 } = require('../../constants')
-const { renderWorkOrderCsv } = require('../lib/work.order.export')
+const { renderWorkOrderCsv, renderRmaCsv } = require('../lib/work.order.export')
 const { submitWorkOrderAction, getWorkOrderRackId } = require('../lib/work.orders')
 
 async function _resolvePartByIdentifier (ctx, identifier) {
@@ -222,6 +222,23 @@ async function exportWorkOrder (ctx, req, rep) {
   return rep.send(renderWorkOrderCsv(wo))
 }
 
+async function exportWorkOrdersRma (ctx, req, rep) {
+  const ids = req.query.ids.split(',').map(s => s.trim()).filter(Boolean)
+  const params = {
+    query: {
+      type: WORK_ORDER_THING_TYPE,
+      $or: [{ id: { $in: ids } }, { code: { $in: ids } }]
+    }
+  }
+  const results = await ctx.dataProxy.requestData('listThings', params)
+  // RMA is MicroBT-Miner only; other selected WOs are ignored.
+  const wos = flattenRpcResults(results).filter(wo => wo?.info?.type === WORK_ORDER_TYPES.MICROBT_MINER)
+
+  rep.header('content-type', 'text/csv; charset=utf-8')
+  rep.header('content-disposition', 'attachment; filename="rma.csv"')
+  return rep.send(renderRmaCsv(wos))
+}
+
 async function getWorkOrderAudit (ctx, req) {
   const payload = {
     logType: 'info',
@@ -245,5 +262,6 @@ module.exports = {
   assignWorkOrder,
   appendWorkLogEntry,
   getWorkOrderAudit,
-  exportWorkOrder
+  exportWorkOrder,
+  exportWorkOrdersRma
 }

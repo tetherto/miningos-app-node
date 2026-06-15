@@ -349,6 +349,21 @@ test('handlers: exportWorkOrder csv sets text/csv content-type and attachment fi
   t.ok(typeof rep._body === 'string' && rep._body.startsWith('code,status,type'))
 })
 
+test('handlers: exportWorkOrdersRma returns CSV of only the MicroBT Miner WOs selected', async (t) => {
+  const miner = { id: 'wo-3', code: 'IVI-3-0001', info: { type: 3, deviceModel: 'M63S++_VL28', deviceIdentifier: 'MINER-SN-1', issue: 'low hashrate', finalResult: 'replaced HB', remarks: 'r', assignedTo: 'eng@test', createdAt: 1, partsMoves: [{ role: 'diagnosis', partCode: 'HB-OLD' }, { role: 'replacement', partCode: 'HB-NEW' }] } }
+  const move = { id: 'wo-2', code: 'IVI-2-0002', info: { type: 2, partsMoves: [] } }
+  const ctx = createMockCtxWithOrks([{ rpcPublicKey: 'k' }], async () => [miner, move])
+  const rep = mkRep()
+  await handlers.exportWorkOrdersRma(ctx, { query: { ids: 'IVI-3-0001,IVI-2-0002' } }, rep)
+  t.is(rep._headers['content-type'], 'text/csv; charset=utf-8')
+  t.ok(rep._headers['content-disposition'].includes('rma.csv'))
+  const lines = rep._body.trim().split('\r\n')
+  t.is(lines.length, 2, 'header + 1 MicroBT Miner row (Move WO ignored)')
+  t.ok(lines[0].startsWith('Ticket,Repaired type'))
+  t.ok(lines[1].startsWith('IVI-3-0001,'))
+  t.ok(lines[1].includes('HB-OLD') && lines[1].includes('HB-NEW'))
+})
+
 test('handlers: getWorkOrderAudit calls getHistoricalLogs filtered by id', async (t) => {
   let received
   const ctx = createMockCtxWithOrks(

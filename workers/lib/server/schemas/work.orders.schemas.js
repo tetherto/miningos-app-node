@@ -162,4 +162,15 @@ const exportRoute = {
   }
 }
 
-module.exports = { create, list, byId, update, close, cancel, assign, audit, log, export: exportRoute }
+const exportRma = {
+  querystring: {
+    type: 'object',
+    required: ['ids'],
+    additionalProperties: false,
+    properties: {
+      ids: { type: 'string', minLength: 1, maxLength: 4000 }
+    }
+  }
+}
+
+module.exports = { create, list, byId, update, close, cancel, assign, audit, log, export: exportRoute, exportRma }
