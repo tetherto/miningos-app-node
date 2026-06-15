@@ -152,6 +152,7 @@ const ENDPOINTS = {
   POOLS_CONTAINERS_STATS: '/auth/pools/stats/containers',
 
   SITE_STATUS_LIVE: '/auth/site/status/live',
+  SITE_POWER_CONSUMPTION: '/auth/site/power-consumption',
 
   // Generic Config endpoints (type passed as parameter)
   // Note: Config mutations (register, update, delete) go through pushAction endpoint
