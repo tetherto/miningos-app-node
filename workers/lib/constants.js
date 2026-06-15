@@ -45,7 +45,7 @@ const AUTH_PERMISSIONS = {
 
 const WORK_ORDER_THING_TYPE = 'inventory-work_order'
 
-const WORK_ORDER_TYPES = { REGISTER: 1, REGULAR: 2 }
+const WORK_ORDER_TYPES = { REGISTER: 1, MOVE: 2, MICROBT_MINER: 3, MICROBT_NON_MINER: 4 }
 const WORK_ORDER_TERMINAL_STATUSES = ['closed', 'cancelled']
 const WORK_ORDER_VALID_DEVICE_TYPES = ['miner', 'psu', 'hashboard', 'controller']
 const MINER_LOCATIONS = ['Site Warehouse', 'Site Lab', 'Miner Room', 'Vendor', 'ACME Container', 'Scrapped', 'Disposed']

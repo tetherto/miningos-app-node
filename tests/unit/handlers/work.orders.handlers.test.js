@@ -30,12 +30,12 @@ function buildSubmitFlow ({ rackId = RACK, parts = [] } = {}) {
   return { ctx, get lastPush () { return lastPush } }
 }
 
-test('handlers: createWorkOrder Type 2 resolves part and forwards body as info', async (t) => {
+test('handlers: createWorkOrder Type 3 resolves part and forwards body as info', async (t) => {
   const flow = buildSubmitFlow({ parts: [{ id: 'part-1', code: 'PSU-1', type: 'inventory-miner_part-psu', info: { serialNum: 'AM-1' } }] })
   await handlers.createWorkOrder(flow.ctx, {
     ...userMeta(),
     body: {
-      type: 2,
+      type: 3,
       deviceType: 'miner',
       deviceModel: 'antminer-s19xp',
       deviceIdentifier: 'AM-1',
@@ -90,7 +90,7 @@ test('handlers: createWorkOrder 400s ERR_PART_NOT_FOUND when deviceIdentifier re
   await t.exception(
     () => handlers.createWorkOrder(flow.ctx, {
       ...userMeta(),
-      body: { type: 2, deviceType: 'psu', deviceModel: 'm', deviceIdentifier: 'unknown-sn', issue: 'i' }
+      body: { type: 3, deviceType: 'psu', deviceModel: 'm', deviceIdentifier: 'unknown-sn', issue: 'i' }
     }),
     /ERR_PART_NOT_FOUND/
   )

@@ -38,7 +38,7 @@ async function createWorkOrder (ctx, req) {
   const { info: extraInfo, ...body } = req.body
   const info = { ...body, ...extraInfo, createdBy: voter, createdAt: Date.now() }
 
-  if (type === WORK_ORDER_TYPES.REGULAR) {
+  if (type === WORK_ORDER_TYPES.MICROBT_MINER || type === WORK_ORDER_TYPES.MICROBT_NON_MINER) {
     const part = await _resolvePartByIdentifier(ctx, deviceIdentifier)
     if (!part) {
       const err = new Error('ERR_PART_NOT_FOUND')
