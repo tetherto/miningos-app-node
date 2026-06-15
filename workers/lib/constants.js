@@ -217,6 +217,21 @@ const ENDPOINTS = {
 
 const WORK_ORDER_EXPORT_FORMATS = ['pdf', 'csv', 'docx']
 
+// Fixed RMA export columns (MicroBT Miner WOs), in order.
+const RMA_COLUMNS = [
+  'Ticket',
+  'Repaired type',
+  'Repaired Miner Sn',
+  'Repaired Mac/HB SN/PSU SN',
+  'Replaced Mac/HB SN/PSU SN',
+  'Repaired Analyze',
+  'Repaired Treatment',
+  'Remark',
+  'Miner Model',
+  'Repair Date',
+  'Engineer'
+]
+
 const HTTP_METHODS = {
   GET: 'GET',
   POST: 'POST',
@@ -795,5 +810,6 @@ module.exports = {
   WORK_ORDER_FILE_COUNT_CAP_DEFAULT,
   WORK_ORDER_FILE_MIME_ALLOWLIST_DEFAULT,
   WORK_ORDER_EXPORT_FORMATS,
+  RMA_COLUMNS,
   MICROSOFT_AUTH_SCOPE
 }

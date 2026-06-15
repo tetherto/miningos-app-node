@@ -1,6 +1,7 @@
 'use strict'
 
 const { csvEscape } = require('../../utils')
+const { RMA_COLUMNS } = require('../../constants')
 
 function renderWorkOrderCsv (wo) {
   const { partsMoves, ...woFields } = wo.info || {}
@@ -25,24 +26,6 @@ function renderWorkOrderCsv (wo) {
   return lines.join('\r\n') + '\r\n'
 }
 
-const RMA_COLUMNS = [
-  'Ticket',
-  'Repaired type',
-  'Repaired Miner Sn',
-  'Repaired Mac/HB SN/PSU SN',
-  'Replaced Mac/HB SN/PSU SN',
-  'Repaired Analyze',
-  'Repaired Treatment',
-  'Remark',
-  'Miner Model',
-  'Repair Date',
-  'Engineer'
-]
-
-function _rmaDate (ts) {
-  return ts ? new Date(ts).toISOString().slice(0, 10) : ''
-}
-
 // Renders the fixed RMA columns for a set of MicroBT Miner WOs. Repaired and
 // replacement part identifiers come from partsMoves roles, falling back to the
 // diagnosed part when no explicit replacement was recorded.
@@ -52,6 +35,7 @@ function renderRmaCsv (workOrders) {
     const moves = Array.isArray(info.partsMoves) ? info.partsMoves : []
     const repaired = moves.find(m => m.role === 'repaired') || moves.find(m => m.role === 'diagnosis') || moves[0] || {}
     const replaced = moves.find(m => m.role === 'replacement') || repaired
+    const repairTs = info.closedAt ?? info.createdAt
     return [
       wo.code,
       info.deviceModel,
@@ -62,7 +46,7 @@ function renderRmaCsv (workOrders) {
       info.finalResult,
       info.remarks,
       info.deviceModel,
-      _rmaDate(info.closedAt ?? info.createdAt),
+      repairTs ? new Date(repairTs).toISOString().slice(0, 10) : '',
       info.assignedTo ?? info.createdBy
     ]
   })
