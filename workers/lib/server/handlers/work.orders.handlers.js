@@ -231,7 +231,6 @@ async function exportWorkOrdersRma (ctx, req, rep) {
     }
   }
   const results = await ctx.dataProxy.requestData('listThings', params)
-  // RMA is MicroBT-Miner only; other selected WOs are ignored.
   const wos = flattenRpcResults(results).filter(wo => wo?.info?.type === WORK_ORDER_TYPES.MICROBT_MINER)
 
   rep.header('content-type', 'text/csv; charset=utf-8')

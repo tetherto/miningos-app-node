@@ -217,7 +217,6 @@ const ENDPOINTS = {
 
 const WORK_ORDER_EXPORT_FORMATS = ['pdf', 'csv', 'docx']
 
-// Fixed RMA export columns (MicroBT Miner WOs), in order.
 const RMA_COLUMNS = [
   'Ticket',
   'Repaired type',

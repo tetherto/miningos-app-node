@@ -26,9 +26,6 @@ function renderWorkOrderCsv (wo) {
   return lines.join('\r\n') + '\r\n'
 }
 
-// Renders the fixed RMA columns for a set of MicroBT Miner WOs. Repaired and
-// replacement part identifiers come from partsMoves roles, falling back to the
-// diagnosed part when no explicit replacement was recorded.
 function renderRmaCsv (workOrders) {
   const rows = workOrders.map((wo) => {
     const info = wo.info || {}

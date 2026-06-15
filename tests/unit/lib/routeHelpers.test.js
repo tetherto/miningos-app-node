@@ -113,7 +113,6 @@ test('createAuthOnRequest - skips capCheck when ctx.noAuth is set', async (t) =>
   let permsChecked = false
   const mockCtx = {
     noAuth: true,
-    // authLib is not created in noAuth mode; capCheck must not be reached
     authLib: { tokenHasPerms: async () => { permsChecked = true; return false } }
   }
   const mockReq = { headers: {}, _info: {} }
