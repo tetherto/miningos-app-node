@@ -68,6 +68,22 @@ async function createWorkOrder (ctx, req) {
       ts: Date.now(),
       user: voter
     }]
+  } else if (type === WORK_ORDER_TYPES.MOVE) {
+    const part = await _resolvePartByIdentifier(ctx, deviceIdentifier)
+    if (!part) {
+      const err = new Error('ERR_PART_NOT_FOUND')
+      err.statusCode = 400
+      throw err
+    }
+    info.partsMoves = [{
+      partId: part.id,
+      partCode: part.code,
+      fromLocation: part.info?.location ?? null,
+      toLocation: info.location ?? null,
+      role: 'move',
+      ts: Date.now(),
+      user: voter
+    }]
   }
 
   return submitWorkOrderAction(ctx, req, 'registerThing', { info })

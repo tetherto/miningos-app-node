@@ -48,6 +48,25 @@ test('handlers: createWorkOrder Type 3 resolves part and forwards body as info',
   t.is(flow.lastPush.params[0].info.partsMoves[0].role, 'diagnosis')
 })
 
+test('handlers: createWorkOrder Type 2 (move) seeds a move parts-move with from/to locations', async (t) => {
+  const flow = buildSubmitFlow({ parts: [{ id: 'part-1', code: 'PSU-1', type: 'inventory-miner_part-psu', info: { serialNum: 'SN-1', location: 'Site Lab' } }] })
+  await handlers.createWorkOrder(flow.ctx, {
+    ...userMeta(),
+    body: {
+      type: 2,
+      deviceType: 'psu',
+      deviceModel: 'PSU-1',
+      deviceIdentifier: 'SN-1',
+      info: { location: 'Site Warehouse' }
+    }
+  })
+  const move = flow.lastPush.params[0].info.partsMoves[0]
+  t.is(move.role, 'move')
+  t.is(move.partId, 'part-1')
+  t.is(move.fromLocation, 'Site Lab')
+  t.is(move.toLocation, 'Site Warehouse')
+})
+
 test('handlers: createWorkOrder merges info.notes, info.remarks, info.site, info.location into thing info', async (t) => {
   const flow = buildSubmitFlow({ parts: [{ id: 'part-1', code: 'PSU-1', type: 'inventory-miner_part-psu', info: { serialNum: 'SN-1' } }] })
   await handlers.createWorkOrder(flow.ctx, {
