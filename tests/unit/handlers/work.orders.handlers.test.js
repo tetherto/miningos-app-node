@@ -138,6 +138,7 @@ test('handlers: closeWorkOrder maps to updateThing with status=closed and finalR
   t.is(flow.lastPush.params[0].id, 'wo-1')
   t.is(flow.lastPush.params[0].info.status, 'closed')
   t.is(flow.lastPush.params[0].info.finalResult, 'replaced PSU')
+  t.ok(flow.lastPush.params[0].info.closedAt, 'stamps closedAt')
 })
 
 test('handlers: cancelWorkOrder maps to updateThing with status=cancelled', async (t) => {

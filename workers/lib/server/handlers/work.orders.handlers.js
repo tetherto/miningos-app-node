@@ -95,7 +95,7 @@ async function updateWorkOrder (ctx, req) {
 }
 
 async function closeWorkOrder (ctx, req) {
-  const info = { status: 'closed' }
+  const info = { status: 'closed', closedAt: Date.now() }
   if (req.body?.finalResult) info.finalResult = req.body.finalResult
   return submitWorkOrderAction(ctx, req, 'updateThing', { id: req.params.id, info })
 }
