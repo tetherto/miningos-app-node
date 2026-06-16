@@ -49,7 +49,7 @@ test('handlers: createWorkOrder Type 3 resolves part and forwards body as info',
 })
 
 test('handlers: createWorkOrder Type 2 (move) seeds a move parts-move with from/to locations', async (t) => {
-  const flow = buildSubmitFlow({ parts: [{ id: 'part-1', code: 'PSU-1', type: 'inventory-miner_part-psu', info: { serialNum: 'SN-1', location: 'Site Lab' } }] })
+  const flow = buildSubmitFlow({ parts: [{ id: 'part-1', code: 'PSU-1', type: 'inventory-miner_part-psu', info: { serialNum: 'SN-1', location: 'site.lab' } }] })
   await handlers.createWorkOrder(flow.ctx, {
     ...userMeta(),
     body: {
@@ -57,14 +57,14 @@ test('handlers: createWorkOrder Type 2 (move) seeds a move parts-move with from/
       deviceType: 'psu',
       deviceModel: 'PSU-1',
       deviceIdentifier: 'SN-1',
-      info: { location: 'Site Warehouse' }
+      info: { location: 'site.warehouse' }
     }
   })
   const move = flow.lastPush.params[0].info.partsMoves[0]
   t.is(move.role, 'move')
   t.is(move.partId, 'part-1')
-  t.is(move.fromLocation, 'Site Lab')
-  t.is(move.toLocation, 'Site Warehouse')
+  t.is(move.fromLocation, 'site.lab')
+  t.is(move.toLocation, 'site.warehouse')
 })
 
 test('handlers: createWorkOrder merges info.notes, info.remarks, info.site, info.location into thing info', async (t) => {
@@ -80,7 +80,7 @@ test('handlers: createWorkOrder merges info.notes, info.remarks, info.site, info
         notes: 'batch registration',
         remarks: 'test remark',
         site: 'Ivinhema',
-        location: 'Site Warehouse'
+        location: 'site.warehouse'
       }
     }
   })
@@ -88,7 +88,7 @@ test('handlers: createWorkOrder merges info.notes, info.remarks, info.site, info
   t.is(info.notes, 'batch registration')
   t.is(info.remarks, 'test remark')
   t.is(info.site, 'Ivinhema')
-  t.is(info.location, 'Site Warehouse')
+  t.is(info.location, 'site.warehouse')
   t.is(info.deviceType, 'psu', 'top-level fields still present')
   t.ok(!info.info, 'no nested info.info')
 })
