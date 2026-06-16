@@ -521,3 +521,140 @@ test('getAlertsHistory - throws on invalid date range', async (t) => {
     t.is(err.message, 'ERR_INVALID_DATE_RANGE', 'should throw date range error')
   }
 })
+
+// ==================== device tag (message) — filter & search ====================
+
+test('extractAlertsFromThings - preserves message (device tag)', (t) => {
+  const things = [
+    {
+      id: 'dcs-1',
+      type: 'dcs-siemens',
+      code: 'PCS7',
+      info: { container: 'cont-A' },
+      last: {
+        alerts: [
+          { severity: 'warning', name: 'flow_warning', message: 'FIT-7513', description: 'Cooling-loop flow below warning threshold — FIT-7513: 320m³/h (threshold 330m³/h)' }
+        ]
+      }
+    }
+  ]
+
+  const result = extractAlertsFromThings(things)
+  t.is(result[0].message, 'FIT-7513', 'should preserve the device tag in message')
+})
+
+test('flattenHistoryAlert - preserves message (device tag)', (t) => {
+  const alert = {
+    name: 'flow_warning',
+    description: 'Cooling-loop flow below warning threshold — FIT-7513: 320m³/h (threshold 330m³/h)',
+    severity: 'warning',
+    uuid: 'abc',
+    createdAt: 1000,
+    message: 'FIT-7513',
+    thing: { id: 'dcs-1', type: 'dcs-siemens', code: 'PCS7', tags: ['siemens'], info: { container: 'cont-A' } }
+  }
+
+  const result = flattenHistoryAlert(alert)
+  t.is(result.message, 'FIT-7513', 'should expose the device tag in the history payload')
+})
+
+const dcsThings = () => [
+  {
+    id: 'dcs-1',
+    type: 'dcs-siemens',
+    code: 'PCS7',
+    info: { container: 'cont-A' },
+    last: {
+      alerts: [
+        { severity: 'warning', name: 'flow_warning', message: 'FIT-7513' },
+        { severity: 'critical', name: 'flow_alarm', message: 'FIT-7514' }
+      ]
+    }
+  }
+]
+
+test('extractAlertsFromThings - exposes deviceId (alias of thing id)', (t) => {
+  const things = [
+    { id: 'dcs-1', type: 'dcs-siemens', code: 'PCS7', info: {}, last: { alerts: [{ severity: 'high', name: 'flow_alarm' }] } }
+  ]
+  const result = extractAlertsFromThings(things)
+  t.is(result[0].deviceId, 'dcs-1', 'should expose deviceId so the deviceId filter works')
+  t.is(result[0].id, 'dcs-1', 'should keep id for backward compatibility')
+})
+
+test('getSiteAlerts - filters by deviceId', async (t) => {
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => [
+    { id: 'dcs-1', type: 'dcs-siemens', code: 'PCS7', info: { container: 'cont-A' }, last: { alerts: [{ severity: 'high', name: 'a1' }] } },
+    { id: 'miner-9', type: 'miner', code: 'S19', info: { container: 'cont-B' }, last: { alerts: [{ severity: 'low', name: 'a2' }] } }
+  ])
+  const mockReq = { query: { filter: JSON.stringify({ deviceId: 'dcs-1' }) } }
+
+  const result = await getSiteAlerts(mockCtx, mockReq)
+  t.is(result.total, 1, 'should filter to the one device')
+  t.is(result.alerts[0].deviceId, 'dcs-1', 'should return only the dcs-1 alert')
+})
+
+test('getSiteAlerts - filters by exact device tag (message)', async (t) => {
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => dcsThings())
+  const mockReq = { query: { filter: JSON.stringify({ message: 'FIT-7513' }) } }
+
+  const result = await getSiteAlerts(mockCtx, mockReq)
+  t.is(result.total, 1, 'should filter to the one matching tag')
+  t.is(result.alerts[0].message, 'FIT-7513', 'should return the FIT-7513 alert')
+})
+
+test('getSiteAlerts - filters by multiple device tags (array)', async (t) => {
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => dcsThings())
+  const mockReq = { query: { filter: JSON.stringify({ message: ['FIT-7513', 'FIT-7514'] }) } }
+
+  const result = await getSiteAlerts(mockCtx, mockReq)
+  t.is(result.total, 2, 'should match both tags')
+})
+
+test('getSiteAlerts - searches by device tag (message)', async (t) => {
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => dcsThings())
+  const mockReq = { query: { search: 'fit-7514' } }
+
+  const result = await getSiteAlerts(mockCtx, mockReq)
+  t.is(result.total, 1, 'should match one alert by tag substring (case-insensitive)')
+  t.is(result.alerts[0].message, 'FIT-7514', 'should return the FIT-7514 alert')
+})
+
+const dcsHistory = () => [
+  {
+    uuid: 'h1',
+    createdAt: 1000,
+    severity: 'warning',
+    name: 'flow_warning',
+    description: 'Cooling-loop flow below warning threshold — FIT-7513: 320m³/h (threshold 330m³/h)',
+    message: 'FIT-7513',
+    thing: { id: 'dcs-1', type: 'dcs-siemens', code: 'PCS7', tags: ['siemens'], info: { container: 'cont-A' } }
+  },
+  {
+    uuid: 'h2',
+    createdAt: 2000,
+    severity: 'critical',
+    name: 'flow_alarm',
+    description: 'Cooling-loop flow below alarm threshold — FIT-7514: 295m³/h (threshold 300m³/h)',
+    message: 'FIT-7514',
+    thing: { id: 'dcs-1', type: 'dcs-siemens', code: 'PCS7', tags: ['siemens'], info: { container: 'cont-A' } }
+  }
+]
+
+test('getAlertsHistory - filters by exact device tag (message)', async (t) => {
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => dcsHistory())
+  const mockReq = { query: { start: 1, end: 5000, filter: JSON.stringify({ message: 'FIT-7514' }) } }
+
+  const result = await getAlertsHistory(mockCtx, mockReq)
+  t.is(result.total, 1, 'should filter history to the matching tag')
+  t.is(result.alerts[0].message, 'FIT-7514', 'should return the FIT-7514 history alert')
+})
+
+test('getAlertsHistory - searches by device tag (message)', async (t) => {
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => dcsHistory())
+  const mockReq = { query: { start: 1, end: 5000, search: 'FIT-7513' } }
+
+  const result = await getAlertsHistory(mockCtx, mockReq)
+  t.is(result.total, 1, 'should find one history alert by tag')
+  t.is(result.alerts[0].message, 'FIT-7513', 'should return the FIT-7513 history alert')
+})
