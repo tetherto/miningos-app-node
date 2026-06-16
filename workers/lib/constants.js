@@ -310,11 +310,13 @@ const ALERTS_DEFAULT_LIMIT = 100
 const ALERTS_MAX_SITE_LIMIT = 200
 const ALERTS_MAX_HISTORY_LIMIT = 1000
 
-const SITE_ALERTS_FILTER_FIELDS = ['severity', 'type', 'container', 'deviceId']
-const SITE_ALERTS_SEARCH_FIELDS = ['id', 'code', 'container']
+// `message` carries the per-alert device/equipment tag (e.g. 'FIT-7513'), so it
+// is filterable and searchable on both endpoints.
+const SITE_ALERTS_FILTER_FIELDS = ['severity', 'type', 'container', 'deviceId', 'message']
+const SITE_ALERTS_SEARCH_FIELDS = ['id', 'code', 'container', 'message', 'description']
 
-const HISTORY_FILTER_FIELDS = ['severity', 'code', 'deviceType', 'container', 'deviceId', 'tags']
-const HISTORY_SEARCH_FIELDS = ['name', 'description', 'position', 'code']
+const HISTORY_FILTER_FIELDS = ['severity', 'code', 'deviceType', 'container', 'deviceId', 'tags', 'message']
+const HISTORY_SEARCH_FIELDS = ['name', 'description', 'position', 'code', 'message']
 
 const POOL_ALERT_TYPES = [
   'all_pools_dead',
