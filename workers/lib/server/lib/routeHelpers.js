@@ -26,7 +26,7 @@ function createAuthHandler (ctx, handler) {
 function createAuthOnRequest (ctx, perms = null) {
   return async (req, rep) => {
     await authCheck(ctx, req, rep)
-    if (perms) {
+    if (perms && !ctx.noAuth) {
       await capCheck(ctx, req, rep, perms)
     }
   }

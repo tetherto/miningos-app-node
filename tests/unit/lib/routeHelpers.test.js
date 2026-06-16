@@ -109,6 +109,20 @@ test('createAuthOnRequest - calls capCheck when perms provided', async (t) => {
   t.pass()
 })
 
+test('createAuthOnRequest - skips capCheck when ctx.noAuth is set', async (t) => {
+  let permsChecked = false
+  const mockCtx = {
+    noAuth: true,
+    authLib: { tokenHasPerms: async () => { permsChecked = true; return false } }
+  }
+  const mockReq = { headers: {}, _info: {} }
+  const mockRep = { status: function () { return this }, send: function () { return this } }
+
+  const onRequest = createAuthOnRequest(mockCtx, ['test:perm'])
+  await onRequest(mockReq, mockRep)
+  t.absent(permsChecked, 'capCheck/tokenHasPerms is not invoked under noAuth')
+})
+
 test('createCachedHandler - uses cachedRoute', async (t) => {
   const mockCtx = {
     conf: {

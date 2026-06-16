@@ -8,7 +8,7 @@ const {
   WORK_ORDER_VALID_DEVICE_TYPES,
   SPARE_PART_INITIAL_LOCATION
 } = require('../../constants')
-const { renderWorkOrderCsv } = require('../lib/work.order.export')
+const { renderWorkOrderCsv, renderRmaCsv } = require('../lib/work.order.export')
 const { submitWorkOrderAction, getWorkOrderRackId } = require('../lib/work.orders')
 
 async function _resolvePartByIdentifier (ctx, identifier) {
@@ -38,7 +38,7 @@ async function createWorkOrder (ctx, req) {
   const { info: extraInfo, ...body } = req.body
   const info = { ...body, ...extraInfo, createdBy: voter, createdAt: Date.now() }
 
-  if (type === WORK_ORDER_TYPES.REGULAR) {
+  if (type === WORK_ORDER_TYPES.MICROBT_MINER || type === WORK_ORDER_TYPES.MICROBT_NON_MINER) {
     const part = await _resolvePartByIdentifier(ctx, deviceIdentifier)
     if (!part) {
       const err = new Error('ERR_PART_NOT_FOUND')
@@ -68,6 +68,22 @@ async function createWorkOrder (ctx, req) {
       ts: Date.now(),
       user: voter
     }]
+  } else if (type === WORK_ORDER_TYPES.MOVE) {
+    const part = await _resolvePartByIdentifier(ctx, deviceIdentifier)
+    if (!part) {
+      const err = new Error('ERR_PART_NOT_FOUND')
+      err.statusCode = 400
+      throw err
+    }
+    info.partsMoves = [{
+      partId: part.id,
+      partCode: part.code,
+      fromLocation: part.info?.location ?? null,
+      toLocation: info.location ?? null,
+      role: 'move',
+      ts: Date.now(),
+      user: voter
+    }]
   }
 
   return submitWorkOrderAction(ctx, req, 'registerThing', { info })
@@ -79,7 +95,7 @@ async function updateWorkOrder (ctx, req) {
 }
 
 async function closeWorkOrder (ctx, req) {
-  const info = { status: 'closed' }
+  const info = { status: 'closed', closedAt: Date.now() }
   if (req.body?.finalResult) info.finalResult = req.body.finalResult
   return submitWorkOrderAction(ctx, req, 'updateThing', { id: req.params.id, info })
 }
@@ -206,6 +222,22 @@ async function exportWorkOrder (ctx, req, rep) {
   return rep.send(renderWorkOrderCsv(wo))
 }
 
+async function exportWorkOrdersRma (ctx, req, rep) {
+  const ids = req.query.ids.split(',').map(s => s.trim()).filter(Boolean)
+  const params = {
+    query: {
+      type: WORK_ORDER_THING_TYPE,
+      $or: [{ id: { $in: ids } }, { code: { $in: ids } }]
+    }
+  }
+  const results = await ctx.dataProxy.requestData('listThings', params)
+  const wos = flattenRpcResults(results).filter(wo => wo?.info?.type === WORK_ORDER_TYPES.MICROBT_MINER)
+
+  rep.header('content-type', 'text/csv; charset=utf-8')
+  rep.header('content-disposition', 'attachment; filename="rma.csv"')
+  return rep.send(renderRmaCsv(wos))
+}
+
 async function getWorkOrderAudit (ctx, req) {
   const payload = {
     logType: 'info',
@@ -229,5 +261,6 @@ module.exports = {
   assignWorkOrder,
   appendWorkLogEntry,
   getWorkOrderAudit,
-  exportWorkOrder
+  exportWorkOrder,
+  exportWorkOrdersRma
 }

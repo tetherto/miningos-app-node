@@ -1,6 +1,6 @@
 'use strict'
 
-const types = { type: 'integer', enum: [1, 2] }
+const types = { type: 'integer', enum: [1, 2, 3, 4] }
 
 const warranty = {
   type: ['object', 'null'],
@@ -34,7 +34,7 @@ const create = {
         }
       }
     },
-    if: { properties: { type: { const: 2 } } },
+    if: { properties: { type: { enum: [3, 4] } } },
     then: { required: ['issue'] }
   }
 }
@@ -162,4 +162,15 @@ const exportRoute = {
   }
 }
 
-module.exports = { create, list, byId, update, close, cancel, assign, audit, log, export: exportRoute }
+const exportRma = {
+  querystring: {
+    type: 'object',
+    required: ['ids'],
+    additionalProperties: false,
+    properties: {
+      ids: { type: 'string', minLength: 1, maxLength: 4000 }
+    }
+  }
+}
+
+module.exports = { create, list, byId, update, close, cancel, assign, audit, log, export: exportRoute, exportRma }

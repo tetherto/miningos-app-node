@@ -45,11 +45,11 @@ const AUTH_PERMISSIONS = {
 
 const WORK_ORDER_THING_TYPE = 'inventory-work_order'
 
-const WORK_ORDER_TYPES = { REGISTER: 1, REGULAR: 2 }
+const WORK_ORDER_TYPES = { REGISTER: 1, MOVE: 2, MICROBT_MINER: 3, MICROBT_NON_MINER: 4 }
 const WORK_ORDER_TERMINAL_STATUSES = ['closed', 'cancelled']
 const WORK_ORDER_VALID_DEVICE_TYPES = ['miner', 'psu', 'hashboard', 'controller']
-const MINER_LOCATIONS = ['Site Warehouse', 'Site Lab', 'Miner Room', 'Vendor', 'Scrapped', 'Disposed']
-const SPARE_PART_INITIAL_LOCATION = 'Site Warehouse'
+const MINER_LOCATIONS = ['workshop.warehouse', 'workshop.lab', 'site.warehouse', 'site.lab', 'site.container', 'miner.room', 'vendor', 'acme.container', 'scrapped', 'disposed', 'unknown']
+const SPARE_PART_INITIAL_LOCATION = 'site.warehouse'
 const FILE_TYPES = { WORK_ORDER: 'work_order' }
 const WORK_ORDER_FILE_MAX_BYTES_DEFAULT = 10 * 1024 * 1024
 const WORK_ORDER_FILE_COUNT_CAP_DEFAULT = 20
@@ -212,10 +212,25 @@ const ENDPOINTS = {
   SPARE_PART_BY_ID: '/auth/spare-parts/:id',
   SPARE_PART_REPAIR_HISTORY: '/auth/spare-parts/:id/repair-history',
   // Work Order export
-  WORK_ORDER_EXPORT: '/auth/work-orders/:id/export'
+  WORK_ORDER_EXPORT: '/auth/work-orders/:id/export',
+  WORK_ORDER_EXPORT_RMA: '/auth/work-orders/export/rma'
 }
 
 const WORK_ORDER_EXPORT_FORMATS = ['pdf', 'csv', 'docx']
+
+const RMA_COLUMNS = [
+  'Ticket',
+  'Repaired type',
+  'Repaired Miner Sn',
+  'Repaired Mac/HB SN/PSU SN',
+  'Replaced Mac/HB SN/PSU SN',
+  'Repaired Analyze',
+  'Repaired Treatment',
+  'Remark',
+  'Miner Model',
+  'Repair Date',
+  'Engineer'
+]
 
 const HTTP_METHODS = {
   GET: 'GET',
@@ -795,5 +810,6 @@ module.exports = {
   WORK_ORDER_FILE_COUNT_CAP_DEFAULT,
   WORK_ORDER_FILE_MIME_ALLOWLIST_DEFAULT,
   WORK_ORDER_EXPORT_FORMATS,
+  RMA_COLUMNS,
   MICROSOFT_AUTH_SCOPE
 }

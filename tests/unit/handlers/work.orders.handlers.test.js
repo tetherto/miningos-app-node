@@ -30,12 +30,12 @@ function buildSubmitFlow ({ rackId = RACK, parts = [] } = {}) {
   return { ctx, get lastPush () { return lastPush } }
 }
 
-test('handlers: createWorkOrder Type 2 resolves part and forwards body as info', async (t) => {
+test('handlers: createWorkOrder Type 3 resolves part and forwards body as info', async (t) => {
   const flow = buildSubmitFlow({ parts: [{ id: 'part-1', code: 'PSU-1', type: 'inventory-miner_part-psu', info: { serialNum: 'AM-1' } }] })
   await handlers.createWorkOrder(flow.ctx, {
     ...userMeta(),
     body: {
-      type: 2,
+      type: 3,
       deviceType: 'miner',
       deviceModel: 'antminer-s19xp',
       deviceIdentifier: 'AM-1',
@@ -46,6 +46,25 @@ test('handlers: createWorkOrder Type 2 resolves part and forwards body as info',
   t.is(flow.lastPush.params[0].info.deviceIdentifier, 'AM-1')
   t.is(flow.lastPush.params[0].info.partsMoves[0].partId, 'part-1')
   t.is(flow.lastPush.params[0].info.partsMoves[0].role, 'diagnosis')
+})
+
+test('handlers: createWorkOrder Type 2 (move) seeds a move parts-move with from/to locations', async (t) => {
+  const flow = buildSubmitFlow({ parts: [{ id: 'part-1', code: 'PSU-1', type: 'inventory-miner_part-psu', info: { serialNum: 'SN-1', location: 'site.lab' } }] })
+  await handlers.createWorkOrder(flow.ctx, {
+    ...userMeta(),
+    body: {
+      type: 2,
+      deviceType: 'psu',
+      deviceModel: 'PSU-1',
+      deviceIdentifier: 'SN-1',
+      info: { location: 'site.warehouse' }
+    }
+  })
+  const move = flow.lastPush.params[0].info.partsMoves[0]
+  t.is(move.role, 'move')
+  t.is(move.partId, 'part-1')
+  t.is(move.fromLocation, 'site.lab')
+  t.is(move.toLocation, 'site.warehouse')
 })
 
 test('handlers: createWorkOrder merges info.notes, info.remarks, info.site, info.location into thing info', async (t) => {
@@ -61,7 +80,7 @@ test('handlers: createWorkOrder merges info.notes, info.remarks, info.site, info
         notes: 'batch registration',
         remarks: 'test remark',
         site: 'Ivinhema',
-        location: 'Site Warehouse'
+        location: 'site.warehouse'
       }
     }
   })
@@ -69,7 +88,7 @@ test('handlers: createWorkOrder merges info.notes, info.remarks, info.site, info
   t.is(info.notes, 'batch registration')
   t.is(info.remarks, 'test remark')
   t.is(info.site, 'Ivinhema')
-  t.is(info.location, 'Site Warehouse')
+  t.is(info.location, 'site.warehouse')
   t.is(info.deviceType, 'psu', 'top-level fields still present')
   t.ok(!info.info, 'no nested info.info')
 })
@@ -90,7 +109,7 @@ test('handlers: createWorkOrder 400s ERR_PART_NOT_FOUND when deviceIdentifier re
   await t.exception(
     () => handlers.createWorkOrder(flow.ctx, {
       ...userMeta(),
-      body: { type: 2, deviceType: 'psu', deviceModel: 'm', deviceIdentifier: 'unknown-sn', issue: 'i' }
+      body: { type: 3, deviceType: 'psu', deviceModel: 'm', deviceIdentifier: 'unknown-sn', issue: 'i' }
     }),
     /ERR_PART_NOT_FOUND/
   )
@@ -119,6 +138,7 @@ test('handlers: closeWorkOrder maps to updateThing with status=closed and finalR
   t.is(flow.lastPush.params[0].id, 'wo-1')
   t.is(flow.lastPush.params[0].info.status, 'closed')
   t.is(flow.lastPush.params[0].info.finalResult, 'replaced PSU')
+  t.ok(flow.lastPush.params[0].info.closedAt, 'stamps closedAt')
 })
 
 test('handlers: cancelWorkOrder maps to updateThing with status=cancelled', async (t) => {
@@ -327,6 +347,21 @@ test('handlers: exportWorkOrder csv sets text/csv content-type and attachment fi
   t.is(rep._headers['content-type'], 'text/csv; charset=utf-8')
   t.ok(rep._headers['content-disposition'].includes('IVI-2-0001.csv'))
   t.ok(typeof rep._body === 'string' && rep._body.startsWith('code,status,type'))
+})
+
+test('handlers: exportWorkOrdersRma returns CSV of only the MicroBT Miner WOs selected', async (t) => {
+  const miner = { id: 'wo-3', code: 'IVI-3-0001', info: { type: 3, deviceModel: 'M63S++_VL28', deviceIdentifier: 'MINER-SN-1', issue: 'low hashrate', finalResult: 'replaced HB', remarks: 'r', assignedTo: 'eng@test', createdAt: 1, partsMoves: [{ role: 'diagnosis', partCode: 'HB-OLD' }, { role: 'replacement', partCode: 'HB-NEW' }] } }
+  const move = { id: 'wo-2', code: 'IVI-2-0002', info: { type: 2, partsMoves: [] } }
+  const ctx = createMockCtxWithOrks([{ rpcPublicKey: 'k' }], async () => [miner, move])
+  const rep = mkRep()
+  await handlers.exportWorkOrdersRma(ctx, { query: { ids: 'IVI-3-0001,IVI-2-0002' } }, rep)
+  t.is(rep._headers['content-type'], 'text/csv; charset=utf-8')
+  t.ok(rep._headers['content-disposition'].includes('rma.csv'))
+  const lines = rep._body.trim().split('\r\n')
+  t.is(lines.length, 2, 'header + 1 MicroBT Miner row (Move WO ignored)')
+  t.ok(lines[0].startsWith('Ticket,Repaired type'))
+  t.ok(lines[1].startsWith('IVI-3-0001,'))
+  t.ok(lines[1].includes('HB-OLD') && lines[1].includes('HB-NEW'))
 })
 
 test('handlers: getWorkOrderAudit calls getHistoricalLogs filtered by id', async (t) => {
