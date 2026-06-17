@@ -89,6 +89,73 @@ async function createWorkOrder (ctx, req) {
   return submitWorkOrderAction(ctx, req, 'registerThing', { info })
 }
 
+function _buildPartsMove (type, part, device, info, voter, ts) {
+  const base = {
+    partId: part.id,
+    partCode: part.code,
+    deviceType: device.deviceType,
+    deviceModel: device.deviceModel,
+    deviceIdentifier: device.deviceIdentifier,
+    ts,
+    user: voter
+  }
+  if (type === WORK_ORDER_TYPES.MICROBT_MINER || type === WORK_ORDER_TYPES.MICROBT_NON_MINER) {
+    return { ...base, role: 'diagnosis' }
+  }
+  if (type === WORK_ORDER_TYPES.REGISTER) {
+    return { ...base, role: 'register', fromLocation: null, toLocation: SPARE_PART_INITIAL_LOCATION }
+  }
+  if (type === WORK_ORDER_TYPES.MOVE) {
+    return { ...base, role: 'move', fromLocation: part.info?.location ?? null, toLocation: info.location ?? null }
+  }
+  return null
+}
+
+// Batch sibling of createWorkOrder: one work order whose partsMoves carries every device.
+async function createWorkOrdersBatch (ctx, req) {
+  const { type, devices, info: extraInfo, ...rest } = req.body
+
+  for (const device of devices) {
+    if (!WORK_ORDER_VALID_DEVICE_TYPES.includes(device.deviceType)) {
+      const err = new Error('ERR_INVALID_DEVICE_TYPE')
+      err.statusCode = 400
+      throw err
+    }
+  }
+
+  const voter = req._info.user.metadata.email
+  const ts = Date.now()
+  const [summary] = devices
+
+  // First device is the summary used by the thing-side validator, RMA export, and single-device views.
+  const info = {
+    type,
+    ...rest,
+    ...extraInfo,
+    deviceType: summary.deviceType,
+    deviceModel: summary.deviceModel,
+    deviceIdentifier: summary.deviceIdentifier,
+    deviceCount: devices.length,
+    createdBy: voter,
+    createdAt: ts
+  }
+
+  const partsMoves = []
+  for (const device of devices) {
+    const part = await _resolvePartByIdentifier(ctx, device.deviceIdentifier)
+    if (!part) {
+      const err = new Error('ERR_PART_NOT_FOUND')
+      err.statusCode = 400
+      throw err
+    }
+    const move = _buildPartsMove(type, part, device, info, voter, ts)
+    if (move) partsMoves.push(move)
+  }
+  info.partsMoves = partsMoves
+
+  return submitWorkOrderAction(ctx, req, 'registerThing', { info })
+}
+
 async function updateWorkOrder (ctx, req) {
   const { info: extraInfo, ...body } = req.body
   return submitWorkOrderAction(ctx, req, 'updateThing', { id: req.params.id, info: { ...body, ...extraInfo } })
@@ -253,6 +320,7 @@ async function getWorkOrderAudit (ctx, req) {
 
 module.exports = {
   createWorkOrder,
+  createWorkOrdersBatch,
   listWorkOrders,
   getWorkOrder,
   updateWorkOrder,

@@ -115,6 +115,69 @@ test('handlers: createWorkOrder 400s ERR_PART_NOT_FOUND when deviceIdentifier re
   )
 })
 
+test('handlers: createWorkOrdersBatch builds one WO with a parts-move per device, first device as summary', async (t) => {
+  const parts = [
+    { id: 'part-1', code: 'WMM-1', type: 'inventory-miner_part-controller', info: { serialNum: 'WMM63S-2024-04829', location: 'site.warehouse' } },
+    { id: 'part-2', code: 'WMM-2', type: 'inventory-miner_part-controller', info: { serialNum: 'WMM63S-2024-04830', location: 'site.warehouse' } },
+    { id: 'part-3', code: 'WMM-3', type: 'inventory-miner_part-controller', info: { serialNum: 'WMM63S-2024-04831', location: 'site.warehouse' } }
+  ]
+  let lastPush
+  const handler = async (_key, method, params) => {
+    if (method === 'pushAction') { lastPush = params; return { id: 'action-1', errors: [] } }
+    if (method === 'listThings') {
+      const or = params.query?.$or || []
+      const sn = or.map(c => c.id || c.code || c['info.serialNum'] || c['info.macAddress']).find(Boolean)
+      return parts.filter(p => p.info.serialNum === sn)
+    }
+    return null
+  }
+  const ctx = createMockCtxWithOrks([{ rpcPublicKey: 'k' }], handler)
+  ctx.authLib = mockAuthLib
+  ctx._workOrderRackId = RACK
+
+  await handlers.createWorkOrdersBatch(ctx, {
+    ...userMeta(),
+    body: {
+      type: 2,
+      devices: [
+        { deviceType: 'miner', deviceModel: 'whatsminer-m63s', deviceIdentifier: 'WMM63S-2024-04829' },
+        { deviceType: 'miner', deviceModel: 'whatsminer-m63s', deviceIdentifier: 'WMM63S-2024-04830' },
+        { deviceType: 'miner', deviceModel: 'whatsminer-m63s', deviceIdentifier: 'WMM63S-2024-04831' }
+      ],
+      info: { location: 'site.miner-room' }
+    }
+  })
+
+  const info = lastPush.params[0].info
+  t.is(lastPush.action, 'registerThing')
+  t.is(info.deviceCount, 3, 'records device count for the scope badge')
+  t.is(info.deviceIdentifier, 'WMM63S-2024-04829', 'first device is the summary identifier')
+  t.is(info.partsMoves.length, 3, 'one parts-move per device')
+  t.alike(info.partsMoves.map(m => m.deviceIdentifier), ['WMM63S-2024-04829', 'WMM63S-2024-04830', 'WMM63S-2024-04831'])
+  t.alike(info.partsMoves.map(m => m.partId), ['part-1', 'part-2', 'part-3'], 'each move resolves its own part')
+  t.is(info.partsMoves[0].role, 'move')
+  t.is(info.partsMoves[0].fromLocation, 'site.warehouse')
+  t.is(info.partsMoves[0].toLocation, 'site.miner-room', 'all moved to the WO target location')
+})
+
+test('handlers: createWorkOrdersBatch rejects the whole batch if any device type is invalid', async (t) => {
+  const flow = buildSubmitFlow({ parts: [{ id: 'p', code: 'c', type: 'inventory-miner_part-psu', info: { serialNum: 'SN-1' } }] })
+  await t.exception(
+    () => handlers.createWorkOrdersBatch(flow.ctx, {
+      ...userMeta(),
+      body: {
+        type: 2,
+        devices: [
+          { deviceType: 'miner', deviceModel: 'm', deviceIdentifier: 'SN-1' },
+          { deviceType: 'cooling', deviceModel: 'm', deviceIdentifier: 'SN-2' }
+        ]
+      }
+    }),
+    /ERR_INVALID_DEVICE_TYPE/
+  )
+  t.absent(flow.lastPush, 'nothing pushed when validation fails')
+})
+
 test('handlers: updateWorkOrder forwards warranty payload to updateThing', async (t) => {
   const flow = buildSubmitFlow()
   await handlers.updateWorkOrder(flow.ctx, {
