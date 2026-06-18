@@ -1,6 +1,8 @@
 'use strict'
 
-const types = { type: 'integer', enum: [1, 2, 3, 4] }
+const { WORK_ORDER_TYPES } = require('../../constants')
+
+const types = { type: 'integer', enum: Object.values(WORK_ORDER_TYPES) }
 
 const warranty = {
   type: ['object', 'null'],
@@ -34,7 +36,49 @@ const create = {
         }
       }
     },
-    if: { properties: { type: { enum: [3, 4] } } },
+    if: { properties: { type: { enum: [WORK_ORDER_TYPES.MICROBT_MINER, WORK_ORDER_TYPES.MICROBT_NON_MINER] } } },
+    then: { required: ['issue'] }
+  }
+}
+
+// Batch variant of `create`: one work order carrying many devices.
+const createBatch = {
+  body: {
+    type: 'object',
+    required: ['type', 'devices'],
+    additionalProperties: false,
+    properties: {
+      type: types,
+      devices: {
+        type: 'array',
+        minItems: 1,
+        maxItems: 100,
+        items: {
+          type: 'object',
+          required: ['deviceType', 'deviceModel', 'deviceIdentifier'],
+          additionalProperties: false,
+          properties: {
+            deviceType: { type: 'string', minLength: 1, maxLength: 100 },
+            deviceModel: { type: 'string', minLength: 1, maxLength: 100 },
+            deviceIdentifier: { type: 'string', minLength: 1, maxLength: 200 }
+          }
+        }
+      },
+      issue: { type: 'string', minLength: 1, maxLength: 2000 },
+      assignedTo: { type: ['string', 'null'], maxLength: 200 },
+      warranty,
+      info: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          notes: { type: 'string', maxLength: 4000 },
+          remarks: { type: 'string', maxLength: 4000 },
+          site: { type: 'string', maxLength: 200 },
+          location: { type: 'string', maxLength: 200 }
+        }
+      }
+    },
+    if: { properties: { type: { enum: [WORK_ORDER_TYPES.MICROBT_MINER, WORK_ORDER_TYPES.MICROBT_NON_MINER] } } },
     then: { required: ['issue'] }
   }
 }
@@ -173,4 +217,4 @@ const exportRma = {
   }
 }
 
-module.exports = { create, list, byId, update, close, cancel, assign, audit, log, export: exportRoute, exportRma }
+module.exports = { create, createBatch, list, byId, update, close, cancel, assign, audit, log, export: exportRoute, exportRma }

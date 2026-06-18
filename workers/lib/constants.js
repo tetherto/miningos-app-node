@@ -199,6 +199,7 @@ const ENDPOINTS = {
   ENERGY_AVAILABLE: '/auth/energy/available',
   // Work Order endpoints
   WORK_ORDERS: '/auth/work-orders',
+  WORK_ORDERS_BATCH: '/auth/work-orders/batch',
   WORK_ORDER_BY_ID: '/auth/work-orders/:id',
   WORK_ORDER_AUDIT: '/auth/work-orders/:id/audit',
   WORK_ORDER_LOG: '/auth/work-orders/:id/log',
@@ -209,6 +210,7 @@ const ENDPOINTS = {
   WORK_ORDER_CANCEL: '/auth/work-orders/:id/cancel',
   // Spare Part endpoints
   SPARE_PARTS: '/auth/spare-parts',
+  SPARE_PARTS_BATCH: '/auth/spare-parts/batch',
   SPARE_PART_BY_ID: '/auth/spare-parts/:id',
   SPARE_PART_REPAIR_HISTORY: '/auth/spare-parts/:id/repair-history',
   // Work Order export

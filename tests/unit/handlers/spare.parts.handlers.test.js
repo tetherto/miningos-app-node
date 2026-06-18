@@ -231,6 +231,58 @@ test('handlers: registerSparePart surfaces ork-side errors in the response', asy
   t.is(out.partActionId, null)
 })
 
+test('handlers: registerSparePartsBatch creates one shared register WO carrying every part and attaches the note', async (t) => {
+  const { ctx, pushed } = buildRegisterCtx()
+  const out = await handlers.registerSparePartsBatch(ctx, {
+    ...userMeta(),
+    body: {
+      rackId: PART_RACK,
+      note: 'Pallets 1-3',
+      parts: [
+        { deviceType: 'psu', deviceModel: 'PSU-A', serialNum: 'SN-1' },
+        { deviceType: 'psu', deviceModel: 'PSU-A', serialNum: 'SN-2' },
+        { deviceType: 'psu', deviceModel: 'PSU-A', serialNum: 'SN-3' }
+      ]
+    }
+  })
+
+  t.is(pushed.length, 4, 'three part actions + one shared WO action')
+  const woAction = pushed.find(p => p.params[0].rackId === WO_RACK)
+  const partActions = pushed.filter(p => p.params[0].rackId === PART_RACK)
+  t.is(partActions.length, 3, 'one registerThing per part')
+
+  const woInfo = woAction.params[0].info
+  t.is(woInfo.type, 1, 'single Type-1 register WO')
+  t.is(woInfo.deviceCount, 3)
+  t.is(woInfo.partsMoves.length, 3, 'register WO carries every part')
+  t.is(woInfo.note, 'Pallets 1-3', 'note recorded on the register WO')
+  t.alike(woInfo.partsMoves.map(m => m.partId).sort(), out.parts.map(p => p.partId).sort(), 'WO links every returned part')
+
+  for (const pa of partActions) {
+    t.is(pa.params[0].info.note, 'Pallets 1-3', 'note attached to each registered part')
+  }
+  t.is(out.parts.length, 3, 'returns a result row per part')
+  t.alike(out.errors, [], 'no errors on happy path')
+})
+
+test('handlers: registerSparePartsBatch rejects the whole batch if any part is invalid', async (t) => {
+  const { ctx, pushed } = buildRegisterCtx()
+  await t.exception(
+    () => handlers.registerSparePartsBatch(ctx, {
+      ...userMeta(),
+      body: {
+        rackId: PART_RACK,
+        parts: [
+          { deviceType: 'psu', deviceModel: 'PSU-A', serialNum: 'SN-1' },
+          { deviceType: 'psu', deviceModel: 'PSU-A' }
+        ]
+      }
+    }),
+    /ERR_SERIAL_NUM_REQUIRED/
+  )
+  t.is(pushed.length, 0, 'nothing pushed when any part fails validation')
+})
+
 function listFlow ({ items = [], total = 0 } = {}) {
   let lastList, lastCount
   const handler = async (_key, method, params) => {

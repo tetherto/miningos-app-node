@@ -8,6 +8,7 @@ const {
 const schemas = require('../schemas/work.orders.schemas')
 const {
   createWorkOrder,
+  createWorkOrdersBatch,
   listWorkOrders,
   getWorkOrder,
   updateWorkOrder,
@@ -28,6 +29,12 @@ module.exports = (ctx) => [
     url: ENDPOINTS.WORK_ORDERS,
     schema: schemas.create,
     ...createAuthRoute(ctx, createWorkOrder, [AUTH_PERMISSIONS.WORK_ORDER])
+  },
+  {
+    method: HTTP_METHODS.POST,
+    url: ENDPOINTS.WORK_ORDERS_BATCH,
+    schema: schemas.createBatch,
+    ...createAuthRoute(ctx, createWorkOrdersBatch, [AUTH_PERMISSIONS.WORK_ORDER])
   },
   {
     method: HTTP_METHODS.GET,

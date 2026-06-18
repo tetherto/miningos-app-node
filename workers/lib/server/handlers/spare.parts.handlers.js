@@ -212,6 +212,98 @@ async function registerSparePart (ctx, req) {
   }
 }
 
+// Batch sibling of registerSparePart: N parts + one shared Type-1 register WO, with an optional note.
+async function registerSparePartsBatch (ctx, req) {
+  const { rackId, parts, note } = req.body
+
+  for (const part of parts) {
+    if (!WORK_ORDER_VALID_DEVICE_TYPES.includes(part.deviceType)) {
+      const err = new Error('ERR_INVALID_DEVICE_TYPE')
+      err.statusCode = 400
+      throw err
+    }
+    if (!part.deviceModel || typeof part.deviceModel !== 'string') {
+      const err = new Error('ERR_DEVICE_MODEL_REQUIRED')
+      err.statusCode = 400
+      throw err
+    }
+    if (!part.serialNum || typeof part.serialNum !== 'string') {
+      const err = new Error('ERR_SERIAL_NUM_REQUIRED')
+      err.statusCode = 400
+      throw err
+    }
+  }
+
+  const workOrderRackId = await getWorkOrderRackId(ctx)
+  const voter = req._info.user.metadata.email
+  const { permissions } = await ctx.authLib.getTokenPerms(req._info.authToken)
+  const authPerms = permissions || []
+  const ts = Date.now()
+
+  // Assign every part id up front so the single shared register WO can reference them all.
+  const prepared = parts.map((part) => {
+    const partInfo = {
+      ...part,
+      location: part.location ?? SPARE_PART_INITIAL_LOCATION
+    }
+    if (note) partInfo.note = note
+    return { partId: randomUUID(), part, partInfo }
+  })
+
+  const woId = randomUUID()
+  const [summary] = prepared
+  const woInfo = {
+    type: WORK_ORDER_TYPES.REGISTER,
+    deviceType: summary.part.deviceType,
+    deviceModel: summary.part.deviceModel,
+    deviceIdentifier: summary.part.serialNum,
+    deviceCount: prepared.length,
+    createdBy: voter,
+    createdAt: ts,
+    partsMoves: prepared.map(({ partId, part }) => ({
+      partId,
+      deviceType: part.deviceType,
+      deviceModel: part.deviceModel,
+      deviceIdentifier: part.serialNum,
+      fromLocation: null,
+      toLocation: SPARE_PART_INITIAL_LOCATION,
+      role: 'register',
+      ts,
+      user: voter
+    }))
+  }
+  if (note) woInfo.note = note
+
+  const pushSingleAction = (rack, id, info) => ctx.dataProxy.requestData('pushAction', {
+    action: 'registerThing',
+    query: { rack },
+    params: [{ rackId: rack, id, info }],
+    voter,
+    authPerms
+  }, (res, arr) => {
+    if (res?.error) arr.push({ id: null, errors: [res.error] })
+    else arr.push(res)
+  })
+
+  const [woResults, ...partResultsList] = await Promise.all([
+    pushSingleAction(workOrderRackId, woId, woInfo),
+    ...prepared.map(({ partId, partInfo }) => pushSingleAction(rackId, partId, partInfo))
+  ])
+
+  const partsOut = prepared.map(({ partId }, i) => ({
+    partId,
+    partActionId: partResultsList[i].find(r => r?.id)?.id ?? null
+  }))
+
+  return {
+    parts: partsOut,
+    workOrderId: woId,
+    workOrderActionId: woResults.find(r => r?.id)?.id ?? null,
+    errors: [..._pushErrors(woResults), ...partResultsList.flatMap(_pushErrors)],
+    expectedActionLatencyMs: ctx.conf?.expectedActionLatencyMs ?? 1000
+  }
+}
+
 function _buildSparePartQuery (qs) {
   const query = qs.query
     ? parseJsonQueryParam(qs.query, 'ERR_QUERY_INVALID_JSON')
@@ -267,4 +359,4 @@ async function getRepairHistory (ctx, req) {
   }
 }
 
-module.exports = { registerSparePart, listSpareParts, updateSparePart, getRepairHistory }
+module.exports = { registerSparePart, registerSparePartsBatch, listSpareParts, updateSparePart, getRepairHistory }
