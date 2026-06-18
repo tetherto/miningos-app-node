@@ -67,6 +67,52 @@ test('handlers: createWorkOrder Type 2 (move) seeds a move parts-move with from/
   t.is(move.toLocation, 'site.warehouse')
 })
 
+test('handlers: createWorkOrder Type 2 (move) relocates the part on its own rack', async (t) => {
+  const pushed = []
+  const ctx = createMockCtxWithOrks([{ rpcPublicKey: 'k' }], async (_k, method, params) => {
+    if (method === 'pushAction') { pushed.push(params); return { id: 'a', errors: [] } }
+    if (method === 'listThings') return [{ id: 'part-1', type: 'inventory-miner_part-psu', rack: 'psu-rack-1', info: { location: 'site.lab' } }]
+    return null
+  })
+  ctx.authLib = mockAuthLib
+  ctx._workOrderRackId = RACK
+  await handlers.createWorkOrder(ctx, {
+    ...userMeta(),
+    body: { type: 2, deviceType: 'psu', deviceModel: 'P', deviceIdentifier: 'SN-1', info: { location: 'site.warehouse' } }
+  })
+  const partPush = pushed.find(p => p.action === 'updateThing')
+  t.is(partPush.params[0].rackId, 'psu-rack-1', 'relocation targets the part rack')
+  t.is(partPush.params[0].info.location, 'site.warehouse', 'part moved to the destination')
+})
+
+test('handlers: createWorkOrdersBatch Type 2 (move) relocates every part', async (t) => {
+  const pushed = []
+  const ctx = createMockCtxWithOrks([{ rpcPublicKey: 'k' }], async (_k, method, params) => {
+    if (method === 'pushAction') { pushed.push(params); return { id: 'a', errors: [] } }
+    if (method === 'listThings') {
+      const sn = (params.query?.$or || []).map(c => c['info.serialNum']).find(Boolean)
+      return [{ id: sn, type: 'inventory-miner_part-psu', rack: 'psu-rack-1', info: { location: 'site.warehouse' } }]
+    }
+    return null
+  })
+  ctx.authLib = mockAuthLib
+  ctx._workOrderRackId = RACK
+  await handlers.createWorkOrdersBatch(ctx, {
+    ...userMeta(),
+    body: {
+      type: 2,
+      devices: [
+        { deviceType: 'psu', deviceModel: 'P', deviceIdentifier: 'SN-1' },
+        { deviceType: 'psu', deviceModel: 'P', deviceIdentifier: 'SN-2' }
+      ],
+      info: { location: 'site.miner-room' }
+    }
+  })
+  const partPushes = pushed.filter(p => p.action === 'updateThing')
+  t.is(partPushes.length, 2, 'one relocation per device')
+  t.is(partPushes[0].params[0].info.location, 'site.miner-room')
+})
+
 test('handlers: createWorkOrder merges info.notes, info.remarks, info.site, info.location into thing info', async (t) => {
   const flow = buildSubmitFlow({ parts: [{ id: 'part-1', code: 'PSU-1', type: 'inventory-miner_part-psu', info: { serialNum: 'SN-1' } }] })
   await handlers.createWorkOrder(flow.ctx, {

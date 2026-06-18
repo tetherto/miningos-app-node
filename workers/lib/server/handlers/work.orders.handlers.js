@@ -84,6 +84,8 @@ async function createWorkOrder (ctx, req) {
       ts: Date.now(),
       user: voter
     }]
+    // Move WOs auto-close, so the relocation has to happen here or it never will.
+    if (info.location != null) await submitWorkOrderAction(ctx, req, 'updateThing', { id: part.id, info: { location: info.location } }, part.rack)
   }
 
   return submitWorkOrderAction(ctx, req, 'registerThing', { info })
@@ -150,6 +152,10 @@ async function createWorkOrdersBatch (ctx, req) {
     }
     const move = _buildPartsMove(type, part, device, info, voter, ts)
     if (move) partsMoves.push(move)
+    // Move WOs auto-close, so relocate each part here or it never happens.
+    if (type === WORK_ORDER_TYPES.MOVE && info.location != null) {
+      await submitWorkOrderAction(ctx, req, 'updateThing', { id: part.id, info: { location: info.location } }, part.rack)
+    }
   }
   info.partsMoves = partsMoves
 
