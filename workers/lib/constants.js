@@ -170,6 +170,7 @@ const ENDPOINTS = {
   METRICS_POWER_MODE: '/auth/metrics/power-mode',
   METRICS_POWER_MODE_TIMELINE: '/auth/metrics/power-mode/timeline',
   METRICS_TEMPERATURE: '/auth/metrics/temperature',
+  METRICS_COOLING: '/auth/metrics/cooling',
   METRICS_CONTAINER_TELEMETRY: '/auth/metrics/containers/:id',
   METRICS_CONTAINER_HISTORY: '/auth/metrics/containers/:id/history',
 
@@ -303,7 +304,25 @@ const WORKER_TYPES = {
   POWERMETER: 'powermeter',
   MINERPOOL: 'minerpool',
   MEMPOOL: 'mempool',
-  ELECTRICITY: 'electricity'
+  ELECTRICITY: 'electricity',
+  // The Siemens DCS worker registers its thing type as 'dcs-siemens'
+  // (WrkDCSBase 'dcs' + '-siemens'); the stat log is tailed by this type.
+  DCS: 'dcs-siemens'
+}
+
+// BE-10 — historical cooling metric fields produced by the DCS worker stat spec
+// (miningos-wrk-dcs-siemens/workers/lib/stats.js -> libStats.specs.dcs.ops). Each
+// is a per-interval average; chiller_running is averaged over [0,1] -> uptime ratio.
+const COOLING_METRICS_AGGR_FIELDS = {
+  miner_supply_temp_c: 1,
+  miner_return_temp_c: 1,
+  miner_flow_m3h: 1,
+  system_pressure_bar: 1,
+  hvac_supply_temp_c: 1,
+  hvac_return_temp_c: 1,
+  chiller_running: 1,
+  towers_running: 1,
+  pumps_running: 1
 }
 
 const SEVERITY_LEVELS = new Set(['critical', 'high', 'medium', 'low'])
@@ -419,6 +438,7 @@ const COOLING_SYSTEM_PROJECTIONS = {
       'last.snap.stats.dcs_specific.equipment.valves': 1,
       'last.snap.stats.dcs_specific.equipment.tanks': 1,
       'last.snap.stats.dcs_specific.equipment.vibration_sensors': 1,
+      'last.snap.stats.dcs_specific.equipment.vibration_switches': 1,
       'last.snap.stats.dcs_specific.equipment.fans': 1,
       'last.snap.config.cooling_system': 1
     },
@@ -433,6 +453,7 @@ const COOLING_SYSTEM_PROJECTIONS = {
       'last.snap.stats.dcs_specific.equipment.valves': 1,
       'last.snap.stats.dcs_specific.equipment.tanks': 1,
       'last.snap.stats.dcs_specific.equipment.vibration_sensors': 1,
+      'last.snap.stats.dcs_specific.equipment.vibration_switches': 1,
       'last.snap.stats.dcs_specific.equipment.fans': 1,
       'last.snap.stats.flow': 1,
       'last.snap.config.cooling_system': 1,
@@ -461,6 +482,7 @@ const COOLING_SYSTEM_PROJECTIONS = {
       'last.snap.stats.dcs_specific.equipment.levels': 1,
       'last.snap.stats.dcs_specific.equipment.cooling_towers': 1,
       'last.snap.stats.dcs_specific.equipment.vibration_sensors': 1,
+      'last.snap.stats.dcs_specific.equipment.vibration_switches': 1,
       'last.snap.config.cooling_system': 1
     },
     layout: {
@@ -477,6 +499,7 @@ const COOLING_SYSTEM_PROJECTIONS = {
       'last.snap.stats.dcs_specific.equipment.tanks': 1,
       'last.snap.stats.dcs_specific.equipment.flow_switches': 1,
       'last.snap.stats.dcs_specific.equipment.vibration_sensors': 1,
+      'last.snap.stats.dcs_specific.equipment.vibration_switches': 1,
       'last.snap.config.cooling_system': 1
     },
     ambient: {
@@ -801,6 +824,7 @@ module.exports = {
   EXPLORER_RACK_AGGR_FIELDS,
   EXPLORER_RACK_DEFAULT_LIMIT,
   EXPLORER_RACK_MAX_LIMIT,
+  COOLING_METRICS_AGGR_FIELDS,
   LOG_FIELDS,
   ELECTRICITY_EXT_DATA_KEYS,
   WORK_ORDER_THING_TYPE,
