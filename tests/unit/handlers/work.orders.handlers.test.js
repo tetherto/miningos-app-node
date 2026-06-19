@@ -83,6 +83,7 @@ test('handlers: createWorkOrder Type 2 (move) relocates the part on its own rack
   const partPush = pushed.find(p => p.action === 'updateThing')
   t.is(partPush.params[0].rackId, 'psu-rack-1', 'relocation targets the part rack')
   t.is(partPush.params[0].info.location, 'site.warehouse', 'part moved to the destination')
+  t.ok(partPush.params[0].info.workOrderId, 'relocation carries a workOrderId (else ERR_PART_MOVE_REQUIRES_WO)')
 })
 
 test('handlers: createWorkOrdersBatch Type 2 (move) relocates every part', async (t) => {
@@ -111,6 +112,7 @@ test('handlers: createWorkOrdersBatch Type 2 (move) relocates every part', async
   const partPushes = pushed.filter(p => p.action === 'updateThing')
   t.is(partPushes.length, 2, 'one relocation per device')
   t.is(partPushes[0].params[0].info.location, 'site.miner-room')
+  t.ok(partPushes[0].params[0].info.workOrderId, 'relocation carries a workOrderId (else ERR_PART_MOVE_REQUIRES_WO)')
 })
 
 test('handlers: createWorkOrder merges info.notes, info.remarks, info.site, info.location into thing info', async (t) => {

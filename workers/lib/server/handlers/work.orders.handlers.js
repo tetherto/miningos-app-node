@@ -1,5 +1,6 @@
 'use strict'
 
+const { randomUUID } = require('crypto')
 const { parseJsonQueryParam, flattenRpcResults, escapeRegex, listThingsWithCount } = require('../../utils')
 const {
   WORK_ORDER_THING_TYPE,
@@ -84,8 +85,13 @@ async function createWorkOrder (ctx, req) {
       ts: Date.now(),
       user: voter
     }]
-    // Move WOs auto-close, so the relocation has to happen here or it never will.
-    if (info.location != null) await submitWorkOrderAction(ctx, req, 'updateThing', { id: part.id, info: { location: info.location } }, part.rack)
+    // Move WOs auto-close, so the relocation has to happen here. The part rack rejects a
+    // location change without a workOrderId, so mint the WO id and register under it.
+    if (info.location != null) {
+      const workOrderId = randomUUID()
+      await submitWorkOrderAction(ctx, req, 'updateThing', { id: part.id, info: { location: info.location, workOrderId } }, part.rack)
+      return submitWorkOrderAction(ctx, req, 'registerThing', { id: workOrderId, info })
+    }
   }
 
   return submitWorkOrderAction(ctx, req, 'registerThing', { info })
@@ -142,6 +148,9 @@ async function createWorkOrdersBatch (ctx, req) {
     createdAt: ts
   }
 
+  const isMove = type === WORK_ORDER_TYPES.MOVE && info.location != null
+  const workOrderId = isMove ? randomUUID() : null
+
   const partsMoves = []
   for (const device of devices) {
     const part = await _resolvePartByIdentifier(ctx, device.deviceIdentifier)
@@ -152,14 +161,14 @@ async function createWorkOrdersBatch (ctx, req) {
     }
     const move = _buildPartsMove(type, part, device, info, voter, ts)
     if (move) partsMoves.push(move)
-    // Move WOs auto-close, so relocate each part here or it never happens.
-    if (type === WORK_ORDER_TYPES.MOVE && info.location != null) {
-      await submitWorkOrderAction(ctx, req, 'updateThing', { id: part.id, info: { location: info.location } }, part.rack)
+    // The part rack rejects a location change without a workOrderId; stamp the WO id.
+    if (isMove) {
+      await submitWorkOrderAction(ctx, req, 'updateThing', { id: part.id, info: { location: info.location, workOrderId } }, part.rack)
     }
   }
   info.partsMoves = partsMoves
 
-  return submitWorkOrderAction(ctx, req, 'registerThing', { info })
+  return submitWorkOrderAction(ctx, req, 'registerThing', workOrderId ? { id: workOrderId, info } : { info })
 }
 
 async function updateWorkOrder (ctx, req) {
