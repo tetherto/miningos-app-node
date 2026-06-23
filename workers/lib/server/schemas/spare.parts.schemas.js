@@ -17,6 +17,30 @@ const register = {
   }
 }
 
+// Batch variant of `register`: many parts in one request, plus an optional operator note.
+const registerBatch = {
+  body: {
+    type: 'object',
+    required: ['rackId', 'parts'],
+    additionalProperties: false,
+    properties: {
+      rackId: { type: 'string', minLength: 1 },
+      parts: {
+        type: 'array',
+        minItems: 1,
+        maxItems: 100,
+        items: {
+          type: 'object',
+          additionalProperties: true,
+          minProperties: 1,
+          required: ['deviceType']
+        }
+      },
+      note: { type: 'string', maxLength: 4000 }
+    }
+  }
+}
+
 const update = {
   params: {
     type: 'object',
@@ -74,4 +98,4 @@ const list = {
   }
 }
 
-module.exports = { register, list, update, repairHistory }
+module.exports = { register, registerBatch, list, update, repairHistory }

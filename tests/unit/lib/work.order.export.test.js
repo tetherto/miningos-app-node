@@ -1,7 +1,7 @@
 'use strict'
 
 const test = require('brittle')
-const { renderWorkOrderCsv } = require('../../../workers/lib/server/lib/work.order.export')
+const { renderWorkOrderCsv, renderRmaCsv } = require('../../../workers/lib/server/lib/work.order.export')
 
 const WO = {
   id: 'wo-1',
@@ -59,4 +59,43 @@ test('work.order.export: CSV escapes commas / quotes / newlines in field values'
   const wo = { ...WO, info: { ...WO.info, issue: 'fan, broken\nreplaced' } }
   const csv = renderWorkOrderCsv(wo)
   t.ok(csv.includes('"fan, broken\nreplaced"'), 'value with comma/newline wrapped in quotes')
+})
+
+test('work.order.export: RMA CSV emits the fixed RMA column header', (t) => {
+  t.is(
+    renderRmaCsv([]).trim(),
+    'Ticket,Repaired type,Repaired Miner Sn,Repaired Mac/HB SN/PSU SN,Replaced Mac/HB SN/PSU SN,Repaired Analyze,Repaired Treatment,Remark,Miner Model,Repair Date,Engineer'
+  )
+})
+
+test('work.order.export: RMA CSV maps a MicroBT Miner WO to the fixed columns', (t) => {
+  const wo = {
+    code: 'IVI-3-0001',
+    info: {
+      type: 3,
+      deviceModel: 'M63S++_VL28',
+      deviceIdentifier: 'MINER-SN-1',
+      issue: 'low hashrate',
+      finalResult: 'replaced HB',
+      remarks: 'tech remark',
+      assignedTo: 'eng@test',
+      createdBy: 'op@test',
+      closedAt: 1730764800000,
+      partsMoves: [
+        { role: 'diagnosis', partCode: 'HB-OLD' },
+        { role: 'replacement', partCode: 'HB-NEW' }
+      ]
+    }
+  }
+  const row = renderRmaCsv([wo]).trim().split('\r\n')[1].split(',')
+  t.is(row[0], 'IVI-3-0001', 'Ticket')
+  t.is(row[1], 'M63S++_VL28', 'Repaired type')
+  t.is(row[2], 'MINER-SN-1', 'Repaired Miner Sn')
+  t.is(row[3], 'HB-OLD', 'Repaired part identifier')
+  t.is(row[4], 'HB-NEW', 'Replaced part identifier')
+  t.is(row[5], 'low hashrate', 'Repaired Analyze')
+  t.is(row[6], 'replaced HB', 'Repaired Treatment')
+  t.is(row[7], 'tech remark', 'Remark')
+  t.is(row[9], new Date(wo.info.closedAt).toISOString().slice(0, 10), 'Repair Date from closedAt')
+  t.is(row[10], 'eng@test', 'Engineer')
 })

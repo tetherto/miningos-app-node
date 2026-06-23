@@ -8,7 +8,7 @@ const {
   WORK_ORDER_VALID_DEVICE_TYPES,
   SPARE_PART_INITIAL_LOCATION
 } = require('../../constants')
-const { renderWorkOrderCsv } = require('../lib/work.order.export')
+const { renderWorkOrderCsv, renderRmaCsv } = require('../lib/work.order.export')
 const { submitWorkOrderAction, getWorkOrderRackId } = require('../lib/work.orders')
 
 async function _resolvePartByIdentifier (ctx, identifier) {
@@ -38,7 +38,7 @@ async function createWorkOrder (ctx, req) {
   const { info: extraInfo, ...body } = req.body
   const info = { ...body, ...extraInfo, createdBy: voter, createdAt: Date.now() }
 
-  if (type === WORK_ORDER_TYPES.REGULAR) {
+  if (type === WORK_ORDER_TYPES.MICROBT_MINER || type === WORK_ORDER_TYPES.MICROBT_NON_MINER) {
     const part = await _resolvePartByIdentifier(ctx, deviceIdentifier)
     if (!part) {
       const err = new Error('ERR_PART_NOT_FOUND')
@@ -68,7 +68,96 @@ async function createWorkOrder (ctx, req) {
       ts: Date.now(),
       user: voter
     }]
+  } else if (type === WORK_ORDER_TYPES.MOVE) {
+    const part = await _resolvePartByIdentifier(ctx, deviceIdentifier)
+    if (!part) {
+      const err = new Error('ERR_PART_NOT_FOUND')
+      err.statusCode = 400
+      throw err
+    }
+    info.partsMoves = [{
+      partId: part.id,
+      partCode: part.code,
+      fromLocation: part.info?.location ?? null,
+      toLocation: info.location ?? null,
+      role: 'move',
+      ts: Date.now(),
+      user: voter
+    }]
+    // Move WOs auto-close, so the relocation has to happen here or it never will.
+    if (info.location != null) await submitWorkOrderAction(ctx, req, 'updateThing', { id: part.id, info: { location: info.location } }, part.rack)
   }
+
+  return submitWorkOrderAction(ctx, req, 'registerThing', { info })
+}
+
+function _buildPartsMove (type, part, device, info, voter, ts) {
+  const base = {
+    partId: part.id,
+    partCode: part.code,
+    deviceType: device.deviceType,
+    deviceModel: device.deviceModel,
+    deviceIdentifier: device.deviceIdentifier,
+    ts,
+    user: voter
+  }
+  if (type === WORK_ORDER_TYPES.MICROBT_MINER || type === WORK_ORDER_TYPES.MICROBT_NON_MINER) {
+    return { ...base, role: 'diagnosis' }
+  }
+  if (type === WORK_ORDER_TYPES.REGISTER) {
+    return { ...base, role: 'register', fromLocation: null, toLocation: SPARE_PART_INITIAL_LOCATION }
+  }
+  if (type === WORK_ORDER_TYPES.MOVE) {
+    return { ...base, role: 'move', fromLocation: part.info?.location ?? null, toLocation: info.location ?? null }
+  }
+  return null
+}
+
+// Batch sibling of createWorkOrder: one work order whose partsMoves carries every device.
+async function createWorkOrdersBatch (ctx, req) {
+  const { type, devices, info: extraInfo, ...rest } = req.body
+
+  for (const device of devices) {
+    if (!WORK_ORDER_VALID_DEVICE_TYPES.includes(device.deviceType)) {
+      const err = new Error('ERR_INVALID_DEVICE_TYPE')
+      err.statusCode = 400
+      throw err
+    }
+  }
+
+  const voter = req._info.user.metadata.email
+  const ts = Date.now()
+  const [summary] = devices
+
+  // First device is the summary used by the thing-side validator, RMA export, and single-device views.
+  const info = {
+    type,
+    ...rest,
+    ...extraInfo,
+    deviceType: summary.deviceType,
+    deviceModel: summary.deviceModel,
+    deviceIdentifier: summary.deviceIdentifier,
+    deviceCount: devices.length,
+    createdBy: voter,
+    createdAt: ts
+  }
+
+  const partsMoves = []
+  for (const device of devices) {
+    const part = await _resolvePartByIdentifier(ctx, device.deviceIdentifier)
+    if (!part) {
+      const err = new Error('ERR_PART_NOT_FOUND')
+      err.statusCode = 400
+      throw err
+    }
+    const move = _buildPartsMove(type, part, device, info, voter, ts)
+    if (move) partsMoves.push(move)
+    // Move WOs auto-close, so relocate each part here or it never happens.
+    if (type === WORK_ORDER_TYPES.MOVE && info.location != null) {
+      await submitWorkOrderAction(ctx, req, 'updateThing', { id: part.id, info: { location: info.location } }, part.rack)
+    }
+  }
+  info.partsMoves = partsMoves
 
   return submitWorkOrderAction(ctx, req, 'registerThing', { info })
 }
@@ -79,7 +168,7 @@ async function updateWorkOrder (ctx, req) {
 }
 
 async function closeWorkOrder (ctx, req) {
-  const info = { status: 'closed' }
+  const info = { status: 'closed', closedAt: Date.now() }
   if (req.body?.finalResult) info.finalResult = req.body.finalResult
   return submitWorkOrderAction(ctx, req, 'updateThing', { id: req.params.id, info })
 }
@@ -206,6 +295,22 @@ async function exportWorkOrder (ctx, req, rep) {
   return rep.send(renderWorkOrderCsv(wo))
 }
 
+async function exportWorkOrdersRma (ctx, req, rep) {
+  const ids = req.query.ids.split(',').map(s => s.trim()).filter(Boolean)
+  const params = {
+    query: {
+      type: WORK_ORDER_THING_TYPE,
+      $or: [{ id: { $in: ids } }, { code: { $in: ids } }]
+    }
+  }
+  const results = await ctx.dataProxy.requestData('listThings', params)
+  const wos = flattenRpcResults(results).filter(wo => wo?.info?.type === WORK_ORDER_TYPES.MICROBT_MINER)
+
+  rep.header('content-type', 'text/csv; charset=utf-8')
+  rep.header('content-disposition', 'attachment; filename="rma.csv"')
+  return rep.send(renderRmaCsv(wos))
+}
+
 async function getWorkOrderAudit (ctx, req) {
   const payload = {
     logType: 'info',
@@ -221,6 +326,7 @@ async function getWorkOrderAudit (ctx, req) {
 
 module.exports = {
   createWorkOrder,
+  createWorkOrdersBatch,
   listWorkOrders,
   getWorkOrder,
   updateWorkOrder,
@@ -229,5 +335,6 @@ module.exports = {
   assignWorkOrder,
   appendWorkLogEntry,
   getWorkOrderAudit,
-  exportWorkOrder
+  exportWorkOrder,
+  exportWorkOrdersRma
 }

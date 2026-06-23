@@ -1,6 +1,7 @@
 'use strict'
 
 const { csvEscape } = require('../../utils')
+const { RMA_COLUMNS } = require('../../constants')
 
 function renderWorkOrderCsv (wo) {
   const { partsMoves, ...woFields } = wo.info || {}
@@ -25,4 +26,30 @@ function renderWorkOrderCsv (wo) {
   return lines.join('\r\n') + '\r\n'
 }
 
-module.exports = { renderWorkOrderCsv }
+function renderRmaCsv (workOrders) {
+  const rows = workOrders.map((wo) => {
+    const info = wo.info || {}
+    const moves = Array.isArray(info.partsMoves) ? info.partsMoves : []
+    const repaired = moves.find(m => m.role === 'repaired') || moves.find(m => m.role === 'diagnosis') || moves[0] || {}
+    const replaced = moves.find(m => m.role === 'replacement') || repaired
+    const repairTs = info.closedAt ?? info.createdAt
+    return [
+      wo.code,
+      info.deviceModel,
+      info.deviceIdentifier,
+      repaired.partCode,
+      replaced.partCode,
+      info.issue,
+      info.finalResult,
+      info.remarks,
+      info.deviceModel,
+      repairTs ? new Date(repairTs).toISOString().slice(0, 10) : '',
+      info.assignedTo ?? info.createdBy
+    ]
+  })
+
+  const lines = [RMA_COLUMNS, ...rows].map(row => row.map(csvEscape).join(','))
+  return lines.join('\r\n') + '\r\n'
+}
+
+module.exports = { renderWorkOrderCsv, renderRmaCsv }

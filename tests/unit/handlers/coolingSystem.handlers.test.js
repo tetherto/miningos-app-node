@@ -97,6 +97,10 @@ const createMockEquipment = () => ({
     { equipment: 'VT-7501', value: 0.6, unit: 'mm/s', status: 'Normal' },
     { equipment: 'VT-7503', value: 0.8, unit: 'mm/s', status: 'Normal' }
   ],
+  vibration_switches: [
+    { equipment: 'VS-7581', state: 'ok' },
+    { equipment: 'VS-7591', state: 'error' }
+  ],
   flow_switches: [
     { equipment: 'FS-7501', is_active: true },
     { equipment: 'FS-7502', is_active: true }
@@ -165,6 +169,7 @@ const createMockConfig = () => ({
       },
       tower_level_sensor: 'LIT-7501',
       tower_vibration_sensor: 'VT-7501',
+      tower_vibration_switch: 'VS-7581',
       tower_fan: 'FAN-7501',
       heat_exchangers: {
         'tc-7501': { miner_side_out_sensor: 'TS-7521', tower_side_in_sensor: 'TS-7513', tower_side_out_sensor: 'TS-7515' },
@@ -206,13 +211,23 @@ const createMockConfig = () => ({
       },
       control_valves: {
         pressure_bypass: 'PCV-7501'
-      }
+      },
+      fan_coils: [
+        { id: 'FC-7513', valve_tag: 'TCV-7501A', temperature_tag: 'TT-7501C' },
+        { id: 'FC-7514', valve_tag: 'TCV-7501B', temperature_tag: 'TT-7501C' },
+        { id: 'FC-7529', valve_tag: 'TCV-7501C', temperature_tag: 'TT-7501C' },
+        { id: 'FC-7530', valve_tag: 'TCV-7501D', temperature_tag: 'TT-7501C' }
+      ]
     },
     hvac_condenser: {
       name: 'Circuit 2 - Condenser Water Loop',
       defaults: {
         supply_temp: { value: 29, unit: '°C' },
         return_temp: { value: 39, unit: '°C' }
+      },
+      tower: {
+        level_sensor: 'LIT-7504',
+        vibration_switch: 'VS-7591'
       }
     },
     ambient: {
@@ -412,7 +427,9 @@ test('buildMinersCircuit2View - builds view from enriched equipment', (t) => {
   t.ok(view.cooling_towers[0].level.unit, 'level should have unit')
   // Check tower sensor refs
   t.ok(view.cooling_towers[0].level_sensor, 'should have level_sensor ref')
-  t.ok(view.cooling_towers[0].vibration_sensor, 'should have vibration_sensor ref')
+  t.is(view.cooling_towers[0].vibration, undefined, 'numeric vibration removed')
+  t.is(view.cooling_towers[0].vibration_switch.tag, 'VS-7581', 'vibration_switch tag from config')
+  t.is(view.cooling_towers[0].vibration_switch.state, 'ok', 'vibration_switch state from DI')
   t.pass()
 })
 
@@ -1166,18 +1183,21 @@ test('buildHvacAmbientView - rooms with no matching fan coils or humidity', (t) 
   t.pass()
 })
 
-test('buildHvacAmbientView - room with fan coils that have zero temperature', (t) => {
+test('buildHvacAmbientView - 11 keeps valid zero/low temps, drops only missing', (t) => {
   const equipment = createEmptyEquipment()
   equipment.fan_coils = [
-    { equipment: 'FC-1', is_running: false, temperature: { value: 0, unit: '°C' }, valve_position: { value: 0, unit: '%' } }
+    // valid cold reading (kept) + a unit with no reading (dropped)
+    { equipment: 'FC-1', is_running: true, temperature: { value: 0, unit: '°C' }, valve_position: { value: 0, unit: '%' } },
+    { equipment: 'FC-2', is_running: false, temperature: { value: null, unit: '°C' }, valve_position: { value: 0, unit: '%' } }
   ]
   const config = createMinimalConfig()
   config.cooling_system.ambient = {
-    rooms: [{ name: 'Cold Room', fan_coils: ['FC-1'], humidity_sensors: [] }]
+    rooms: [{ name: 'Cold Room', fan_coils: ['FC-1', 'FC-2'], humidity_sensors: [] }]
   }
   const view = buildHvacAmbientView(equipment, config, {})
 
-  t.is(view.rooms[0].temperature, null, 'zero temp filtered out')
+  t.ok(view.rooms[0].temperature, 'valid zero temp is not hidden')
+  t.is(view.rooms[0].temperature.value, 0, 'averages the real 0°C reading')
   t.pass()
 })
 
@@ -1249,5 +1269,185 @@ test('getCoolingSystemData - miners ambient is invalid view', async (t) => {
   } catch (err) {
     t.is(err.message, 'ERR_INVALID_VIEW')
   }
+  t.pass()
+})
+
+test('1 - renamed level/valve tags resolve from config', (t) => {
+  const equipment = createMockEquipment()
+  equipment.levels = [
+    { equipment: 'LT-7501', value: 76, unit: '%' },
+    { equipment: 'LIT-7581', value: 82, unit: '%' }
+  ]
+  const config = createMockConfig()
+  config.cooling_system.cooling_tower_loop.tower_level_sensor = 'LIT-7581'
+  config.cooling_system.cooling_tower_loop.makeup.level_sensor = 'LT-7501'
+  config.cooling_system.cooling_tower_loop.makeup.level_control_valve = 'LCV-7501'
+  const view = buildMinersCircuit2View(equipment, config)
+
+  t.is(view.summary.tower_level.value, 82, 'tower level resolves via renamed LIT-7581')
+  t.is(view.makeup.tank.level.value, 76, 'makeup level resolves via renamed LT-7501')
+  t.is(view.makeup.level_control_valve.id, 'LCV-7501', 'makeup LCV uses renamed id')
+  t.pass()
+})
+
+test('2 - fan-coil map yields the configured TCV/TT tags', (t) => {
+  const equipment = createMockEquipment()
+  const config = createMockConfig()
+  const view = buildHvacCircuit1View(equipment, config)
+
+  const fc13 = view.fan_coils.units.find(u => u.id === 'FC-7513')
+  t.is(fc13.valve_tag, 'TCV-7501A', 'valve_tag from map (not PIV-7513)')
+  t.is(fc13.temperature_tag, 'TT-7501C', 'temperature_tag from map (grouped, not TT-7513)')
+  const fc29 = view.fan_coils.units.find(u => u.id === 'FC-7529')
+  t.is(fc29.valve_tag, 'TCV-7501C', 'grouped unit gets its own TCV')
+  t.pass()
+})
+
+test('2 - fan-coil with no map entry yields null tags (no fabrication)', (t) => {
+  const equipment = createMockEquipment()
+  const config = createMockConfig()
+  config.cooling_system.hvac_chilled_water.fan_coils = []
+  const view = buildHvacCircuit1View(equipment, config)
+
+  t.is(view.fan_coils.units[0].valve_tag, null, 'no derived PIV tag')
+  t.is(view.fan_coils.units[0].temperature_tag, null, 'no derived TT tag')
+  t.pass()
+})
+
+test('3 - miners tower exposes vibration_switch from DI, drops numeric', (t) => {
+  const equipment = createMockEquipment()
+  const config = createMockConfig()
+  const view = buildMinersCircuit2View(equipment, config)
+
+  t.is(view.cooling_towers[0].vibration, undefined, 'numeric vibration removed')
+  t.is(view.cooling_towers[0].vibration_switch.tag, 'VS-7581', 'switch tag')
+  t.is(view.cooling_towers[0].vibration_switch.state, 'ok', 'state from DI')
+  t.pass()
+})
+
+test('3 - hvac tower vibration_switch reflects error DI', (t) => {
+  const equipment = createMockEquipment()
+  const config = createMockConfig()
+  const view = buildHvacCircuit2View(equipment, config)
+
+  t.is(view.cooling_towers[0].vibration_switch.tag, 'VS-7591', 'hvac switch tag')
+  t.is(view.cooling_towers[0].vibration_switch.state, 'error', 'state from DI')
+  t.pass()
+})
+
+test('3 - vibration_switch state is null when DI absent (no fabrication)', (t) => {
+  const equipment = createMockEquipment()
+  equipment.vibration_switches = [] // DI not provisioned
+  const config = createMockConfig()
+  const view = buildMinersCircuit2View(equipment, config)
+
+  t.is(view.cooling_towers[0].vibration_switch.tag, 'VS-7581', 'tag still surfaced')
+  t.is(view.cooling_towers[0].vibration_switch.state, null, 'state null, never fabricated')
+  t.pass()
+})
+
+test('4 - pressure_bypass exposes pressure (PIT-7501) and tag-less aperture', (t) => {
+  const equipment = createMockEquipment()
+  const config = createMockConfig()
+  const view = buildHvacCircuit1View(equipment, config)
+
+  const pb = view.control_valves.pressure_bypass
+  t.ok(pb.pressure, 'should have pressure')
+  t.is(pb.pressure.tag, 'PIT-7501', 'pressure tag')
+  t.is(pb.pressure.value, 3.1, 'pressure value from PIT-7501')
+  t.is(pb.pressure.unit, 'bar', 'pressure unit')
+  t.absent(pb.position?.tag, 'aperture position stays tag-less')
+  t.pass()
+})
+
+test('5 - HVAC pumps include current {value, unit}', (t) => {
+  const equipment = createMockEquipment()
+  const config = createMockConfig()
+  const view = buildHvacCircuit1View(equipment, config)
+
+  t.ok(view.return_pumps.length > 0, 'has return pumps')
+  t.ok(view.return_pumps[0].current, 'return pump has current')
+  t.is(view.return_pumps[0].current.unit, 'A', 'current in amps')
+  t.pass()
+})
+
+// 6 — per-group differential pressure + summary averages
+test('6 - differential_pressure empty by default, summary avgs from line PTs', (t) => {
+  const equipment = createMockEquipment()
+  const config = createMockConfig()
+  const view = buildMinersCircuit1View(equipment, config)
+
+  t.alike(view.lines[0].differential_pressure, [], 'empty until per-group PTs provisioned')
+  t.ok(view.summary.inlet_pressure_avg, 'has inlet_pressure_avg')
+  t.ok(view.summary.outlet_pressure_avg, 'has outlet_pressure_avg')
+  t.ok(view.summary.delta_p_avg, 'has delta_p_avg')
+  t.is(view.summary.inlet_pressure_avg.value, 2.8, 'inlet avg from supply PTs')
+  t.is(view.summary.outlet_pressure_avg.value, 1.35, 'outlet avg from return PTs')
+  t.is(view.summary.delta_p_avg.value, 1.45, 'delta-p avg')
+  t.pass()
+})
+
+test('6 - differential_pressure populated when per-group PTs configured', (t) => {
+  const equipment = createMockEquipment()
+  equipment.pressures = [
+    ...equipment.pressures,
+    { equipment: 'PT-7501A', value: 3.0, unit: 'bar' },
+    { equipment: 'PT-7501B', value: 1.2, unit: 'bar' }
+  ]
+  const config = createMockConfig()
+  config.cooling_system.miner_loop.line1.group_pressure_sensors = {
+    supply: ['PT-7501A'],
+    return: ['PT-7501B']
+  }
+  const view = buildMinersCircuit1View(equipment, config)
+
+  const dp = view.lines[0].differential_pressure
+  t.is(dp.length, 1, 'one group row')
+  t.is(dp[0].supply.tag, 'PT-7501A', 'supply PT tag')
+  t.is(dp[0].return.tag, 'PT-7501B', 'return PT tag')
+  t.is(dp[0].delta_p.value, 1.8, 'group delta-p = supply - return')
+  t.pass()
+})
+
+test('7 - rack_statuses derived from live rack power (online = power > 0)', (t) => {
+  const equipment = createMockEquipment()
+  const config = createMockConfig()
+  const rackPowerByRack = {
+    'group-1_rack-1': 1200,
+    'group-1_rack-2': 0,
+    'group-1_rack-3': 800
+  }
+  const view = buildMinersLayoutView(equipment, config, {}, rackPowerByRack)
+
+  t.alike(view.mining_room.groups[0].rack_statuses, [true, false, true, false], 'online iff live power > 0')
+  t.pass()
+})
+
+test('7 - rack_statuses omitted when miner RTD not joined (no fake all-online)', (t) => {
+  const equipment = createMockEquipment()
+  const config = createMockConfig()
+  const view = buildMinersLayoutView(equipment, config, {})
+
+  t.is(view.mining_room.groups[0].rack_statuses, undefined, 'absent rather than fabricated')
+  t.pass()
+})
+
+test('getCoolingSystemData - miners layout joins rack RTD into rack_statuses', async (t) => {
+  const snapData = createMockSnapData()
+  const dcsResponse = [[{ id: 'dcs-1', type: 'dcs', tags: ['t-dcs'], last: { snap: snapData } }]]
+  const rtdResponse = [[[{ power_w_pdu_rack_group_sum_aggr: { 'group-1_rack-1': 1500, 'group-1_rack-2': 0 } }]]]
+
+  const ctx = {
+    conf: { featureConfig: { centralDCSSetup: { enabled: true, tag: 't-dcs' } }, orks: [{ rpcPublicKey: 'k' }] },
+    dataProxy: {
+      requestDataMap: async (method) => (method === 'tailLogMulti' ? rtdResponse : dcsResponse)
+    }
+  }
+  const result = await getCoolingSystemData(ctx, { query: { type: 'miners', view: 'layout' } })
+
+  const statuses = result.data.mining_room.groups[0].rack_statuses
+  t.ok(Array.isArray(statuses), 'rack_statuses present on layout')
+  t.is(statuses[0], true, 'rack-1 online (power 1500)')
+  t.is(statuses[1], false, 'rack-2 offline (power 0)')
   t.pass()
 })

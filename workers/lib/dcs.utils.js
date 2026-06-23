@@ -25,6 +25,13 @@ function extractDcsThing (rpcResults) {
   return null
 }
 
+// Site-wide power in watts from a DCS thing's "site_main" meter (reported in kW).
+function extractSiteMainMeterPowerW (dcsThing) {
+  const powerMeters = dcsThing?.last?.snap?.stats?.dcs_specific?.equipment?.power_meters || []
+  const siteMeter = powerMeters.find(pm => pm.role === 'site_main')
+  return (siteMeter?.power?.value || 0) * 1000
+}
+
 function getSensorReading (sensors, sensorId, defaultConfig = null) {
   if (!sensorId) return defaultConfig
   const sensor = sensors?.find(s => s.equipment === sensorId)
@@ -62,6 +69,7 @@ module.exports = {
   isCentralDCSEnabled,
   getDCSTag,
   extractDcsThing,
+  extractSiteMainMeterPowerW,
   getSensorReading,
   findEquipment,
   filterEquipmentBy,

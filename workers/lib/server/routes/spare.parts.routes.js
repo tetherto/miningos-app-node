@@ -6,7 +6,7 @@ const {
   AUTH_PERMISSIONS
 } = require('../../constants')
 const schemas = require('../schemas/spare.parts.schemas')
-const { registerSparePart, listSpareParts, updateSparePart, getRepairHistory } = require('../handlers/spare.parts.handlers')
+const { registerSparePart, registerSparePartsBatch, listSpareParts, updateSparePart, getRepairHistory } = require('../handlers/spare.parts.handlers')
 const { createAuthRoute, createCachedAuthRoute } = require('../lib/routeHelpers')
 const { stableJsonString } = require('../../utils')
 
@@ -16,6 +16,12 @@ module.exports = (ctx) => [
     url: ENDPOINTS.SPARE_PARTS,
     schema: schemas.register,
     ...createAuthRoute(ctx, registerSparePart, [AUTH_PERMISSIONS.INVENTORY])
+  },
+  {
+    method: HTTP_METHODS.POST,
+    url: ENDPOINTS.SPARE_PARTS_BATCH,
+    schema: schemas.registerBatch,
+    ...createAuthRoute(ctx, registerSparePartsBatch, [AUTH_PERMISSIONS.INVENTORY])
   },
   {
     method: HTTP_METHODS.GET,

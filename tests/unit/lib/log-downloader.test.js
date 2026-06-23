@@ -200,6 +200,44 @@ test('LogDownloader - stream joins swarm as client only', async (t) => {
   t.pass()
 })
 
+test('LogDownloader - stream replicates the core onto existing swarm connections', async (t) => {
+  // Hyperswarm reuses peer connections across topics — no 'connection' event fires
+  const swarm = makeSwarm()
+  const existingSocket = { id: 'existing-peer-socket' }
+  swarm.connections = new Set([existingSocket])
+  const netFac = { get swarm () { return swarm }, startSwarm: async () => {} }
+
+  const replicated = []
+  const core = makeCore({ key: TEST_KEY })
+  core.replicate = (socket) => replicated.push(socket)
+
+  const dl = new LogDownloader({ netFac, storeFac: { getCore: () => core } })
+  await dl.stream(TEST_KEY_HEX, 100)
+
+  t.is(replicated.length, 1, 'should replicate the core onto the existing connection')
+  t.ok(replicated[0] === existingSocket, 'should replicate onto the existing socket')
+  t.pass()
+})
+
+test('LogDownloader - core is not replicated twice on the same socket', async (t) => {
+  const swarm = makeSwarm()
+  const existingSocket = { id: 'peer-socket' }
+  swarm.connections = new Set([existingSocket])
+  const netFac = { get swarm () { return swarm }, startSwarm: async () => {} }
+
+  const replicated = []
+  const core = makeCore({ key: TEST_KEY })
+  core.replicate = (socket) => replicated.push(socket)
+
+  const dl = new LogDownloader({ netFac, storeFac: { getCore: () => core } })
+  await dl.stream(TEST_KEY_HEX, 100)
+
+  swarm.emit('connection', existingSocket)
+
+  t.is(replicated.length, 1, 'should not replicate the same core twice on one socket')
+  t.pass()
+})
+
 test('LogDownloader - stream registers download entry while active', async (t) => {
   const swarm = makeSwarm()
   const netFac = { get swarm () { return swarm }, startSwarm: async () => {} }

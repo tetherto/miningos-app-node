@@ -1,13 +1,36 @@
 'use strict'
 
-const { COOLING_SYSTEM_PROJECTIONS } = require('../../constants')
+const {
+  COOLING_SYSTEM_PROJECTIONS,
+  LOG_KEYS,
+  WORKER_TYPES,
+  WORKER_TAGS,
+  EXPLORER_RACK_AGGR_FIELDS
+} = require('../../constants')
 const {
   isCentralDCSEnabled,
   getDCSTag,
   extractDcsThing,
   getSensorReading
 } = require('../../dcs.utils')
+const { aggregateRackStats } = require('./explorer.handlers')
 
+/**
+ * BE-9 — Layout positional / equipment-id contract (FE binds by position or id):
+ *  - circuit1.lines[0] = Line 1 / Groups 1-8, lines[1] = Line 2 / Groups 9-16.
+ *  - pumps[] keep config order: pumps[0/1/2] = A/B/C per circuit.
+ *  - Cooling towers are matched by `id` (TR-7501 miner loop, TR-7502 HVAC condenser).
+ *  - Control valves / sensors are resolved by their config tag against the single
+ *    flat `equipment.*` arrays, so every equipment `.equipment` id MUST stay
+ *    GLOBALLY UNIQUE. Two entries sharing an id make `find()` ambiguous and cannot
+ *    be disambiguated by circuit — keep ids unique at the source (DCS config).
+ *  Do not reorder or reshape these arrays.
+ *
+ * BE-1 deferred renames (kept unique pending controls/DCS provisioning of a
+ * globally-unique tag — applying them verbatim would duplicate an existing id):
+ *  - PCV-7503 -> PCV-7501 (collides with HVAC pressure_bypass PCV-7501).
+ *  - LIT-7504 -> LT-7591  (collides with HVAC buffer-tank LT-7591).
+ */
 function getFieldProjection (type, view) {
   const base = COOLING_SYSTEM_PROJECTIONS.base
   const typeProjections = COOLING_SYSTEM_PROJECTIONS[type]
@@ -43,6 +66,38 @@ function getSensorWithTag (sensors, sensorId, defaultConfig) {
       ? { value: sensor.value, unit: sensor.unit }
       : (defaultConfig || null)
   }
+}
+
+function buildVibrationSwitch (vibrationSwitches, switchTag) {
+  if (!switchTag) return null
+  const sw = (vibrationSwitches || []).find(s => s.equipment === switchTag)
+  return { tag: switchTag, state: sw?.state ?? null }
+}
+
+function buildGroupDifferentialPressure (lineConfig, pressures) {
+  const groupSensors = lineConfig.group_pressure_sensors || {}
+  const supplyIds = groupSensors.supply || []
+  const returnIds = groupSensors.return || []
+  const count = Math.max(supplyIds.length, returnIds.length)
+
+  const rows = []
+  for (let i = 0; i < count; i++) {
+    const supply = getSensorWithTag(pressures, supplyIds[i])
+    const ret = getSensorWithTag(pressures, returnIds[i])
+    const supplyVal = supply?.reading?.value
+    const returnVal = ret?.reading?.value
+    const deltaPVal = (supplyVal != null && returnVal != null)
+      ? Math.round((supplyVal - returnVal) * 100) / 100
+      : null
+    const unit = supply?.reading?.unit || ret?.reading?.unit || 'bar'
+    rows.push({
+      group: i + 1,
+      supply,
+      return: ret,
+      delta_p: deltaPVal != null ? { value: deltaPVal, unit } : null
+    })
+  }
+  return rows
 }
 
 function buildMinersCircuit1View (equipment, config) {
@@ -97,6 +152,7 @@ function buildMinersCircuit1View (equipment, config) {
         pressure: getSensorReading(pressures, lineConfig.return_pressure_sensor),
         sensors: [returnTempSensor, returnPressureSensor].filter(Boolean)
       },
+      differential_pressure: buildGroupDifferentialPressure(lineConfig, pressures),
       heat_exchanger: hx
         ? {
             id: hx.equipment,
@@ -133,6 +189,7 @@ function buildMinersCircuit1View (equipment, config) {
   const allReturnTemps = lines.map(l => l.return.temperature?.value).filter(v => v != null)
   const allSupplyFlows = lines.map(l => l.supply.flow?.value).filter(v => v != null)
   const allSupplyPressures = lines.map(l => l.supply.pressure?.value).filter(v => v != null)
+  const allReturnPressures = lines.map(l => l.return.pressure?.value).filter(v => v != null)
 
   const avgSupplyTemp = allSupplyTemps.length > 0
     ? Math.round((allSupplyTemps.reduce((a, b) => a + b, 0) / allSupplyTemps.length) * 10) / 10
@@ -148,6 +205,16 @@ function buildMinersCircuit1View (equipment, config) {
     : null
   const deltaT = (avgSupplyTemp != null && avgReturnTemp != null)
     ? Math.round((avgReturnTemp - avgSupplyTemp) * 10) / 10
+    : null
+
+  const inletPressureAvg = allSupplyPressures.length > 0
+    ? Math.round((allSupplyPressures.reduce((a, b) => a + b, 0) / allSupplyPressures.length) * 100) / 100
+    : null
+  const outletPressureAvg = allReturnPressures.length > 0
+    ? Math.round((allReturnPressures.reduce((a, b) => a + b, 0) / allReturnPressures.length) * 100) / 100
+    : null
+  const deltaPAvg = (inletPressureAvg != null && outletPressureAvg != null)
+    ? Math.round((inletPressureAvg - outletPressureAvg) * 100) / 100
     : null
 
   const controlValveEntries = coolingConfig.control_valves || {}
@@ -177,7 +244,10 @@ function buildMinersCircuit1View (equipment, config) {
       delta_t: deltaT != null ? { value: deltaT, unit: tempUnit } : null,
       total_flow: totalFlow != null ? { value: totalFlow, unit: flowUnit } : null,
       rated_flow: coolingConfig.defaults?.rated_flow || null,
-      system_pressure: systemPressure != null ? { value: systemPressure, unit: pressureUnit } : null
+      system_pressure: systemPressure != null ? { value: systemPressure, unit: pressureUnit } : null,
+      inlet_pressure_avg: inletPressureAvg != null ? { value: inletPressureAvg, unit: pressureUnit } : null,
+      outlet_pressure_avg: outletPressureAvg != null ? { value: outletPressureAvg, unit: pressureUnit } : null,
+      delta_p_avg: deltaPAvg != null ? { value: deltaPAvg, unit: pressureUnit } : null
     },
     pumps_config: coolingConfig.defaults?.pumps_config || null,
     lines,
@@ -192,6 +262,7 @@ function buildMinersCircuit2View (equipment, config) {
   const levels = equipment.levels
   const heatExchangers = equipment.heat_exchangers
   const coolingTowers = equipment.cooling_towers
+  const vibrationSwitches = equipment.vibration_switches
   const valves = equipment.valves
   const tanks = equipment.tanks
   const towerConfig = config?.cooling_system?.cooling_tower_loop || {}
@@ -269,8 +340,8 @@ function buildMinersCircuit2View (equipment, config) {
   const towerLevel = getSensorReading(levels, towerLevelSensor)
 
   // Cooling towers with sensor tag references
-  const towerVibrationSensorId = towerConfig.tower_vibration_sensor
   const towerFanId = towerConfig.tower_fan
+  const towerVibrationSwitch = buildVibrationSwitch(vibrationSwitches, towerConfig.tower_vibration_switch)
 
   const towerData = (coolingTowers || []).map(ct => ({
     id: ct.equipment,
@@ -282,9 +353,7 @@ function buildMinersCircuit2View (equipment, config) {
     fan_id: towerFanId,
     level: ct.level,
     level_sensor: towerLevelSensor,
-    vibration: ct.vibration,
-    vibration_sensor: towerVibrationSensorId,
-    vibration_threshold: ct.vibration_threshold || null,
+    vibration_switch: towerVibrationSwitch,
     capacity_flow: towerConfig.defaults?.tower_capacity || null,
     capacity_gcal: towerConfig.defaults?.tower_capacity_gcal || null
   }))
@@ -358,7 +427,7 @@ function buildMinersCircuit2View (equipment, config) {
   }
 }
 
-function buildMinersLayoutView (equipment, config, stats) {
+function buildMinersLayoutView (equipment, config, stats, rackPowerByRack) {
   const circuit1 = buildMinersCircuit1View(equipment, config)
   const circuit2 = buildMinersCircuit2View(equipment, config)
   const { pumps } = equipment
@@ -375,11 +444,20 @@ function buildMinersLayoutView (equipment, config, stats) {
 
   const groups = []
   for (let i = 1; i <= totalGroups; i++) {
-    groups.push({
+    const group = {
       id: `G${i}`,
       name: `G${i}`,
       vlan: vlanStart + (i - 1)
-    })
+    }
+    if (rackPowerByRack) {
+      const statuses = []
+      for (let r = 1; r <= racksPerGroup; r++) {
+        const powerW = rackPowerByRack[`group-${i}_rack-${r}`]
+        statuses.push(powerW != null && powerW > 0)
+      }
+      group.rack_statuses = statuses
+    }
+    groups.push(group)
   }
 
   return {
@@ -555,19 +633,31 @@ function buildHvacCircuit1View (equipment, config) {
     }
   }
 
+  if (controlValves.pressure_bypass) {
+    controlValves.pressure_bypass.pressure = systemPressure
+      ? { tag: supplyReturnConfig.pressure_sensor || null, value: systemPressure.value, unit: systemPressure.unit }
+      : null
+  }
+
   const returnPumps = filterPumpsByCircuit(pumps, 'HVAC_RETURN').map(formatPump)
   const supplyPumps = filterPumpsByCircuit(pumps, 'HVAC_SUPPLY').map(formatPump)
+
+  const fanCoilTagMap = {}
+  for (const fcCfg of (chilledConfig.fan_coils || [])) {
+    if (fcCfg.id) fanCoilTagMap[fcCfg.id] = fcCfg
+  }
 
   const fanCoilsSummary = {
     total: (fanCoils || []).length,
     running: (fanCoils || []).filter(fc => fc.is_running).length,
     units: (fanCoils || []).map(fc => {
+      const fcMeta = fanCoilTagMap[fc.equipment] || {}
+      const valveTag = fcMeta.valve_tag || null
+      const temperatureTag = fcMeta.temperature_tag || null
       const fcNumber = fc.equipment.replace(/^FCT?-/, '')
       const fanId = `V-${fcNumber}`
-      const valveId = `PIV-${fcNumber}`
-      const tempSensorId = `TT-${fcNumber}`
       const fan = (fans || []).find(f => f.equipment === fanId)
-      const valve = valves?.find(v => v.equipment === valveId)
+      const valve = valveTag ? valves?.find(v => v.equipment === valveTag) : null
 
       return {
         id: fc.equipment,
@@ -575,9 +665,9 @@ function buildHvacCircuit1View (equipment, config) {
         fan_id: fanId,
         fan_running: fan?.fbk_run_out || false,
         fan_speed: fc.fan_speed,
-        valve_tag: valveId,
+        valve_tag: valveTag,
         valve_position: valve?.position || fc.valve_position,
-        temperature_tag: tempSensorId,
+        temperature_tag: temperatureTag,
         temperature: fc.temperature
       }
     })
@@ -659,8 +749,8 @@ function buildHvacCircuit2View (equipment, config) {
   const towerConfigRef = condenserConfig.tower || {}
   const towerLevelSensorId = towerConfigRef.level_sensor
   const towerLevel = getSensorReading(levels, towerLevelSensorId)
-  const towerVibrationSensorId = towerConfigRef.vibration_sensor
   const towerFanId = towerConfigRef.fan
+  const towerVibrationSwitch = buildVibrationSwitch(equipment.vibration_switches, towerConfigRef.vibration_switch)
 
   const towerData = (coolingTowers || []).map(ct => ({
     id: ct.equipment,
@@ -672,9 +762,7 @@ function buildHvacCircuit2View (equipment, config) {
     fan_id: towerFanId || null,
     level: ct.level,
     level_sensor: towerLevelSensorId || null,
-    vibration: ct.vibration,
-    vibration_sensor: towerVibrationSensorId || null,
-    vibration_threshold: ct.vibration_threshold || null,
+    vibration_switch: towerVibrationSwitch,
     capacity_mcal: condenserConfig.defaults?.tower_capacity_mcal || null,
     capacity_flow: condenserConfig.defaults?.tower_flow || null
   }))
@@ -772,7 +860,7 @@ function buildHvacAmbientView (equipment, config, stats) {
       }))
 
     const roomTemps = roomFanCoils
-      .filter(fc => fc.temperature?.value > 0)
+      .filter(fc => fc.temperature?.value != null && Number.isFinite(fc.temperature.value))
       .map(fc => fc.temperature.value)
     const avgTemp = roomTemps.length > 0
       ? Math.round((roomTemps.reduce((a, b) => a + b, 0) / roomTemps.length) * 10) / 10
@@ -832,7 +920,7 @@ function buildHvacAmbientView (equipment, config, stats) {
  * @param {string} view - View name (circuit1, circuit2, layout, ambient)
  * @returns {Object|null}
  */
-function buildCoolingViewData (snap, type, view) {
+function buildCoolingViewData (snap, type, view, rackPowerByRack) {
   const equipment = snap.stats?.dcs_specific?.equipment || {}
   const config = snap.config || {}
   const stats = snap.stats || {}
@@ -844,7 +932,7 @@ function buildCoolingViewData (snap, type, view) {
       case 'circuit2':
         return buildMinersCircuit2View(equipment, config)
       case 'layout':
-        return buildMinersLayoutView(equipment, config, stats)
+        return buildMinersLayoutView(equipment, config, stats, rackPowerByRack)
       default:
         return null
     }
@@ -909,7 +997,22 @@ async function getCoolingSystemData (ctx, req) {
     fields
   }
 
-  const rpcResults = await ctx.dataProxy.requestDataMap('listThings', payload)
+  const needsRackStatuses = type === 'miners' && view === 'layout'
+  const rackTailLogPayload = {
+    keys: [
+      { key: LOG_KEYS.STAT_RTD, type: WORKER_TYPES.MINER, tag: WORKER_TAGS.MINER }
+    ],
+    limit: 1,
+    aggrFields: EXPLORER_RACK_AGGR_FIELDS
+  }
+
+  const [rpcResults, rackTailLogResults] = await Promise.all([
+    ctx.dataProxy.requestDataMap('listThings', payload),
+    needsRackStatuses
+      ? ctx.dataProxy.requestDataMap('tailLogMulti', rackTailLogPayload)
+      : Promise.resolve(null)
+  ])
+
   const dcsThing = extractDcsThing(rpcResults)
 
   if (!dcsThing) {
@@ -918,7 +1021,11 @@ async function getCoolingSystemData (ctx, req) {
 
   const snap = dcsThing.last.snap
 
-  const viewData = buildCoolingViewData(snap, type, view)
+  const rackPowerByRack = rackTailLogResults
+    ? aggregateRackStats(rackTailLogResults).powerByRack
+    : null
+
+  const viewData = buildCoolingViewData(snap, type, view, rackPowerByRack)
 
   if (!viewData) {
     throw new Error('ERR_VIEW_DATA_NOT_AVAILABLE')

@@ -22,6 +22,7 @@ function extractAlertsFromThings (things) {
           alerts.push({
             ...alert,
             id: thing.id,
+            deviceId: thing.id,
             type: thing.type,
             code: thing.code,
             container: thing.info?.container
@@ -79,6 +80,7 @@ function flattenHistoryAlert (entry) {
     severity: entry.severity,
     createdAt: entry.createdAt,
     uuid: entry.uuid,
+    message: entry.message,
     deviceId: thing.id,
     deviceType: thing.type,
     code: thing.code,

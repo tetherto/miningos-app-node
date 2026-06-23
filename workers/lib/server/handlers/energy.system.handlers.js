@@ -26,7 +26,6 @@ function buildMinersView (equipment, config, stats) {
   }
 
   // Rack meters (role: rack)
-  console.log('powerMeters', powerMeters)
   const rackMeters = powerMeters
     .filter(pm => pm.role === 'rack')
     .sort((a, b) => {

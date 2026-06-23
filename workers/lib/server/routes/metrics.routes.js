@@ -12,6 +12,7 @@ const {
   getPowerMode,
   getPowerModeTimeline,
   getTemperature,
+  getCooling,
   getContainerTelemetry,
   getContainerHistory
 } = require('../handlers/metrics.handlers')
@@ -146,6 +147,24 @@ module.exports = (ctx) => {
         ],
         ENDPOINTS.METRICS_TEMPERATURE,
         getTemperature
+      )
+    },
+    {
+      method: HTTP_METHODS.GET,
+      url: ENDPOINTS.METRICS_COOLING,
+      schema: {
+        querystring: schemas.query.cooling
+      },
+      ...createCachedAuthRoute(
+        ctx,
+        (req) => [
+          'metrics/cooling',
+          req.query.start,
+          req.query.end,
+          req.query.interval
+        ],
+        ENDPOINTS.METRICS_COOLING,
+        getCooling
       )
     },
     {
