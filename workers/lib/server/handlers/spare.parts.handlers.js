@@ -29,11 +29,19 @@ async function _loadSparePart (ctx, partId) {
   return flattenRpcResults(results).find(t => t?.type !== WORK_ORDER_THING_TYPE) || null
 }
 
+async function _loadSparePartByCode (ctx, code) {
+  const results = await ctx.dataProxy.requestData('listThings', {
+    query: { code }
+  })
+  return flattenRpcResults(results).find(t => t?.type !== WORK_ORDER_THING_TYPE) || null
+}
+
 async function updateSparePart (ctx, req) {
   const { id } = req.params
-  const { rackId, workOrderId, info } = req.body
+  const { rackId, workOrderId, info, remarks, replacesPartCode } = req.body
 
-  const movesPart = info.location !== undefined || info.status !== undefined
+  const isReplacement = typeof replacesPartCode === 'string' && replacesPartCode.length > 0
+  const movesPart = info.location !== undefined || info.status !== undefined || isReplacement
 
   if (movesPart && !workOrderId) {
     const err = new Error('ERR_PART_MOVE_REQUIRES_WO')
@@ -43,10 +51,12 @@ async function updateSparePart (ctx, req) {
 
   let workOrderCode
   let part
+  let replacedPart
   if (movesPart) {
-    const [wo, p] = await Promise.all([
+    const [wo, p, rp] = await Promise.all([
       _loadWorkOrder(ctx, workOrderId),
-      _loadSparePart(ctx, id)
+      _loadSparePart(ctx, id),
+      isReplacement ? _loadSparePartByCode(ctx, replacesPartCode) : Promise.resolve(null)
     ])
     if (!wo) {
       const err = new Error('ERR_WORK_ORDER_NOT_FOUND')
@@ -63,8 +73,21 @@ async function updateSparePart (ctx, req) {
       err.statusCode = 404
       throw err
     }
+    if (isReplacement) {
+      if (replacesPartCode === p.code) {
+        const err = new Error('ERR_REPLACES_PART_SELF')
+        err.statusCode = 400
+        throw err
+      }
+      if (!rp) {
+        const err = new Error('ERR_REPLACES_PART_NOT_FOUND')
+        err.statusCode = 400
+        throw err
+      }
+    }
     workOrderCode = wo.code
     part = p
+    replacedPart = rp
   }
 
   const { permissions } = await ctx.authLib.getTokenPerms(req._info.authToken)
@@ -97,6 +120,7 @@ async function updateSparePart (ctx, req) {
     throw err
   }
 
+  const moveRemarks = remarks ?? info.reason
   const moveEntry = {
     partId: id,
     partCode: part.code,
@@ -106,9 +130,14 @@ async function updateSparePart (ctx, req) {
     toLocation: info.location ?? part.info?.location ?? null,
     fromStatus: part.info?.status ?? null,
     toStatus: info.status ?? part.info?.status ?? null,
-    role: 'original',
+    role: isReplacement ? 'replacement' : 'original',
     ts: Date.now(),
     user: voter
+  }
+  if (moveRemarks !== undefined && moveRemarks !== null) moveEntry.remarks = moveRemarks
+  if (isReplacement) {
+    moveEntry.replacesPartCode = replacesPartCode
+    moveEntry.replacesPartId = replacedPart.id
   }
 
   const woRackId = await getWorkOrderRackId(ctx)
