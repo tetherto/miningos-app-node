@@ -135,7 +135,28 @@ const update = {
           notes: { type: 'string', maxLength: 4000 },
           remarks: { type: 'string', maxLength: 4000 },
           site: { type: 'string', maxLength: 200 },
-          location: { type: 'string', maxLength: 200 }
+          location: { type: 'string', maxLength: 200 },
+          partsMoves: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: true,
+              required: ['role'],
+              properties: {
+                role: { type: 'string' },
+                partId: { type: 'string' },
+                partCode: { type: 'string' },
+                deviceType: { type: 'string' },
+                fromLocation: { type: ['string', 'null'] },
+                toLocation: { type: ['string', 'null'] },
+                reason: { type: ['string', 'null'] },
+                replacesPartCode: { type: 'string' },
+                partStatus: { type: 'string' },
+                ts: { type: 'number' },
+                user: { type: 'string' }
+              }
+            }
+          }
         }
       }
     }
