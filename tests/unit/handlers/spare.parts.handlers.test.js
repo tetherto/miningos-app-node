@@ -58,7 +58,7 @@ test('handlers: updateSparePart rejects location/status changes without workOrde
     () => handlers.updateSparePart(ctx, {
       ...userMeta(),
       params: { id: PART.id },
-      body: { rackId: PART_RACK, info: { location: 'Site Lab' } }
+      body: { rackId: PART_RACK, info: { location: 'site.lab' } }
     }),
     /ERR_PART_MOVE_REQUIRES_WO/
   )
@@ -70,7 +70,7 @@ test('handlers: updateSparePart rejects when WO is closed', async (t) => {
     () => handlers.updateSparePart(ctx, {
       ...userMeta(),
       params: { id: PART.id },
-      body: { rackId: PART_RACK, workOrderId: 'wo-1', info: { location: 'Site Lab' } }
+      body: { rackId: PART_RACK, workOrderId: 'wo-1', info: { location: 'site.lab' } }
     }),
     /ERR_WO_INVALID_STATUS_TRANSITION/
   )
@@ -82,7 +82,7 @@ test('handlers: updateSparePart 404s when WO is missing', async (t) => {
     () => handlers.updateSparePart(ctx, {
       ...userMeta(),
       params: { id: PART.id },
-      body: { rackId: PART_RACK, workOrderId: 'wo-missing', info: { location: 'Site Lab' } }
+      body: { rackId: PART_RACK, workOrderId: 'wo-missing', info: { location: 'site.lab' } }
     }),
     /ERR_WORK_ORDER_NOT_FOUND/
   )
@@ -93,14 +93,14 @@ test('handlers: updateSparePart pushes part update + WO partsMoves append on a v
   const out = await handlers.updateSparePart(ctx, {
     ...userMeta(),
     params: { id: PART.id },
-    body: { rackId: PART_RACK, workOrderId: 'wo-1', info: { location: 'Site Lab' } }
+    body: { rackId: PART_RACK, workOrderId: 'wo-1', info: { location: 'site.lab' } }
   })
 
   t.is(pushed.length, 2, 'two actions pushed (part + WO)')
 
   const partAction = pushed.find(p => p.params[0].rackId === PART_RACK)
   t.is(partAction.action, 'updateThing')
-  t.is(partAction.params[0].info.location, 'Site Lab')
+  t.is(partAction.params[0].info.location, 'site.lab')
   t.is(partAction.params[0].info.workOrderId, 'wo-1', 'workOrderId injected into part info')
   t.is(partAction.params[0].info.workOrderCode, 'IVI-2-0001', 'workOrderCode injected too')
 
@@ -110,7 +110,7 @@ test('handlers: updateSparePart pushes part update + WO partsMoves append on a v
   t.is(moves[0].partId, PART.id)
   t.is(moves[0].partCode, PART.code)
   t.is(moves[0].fromLocation, 'Lab')
-  t.is(moves[0].toLocation, 'Site Lab')
+  t.is(moves[0].toLocation, 'site.lab')
   t.is(moves[0].workOrderCode, 'IVI-2-0001')
 
   t.ok(out.move, 'response includes the move record')
@@ -135,7 +135,7 @@ test('handlers: updateSparePart aborts WO append when the part pushAction return
     () => handlers.updateSparePart(ctx, {
       ...userMeta(),
       params: { id: PART.id },
-      body: { rackId: PART_RACK, workOrderId: 'wo-1', info: { location: 'Site Lab' } }
+      body: { rackId: PART_RACK, workOrderId: 'wo-1', info: { location: 'site.lab' } }
     }),
     /ERR_PART_UPDATE_PUSH_FAILED:ERR_RACK_DOWN/
   )
@@ -211,7 +211,7 @@ test('handlers: registerSparePart fires part + Type-1 WO pushActions in parallel
   t.is(woAction.action, 'registerThing')
   t.is(woAction.params[0].info.type, 1, 'Type-1 WO')
   t.is(woAction.params[0].info.partsMoves[0].fromLocation, null)
-  t.is(woAction.params[0].info.partsMoves[0].toLocation, 'Site Warehouse')
+  t.is(woAction.params[0].info.partsMoves[0].toLocation, 'site.warehouse')
   t.is(woAction.params[0].info.partsMoves[0].partId, out.partId, 'WO partsMoves entry links to the pre-generated partId')
 
   t.ok(out.partId, 'returns partId')
@@ -229,6 +229,58 @@ test('handlers: registerSparePart surfaces ork-side errors in the response', asy
   })
   t.alike(out.errors.sort(), ['ERR_RACK_DOWN', 'ERR_RACK_DOWN'])
   t.is(out.partActionId, null)
+})
+
+test('handlers: registerSparePartsBatch creates one shared register WO carrying every part and attaches the note', async (t) => {
+  const { ctx, pushed } = buildRegisterCtx()
+  const out = await handlers.registerSparePartsBatch(ctx, {
+    ...userMeta(),
+    body: {
+      rackId: PART_RACK,
+      note: 'Pallets 1-3',
+      parts: [
+        { deviceType: 'psu', deviceModel: 'PSU-A', serialNum: 'SN-1' },
+        { deviceType: 'psu', deviceModel: 'PSU-A', serialNum: 'SN-2' },
+        { deviceType: 'psu', deviceModel: 'PSU-A', serialNum: 'SN-3' }
+      ]
+    }
+  })
+
+  t.is(pushed.length, 4, 'three part actions + one shared WO action')
+  const woAction = pushed.find(p => p.params[0].rackId === WO_RACK)
+  const partActions = pushed.filter(p => p.params[0].rackId === PART_RACK)
+  t.is(partActions.length, 3, 'one registerThing per part')
+
+  const woInfo = woAction.params[0].info
+  t.is(woInfo.type, 1, 'single Type-1 register WO')
+  t.is(woInfo.deviceCount, 3)
+  t.is(woInfo.partsMoves.length, 3, 'register WO carries every part')
+  t.is(woInfo.note, 'Pallets 1-3', 'note recorded on the register WO')
+  t.alike(woInfo.partsMoves.map(m => m.partId).sort(), out.parts.map(p => p.partId).sort(), 'WO links every returned part')
+
+  for (const pa of partActions) {
+    t.is(pa.params[0].info.note, 'Pallets 1-3', 'note attached to each registered part')
+  }
+  t.is(out.parts.length, 3, 'returns a result row per part')
+  t.alike(out.errors, [], 'no errors on happy path')
+})
+
+test('handlers: registerSparePartsBatch rejects the whole batch if any part is invalid', async (t) => {
+  const { ctx, pushed } = buildRegisterCtx()
+  await t.exception(
+    () => handlers.registerSparePartsBatch(ctx, {
+      ...userMeta(),
+      body: {
+        rackId: PART_RACK,
+        parts: [
+          { deviceType: 'psu', deviceModel: 'PSU-A', serialNum: 'SN-1' },
+          { deviceType: 'psu', deviceModel: 'PSU-A' }
+        ]
+      }
+    }),
+    /ERR_SERIAL_NUM_REQUIRED/
+  )
+  t.is(pushed.length, 0, 'nothing pushed when any part fails validation')
 })
 
 function listFlow ({ items = [], total = 0 } = {}) {
@@ -265,9 +317,9 @@ test('handlers: listSpareParts honors an explicit type filter (overrides $ne def
 test('handlers: listSpareParts maps location/status shortcuts to info.* mingo paths', async (t) => {
   const flow = listFlow()
   await handlers.listSpareParts(flow.ctx, {
-    query: { location: 'Site Lab', status: 'faulty' }
+    query: { location: 'site.lab', status: 'faulty' }
   })
-  t.is(flow.lastList.query['info.location'], 'Site Lab')
+  t.is(flow.lastList.query['info.location'], 'site.lab')
   t.is(flow.lastList.query['info.status'], 'faulty')
 })
 
@@ -290,10 +342,10 @@ test('handlers: listSpareParts ?q escapes regex metacharacters', async (t) => {
 test('handlers: listSpareParts ANDs location/status/q in a single query payload', async (t) => {
   const flow = listFlow()
   await handlers.listSpareParts(flow.ctx, {
-    query: { location: 'Site Lab', status: 'faulty', q: 'PS-' }
+    query: { location: 'site.lab', status: 'faulty', q: 'PS-' }
   })
   const q = flow.lastList.query
-  t.is(q['info.location'], 'Site Lab')
+  t.is(q['info.location'], 'site.lab')
   t.is(q['info.status'], 'faulty')
   t.ok(Array.isArray(q.$or) && q.$or.length === 3)
 })

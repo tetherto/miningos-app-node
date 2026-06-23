@@ -40,9 +40,17 @@ class LogDownloader {
 
     this._netFac.swarm.on('connection', (socket) => {
       for (const [, entry] of this._downloads) {
-        entry.core.replicate(socket)
+        this._replicateCore(entry, socket)
       }
     })
+  }
+
+  // Replicates a core onto a socket exactly once. Hyperswarm reuses peer
+  // connections across topics, so new cores must also reach open sockets.
+  _replicateCore (entry, socket) {
+    if (entry.seenSockets.has(socket)) return
+    entry.seenSockets.add(socket)
+    entry.core.replicate(socket)
   }
 
   /**
@@ -60,7 +68,13 @@ class LogDownloader {
     await core.ready()
 
     const discoveryKeyHex = core.discoveryKey.toString('hex')
-    this._downloads.set(coreKeyHex, { core, discoveryKeyHex })
+    const entry = { core, discoveryKeyHex, seenSockets: new WeakSet() }
+    this._downloads.set(coreKeyHex, entry)
+
+    // No 'connection' event fires for reused peer sockets — replicate explicitly
+    for (const socket of this._netFac.swarm.connections || []) {
+      this._replicateCore(entry, socket)
+    }
 
     const discovery = this._netFac.swarm.join(core.discoveryKey, { server: false, client: true })
     const peersDone = core.findingPeers()

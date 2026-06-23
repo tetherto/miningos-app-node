@@ -45,11 +45,11 @@ const AUTH_PERMISSIONS = {
 
 const WORK_ORDER_THING_TYPE = 'inventory-work_order'
 
-const WORK_ORDER_TYPES = { REGISTER: 1, REGULAR: 2 }
+const WORK_ORDER_TYPES = { REGISTER: 1, MOVE: 2, MICROBT_MINER: 3, MICROBT_NON_MINER: 4 }
 const WORK_ORDER_TERMINAL_STATUSES = ['closed', 'cancelled']
 const WORK_ORDER_VALID_DEVICE_TYPES = ['miner', 'psu', 'hashboard', 'controller']
-const MINER_LOCATIONS = ['Site Warehouse', 'Site Lab', 'Miner Room', 'Vendor', 'Scrapped', 'Disposed']
-const SPARE_PART_INITIAL_LOCATION = 'Site Warehouse'
+const MINER_LOCATIONS = ['workshop.warehouse', 'workshop.lab', 'site.warehouse', 'site.lab', 'site.container', 'miner.room', 'vendor', 'acme.container', 'scrapped', 'disposed', 'unknown']
+const SPARE_PART_INITIAL_LOCATION = 'site.warehouse'
 const FILE_TYPES = { WORK_ORDER: 'work_order' }
 const WORK_ORDER_FILE_MAX_BYTES_DEFAULT = 10 * 1024 * 1024
 const WORK_ORDER_FILE_COUNT_CAP_DEFAULT = 20
@@ -152,6 +152,7 @@ const ENDPOINTS = {
   POOLS_CONTAINERS_STATS: '/auth/pools/stats/containers',
 
   SITE_STATUS_LIVE: '/auth/site/status/live',
+  SITE_POWER_CONSUMPTION: '/auth/site/power-consumption',
 
   // Generic Config endpoints (type passed as parameter)
   // Note: Config mutations (register, update, delete) go through pushAction endpoint
@@ -169,6 +170,7 @@ const ENDPOINTS = {
   METRICS_POWER_MODE: '/auth/metrics/power-mode',
   METRICS_POWER_MODE_TIMELINE: '/auth/metrics/power-mode/timeline',
   METRICS_TEMPERATURE: '/auth/metrics/temperature',
+  METRICS_COOLING: '/auth/metrics/cooling',
   METRICS_CONTAINER_TELEMETRY: '/auth/metrics/containers/:id',
   METRICS_CONTAINER_HISTORY: '/auth/metrics/containers/:id/history',
 
@@ -198,6 +200,7 @@ const ENDPOINTS = {
   ENERGY_AVAILABLE: '/auth/energy/available',
   // Work Order endpoints
   WORK_ORDERS: '/auth/work-orders',
+  WORK_ORDERS_BATCH: '/auth/work-orders/batch',
   WORK_ORDER_BY_ID: '/auth/work-orders/:id',
   WORK_ORDER_AUDIT: '/auth/work-orders/:id/audit',
   WORK_ORDER_LOG: '/auth/work-orders/:id/log',
@@ -208,13 +211,29 @@ const ENDPOINTS = {
   WORK_ORDER_CANCEL: '/auth/work-orders/:id/cancel',
   // Spare Part endpoints
   SPARE_PARTS: '/auth/spare-parts',
+  SPARE_PARTS_BATCH: '/auth/spare-parts/batch',
   SPARE_PART_BY_ID: '/auth/spare-parts/:id',
   SPARE_PART_REPAIR_HISTORY: '/auth/spare-parts/:id/repair-history',
   // Work Order export
-  WORK_ORDER_EXPORT: '/auth/work-orders/:id/export'
+  WORK_ORDER_EXPORT: '/auth/work-orders/:id/export',
+  WORK_ORDER_EXPORT_RMA: '/auth/work-orders/export/rma'
 }
 
 const WORK_ORDER_EXPORT_FORMATS = ['pdf', 'csv', 'docx']
+
+const RMA_COLUMNS = [
+  'Ticket',
+  'Repaired type',
+  'Repaired Miner Sn',
+  'Repaired Mac/HB SN/PSU SN',
+  'Replaced Mac/HB SN/PSU SN',
+  'Repaired Analyze',
+  'Repaired Treatment',
+  'Remark',
+  'Miner Model',
+  'Repair Date',
+  'Engineer'
+]
 
 const HTTP_METHODS = {
   GET: 'GET',
@@ -285,7 +304,25 @@ const WORKER_TYPES = {
   POWERMETER: 'powermeter',
   MINERPOOL: 'minerpool',
   MEMPOOL: 'mempool',
-  ELECTRICITY: 'electricity'
+  ELECTRICITY: 'electricity',
+  // The Siemens DCS worker registers its thing type as 'dcs-siemens'
+  // (WrkDCSBase 'dcs' + '-siemens'); the stat log is tailed by this type.
+  DCS: 'dcs-siemens'
+}
+
+// BE-10 — historical cooling metric fields produced by the DCS worker stat spec
+// (miningos-wrk-dcs-siemens/workers/lib/stats.js -> libStats.specs.dcs.ops). Each
+// is a per-interval average; chiller_running is averaged over [0,1] -> uptime ratio.
+const COOLING_METRICS_AGGR_FIELDS = {
+  miner_supply_temp_c: 1,
+  miner_return_temp_c: 1,
+  miner_flow_m3h: 1,
+  system_pressure_bar: 1,
+  hvac_supply_temp_c: 1,
+  hvac_return_temp_c: 1,
+  chiller_running: 1,
+  towers_running: 1,
+  pumps_running: 1
 }
 
 const SEVERITY_LEVELS = new Set(['critical', 'high', 'medium', 'low'])
@@ -294,11 +331,13 @@ const ALERTS_DEFAULT_LIMIT = 100
 const ALERTS_MAX_SITE_LIMIT = 200
 const ALERTS_MAX_HISTORY_LIMIT = 1000
 
-const SITE_ALERTS_FILTER_FIELDS = ['severity', 'type', 'container', 'deviceId']
-const SITE_ALERTS_SEARCH_FIELDS = ['id', 'code', 'container']
+// `message` carries the per-alert device/equipment tag (e.g. 'FIT-7513'), so it
+// is filterable and searchable on both endpoints.
+const SITE_ALERTS_FILTER_FIELDS = ['severity', 'type', 'container', 'deviceId', 'message']
+const SITE_ALERTS_SEARCH_FIELDS = ['id', 'code', 'container', 'message', 'description']
 
-const HISTORY_FILTER_FIELDS = ['severity', 'code', 'deviceType', 'container', 'deviceId', 'tags']
-const HISTORY_SEARCH_FIELDS = ['name', 'description', 'position', 'code']
+const HISTORY_FILTER_FIELDS = ['severity', 'code', 'deviceType', 'container', 'deviceId', 'tags', 'message']
+const HISTORY_SEARCH_FIELDS = ['name', 'description', 'position', 'code', 'message']
 
 const POOL_ALERT_TYPES = [
   'all_pools_dead',
@@ -399,6 +438,7 @@ const COOLING_SYSTEM_PROJECTIONS = {
       'last.snap.stats.dcs_specific.equipment.valves': 1,
       'last.snap.stats.dcs_specific.equipment.tanks': 1,
       'last.snap.stats.dcs_specific.equipment.vibration_sensors': 1,
+      'last.snap.stats.dcs_specific.equipment.vibration_switches': 1,
       'last.snap.stats.dcs_specific.equipment.fans': 1,
       'last.snap.config.cooling_system': 1
     },
@@ -413,6 +453,7 @@ const COOLING_SYSTEM_PROJECTIONS = {
       'last.snap.stats.dcs_specific.equipment.valves': 1,
       'last.snap.stats.dcs_specific.equipment.tanks': 1,
       'last.snap.stats.dcs_specific.equipment.vibration_sensors': 1,
+      'last.snap.stats.dcs_specific.equipment.vibration_switches': 1,
       'last.snap.stats.dcs_specific.equipment.fans': 1,
       'last.snap.stats.flow': 1,
       'last.snap.config.cooling_system': 1,
@@ -441,6 +482,7 @@ const COOLING_SYSTEM_PROJECTIONS = {
       'last.snap.stats.dcs_specific.equipment.levels': 1,
       'last.snap.stats.dcs_specific.equipment.cooling_towers': 1,
       'last.snap.stats.dcs_specific.equipment.vibration_sensors': 1,
+      'last.snap.stats.dcs_specific.equipment.vibration_switches': 1,
       'last.snap.config.cooling_system': 1
     },
     layout: {
@@ -457,6 +499,7 @@ const COOLING_SYSTEM_PROJECTIONS = {
       'last.snap.stats.dcs_specific.equipment.tanks': 1,
       'last.snap.stats.dcs_specific.equipment.flow_switches': 1,
       'last.snap.stats.dcs_specific.equipment.vibration_sensors': 1,
+      'last.snap.stats.dcs_specific.equipment.vibration_switches': 1,
       'last.snap.config.cooling_system': 1
     },
     ambient: {
@@ -509,6 +552,20 @@ const SITE_OVERVIEW_AGGR_FIELDS = {
   power_mode_high_cnt: 1,
   hashrate_mhs_5m_active_container_group_cnt: 1
 }
+
+const SITE_STATUS_LIVE_AGGR_FIELDS = {
+  hashrate_mhs_1m_sum_aggr: 1,
+  nominal_hashrate_mhs_sum_aggr: 1,
+  alerts_aggr: 1,
+  online_or_minor_error_miners_amount_aggr: 1,
+  not_mining_miners_amount_aggr: 1,
+  offline_or_sleeping_miners_amount_aggr: 1,
+  hashrate_mhs_1m_cnt_aggr: 1,
+  container_nominal_miner_capacity_sum_aggr: 1
+}
+
+// Ignore tail-log entries older than this (header UI uses start = now - 10min)
+const SITE_STATUS_LIVE_WINDOW_MS = 10 * 60 * 1000
 
 // DCS power meter field projections for site overview
 const DCS_POWER_METER_FIELDS = {
@@ -760,11 +817,14 @@ module.exports = {
   COOLING_SYSTEM_PROJECTIONS,
   ENERGY_SYSTEM_PROJECTIONS,
   SITE_OVERVIEW_AGGR_FIELDS,
+  SITE_STATUS_LIVE_AGGR_FIELDS,
+  SITE_STATUS_LIVE_WINDOW_MS,
   DCS_POWER_METER_FIELDS,
   DCS_EFFICIENCY_FIELDS,
   EXPLORER_RACK_AGGR_FIELDS,
   EXPLORER_RACK_DEFAULT_LIMIT,
   EXPLORER_RACK_MAX_LIMIT,
+  COOLING_METRICS_AGGR_FIELDS,
   LOG_FIELDS,
   ELECTRICITY_EXT_DATA_KEYS,
   WORK_ORDER_THING_TYPE,
@@ -778,5 +838,6 @@ module.exports = {
   WORK_ORDER_FILE_COUNT_CAP_DEFAULT,
   WORK_ORDER_FILE_MIME_ALLOWLIST_DEFAULT,
   WORK_ORDER_EXPORT_FORMATS,
+  RMA_COLUMNS,
   MICROSOFT_AUTH_SCOPE
 }

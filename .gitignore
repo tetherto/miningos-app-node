@@ -19,5 +19,10 @@ tests/integration/db/*
 tests/integration/config/*
 tests/integration/status/*
 tests/integration/store/*
+tests/e2e/db/*
+tests/e2e/config/*
+tests/e2e/status/*
+tests/e2e/store/*
+tests/e2e/tmp/*
 coverage
 .scannerwork

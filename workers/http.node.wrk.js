@@ -3,6 +3,7 @@
 const async = require('async')
 const WebsocketPlugin = require('@fastify/websocket')
 const MultipartPlugin = require('@fastify/multipart')
+const fastifyPlugin = require('fastify-plugin')
 const { WORK_ORDER_FILE_MAX_BYTES_DEFAULT, MICROSOFT_AUTH_SCOPE } = require('./lib/constants')
 const TetherWrkBase = require('@tetherto/tether-wrk-base/workers/base.wrk.tether')
 const AuthLib = require('./lib/auth')
@@ -112,6 +113,20 @@ class WrkServerHttp extends TetherWrkBase {
         httpd.addPlugin([MultipartPlugin, {
           limits: { fileSize: this.conf.workOrderFileMaxBytes || WORK_ORDER_FILE_MAX_BYTES_DEFAULT, files: 1 }
         }])
+
+        // Tolerate empty JSON bodies (Fastify rejects them by default);
+        // routes that require a body still fail schema validation
+        httpd.addPlugin([fastifyPlugin(async (instance) => {
+          instance.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
+            if (body === '' || body === undefined) return done(null, undefined)
+            try {
+              done(null, JSON.parse(body))
+            } catch (err) {
+              err.statusCode = 400
+              done(err)
+            }
+          })
+        }), {}])
 
         libServer.routes(this).forEach(r => {
           httpd.addRoute(r)

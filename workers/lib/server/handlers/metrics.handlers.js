@@ -10,12 +10,17 @@ const {
   LOG_KEYS,
   WORKER_TAGS,
   DEVICE_LIST_FIELDS,
-  LOG_FIELDS
+  LOG_FIELDS,
+  COOLING_METRICS_AGGR_FIELDS
 } = require('../../constants')
 const {
   getStartOfDay,
   safeDiv
 } = require('../../utils')
+const {
+  isCentralDCSEnabled,
+  getDCSTag
+} = require('../../dcs.utils')
 const {
   parseEntryTs,
   validateStartEnd,
@@ -860,6 +865,91 @@ function processContainerHistoryData (results, containerId) {
   return log
 }
 
+const COOLING_INTERVAL_ALIASES = { hourly: '1h', daily: '1d', weekly: '1w' }
+
+const round1 = (v) => (v == null || !Number.isFinite(v) ? null : Math.round(v * 10) / 10)
+
+async function getCooling (ctx, req) {
+  if (!isCentralDCSEnabled(ctx)) {
+    throw new Error('ERR_FEATURE_NOT_ENABLED')
+  }
+
+  const { start, end } = validateStartEnd(req)
+
+  const requested = COOLING_INTERVAL_ALIASES[req.query.interval] || req.query.interval
+  const interval = resolveInterval(start, end, requested)
+  const config = getIntervalConfig(interval)
+
+  const rpcPayload = {
+    key: config.key,
+    type: WORKER_TYPES.DCS,
+    tag: getDCSTag(ctx),
+    aggrFields: COOLING_METRICS_AGGR_FIELDS,
+    start,
+    end
+  }
+  if (config.groupRange) {
+    rpcPayload.groupRange = config.groupRange
+  }
+
+  const results = await ctx.dataProxy.requestData(RPC_METHODS.TAIL_LOG, rpcPayload)
+
+  const log = processCoolingData(results, config.groupRange)
+  const summary = calculateCoolingSummary(log)
+
+  return { interval, log, summary }
+}
+
+function processCoolingData (results, groupRange) {
+  const points = []
+  for (const entry of iterateRpcEntries(results)) {
+    const rawTs = parseEntryTs(entry.ts || entry.timestamp)
+    const ts = groupRange && rawTs ? getStartOfDay(rawTs) : rawTs
+    if (!ts) continue
+
+    const read = (field) => {
+      const v = entry[field] ?? entry.aggrFields?.[field]
+      return v == null || !Number.isFinite(Number(v)) ? null : Number(v)
+    }
+
+    const supply = read('miner_supply_temp_c')
+    const ret = read('miner_return_temp_c')
+    const chillerRunning = read('chiller_running')
+
+    points.push({
+      ts: Number(ts),
+      minerSupplyTempC: round1(supply),
+      minerReturnTempC: round1(ret),
+      minerDeltaTC: (supply != null && ret != null) ? round1(ret - supply) : null,
+      minerFlowM3h: round1(read('miner_flow_m3h')),
+      systemPressureBar: round1(read('system_pressure_bar')),
+      hvacSupplyTempC: round1(read('hvac_supply_temp_c')),
+      hvacReturnTempC: round1(read('hvac_return_temp_c')),
+      chillerUptimePct: chillerRunning == null ? null : Math.round(chillerRunning * 1000) / 10,
+      towersRunning: round1(read('towers_running')),
+      pumpsRunning: round1(read('pumps_running'))
+    })
+  }
+  return points.sort((a, b) => a.ts - b.ts)
+}
+
+function calculateCoolingSummary (log) {
+  const avgOf = (key) => {
+    const vals = log.map(e => e[key]).filter(v => v != null)
+    return vals.length ? round1(vals.reduce((a, b) => a + b, 0) / vals.length) : null
+  }
+  return {
+    avgMinerSupplyTempC: avgOf('minerSupplyTempC'),
+    avgMinerReturnTempC: avgOf('minerReturnTempC'),
+    avgMinerDeltaTC: avgOf('minerDeltaTC'),
+    avgMinerFlowM3h: avgOf('minerFlowM3h'),
+    avgSystemPressureBar: avgOf('systemPressureBar'),
+    avgHvacSupplyTempC: avgOf('hvacSupplyTempC'),
+    avgHvacReturnTempC: avgOf('hvacReturnTempC'),
+    chillerUptimePct: avgOf('chillerUptimePct')
+  }
+}
+
 module.exports = {
   ...require('../../metrics.utils'),
   getHashrate,
@@ -889,5 +979,8 @@ module.exports = {
   processContainerMiners,
   processContainerSensorSnapshot,
   getContainerHistory,
-  processContainerHistoryData
+  processContainerHistoryData,
+  getCooling,
+  processCoolingData,
+  calculateCoolingSummary
 }

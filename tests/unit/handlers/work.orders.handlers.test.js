@@ -30,12 +30,12 @@ function buildSubmitFlow ({ rackId = RACK, parts = [] } = {}) {
   return { ctx, get lastPush () { return lastPush } }
 }
 
-test('handlers: createWorkOrder Type 2 resolves part and forwards body as info', async (t) => {
+test('handlers: createWorkOrder Type 3 resolves part and forwards body as info', async (t) => {
   const flow = buildSubmitFlow({ parts: [{ id: 'part-1', code: 'PSU-1', type: 'inventory-miner_part-psu', info: { serialNum: 'AM-1' } }] })
   await handlers.createWorkOrder(flow.ctx, {
     ...userMeta(),
     body: {
-      type: 2,
+      type: 3,
       deviceType: 'miner',
       deviceModel: 'antminer-s19xp',
       deviceIdentifier: 'AM-1',
@@ -46,6 +46,71 @@ test('handlers: createWorkOrder Type 2 resolves part and forwards body as info',
   t.is(flow.lastPush.params[0].info.deviceIdentifier, 'AM-1')
   t.is(flow.lastPush.params[0].info.partsMoves[0].partId, 'part-1')
   t.is(flow.lastPush.params[0].info.partsMoves[0].role, 'diagnosis')
+})
+
+test('handlers: createWorkOrder Type 2 (move) seeds a move parts-move with from/to locations', async (t) => {
+  const flow = buildSubmitFlow({ parts: [{ id: 'part-1', code: 'PSU-1', type: 'inventory-miner_part-psu', info: { serialNum: 'SN-1', location: 'site.lab' } }] })
+  await handlers.createWorkOrder(flow.ctx, {
+    ...userMeta(),
+    body: {
+      type: 2,
+      deviceType: 'psu',
+      deviceModel: 'PSU-1',
+      deviceIdentifier: 'SN-1',
+      info: { location: 'site.warehouse' }
+    }
+  })
+  const move = flow.lastPush.params[0].info.partsMoves[0]
+  t.is(move.role, 'move')
+  t.is(move.partId, 'part-1')
+  t.is(move.fromLocation, 'site.lab')
+  t.is(move.toLocation, 'site.warehouse')
+})
+
+test('handlers: createWorkOrder Type 2 (move) relocates the part on its own rack', async (t) => {
+  const pushed = []
+  const ctx = createMockCtxWithOrks([{ rpcPublicKey: 'k' }], async (_k, method, params) => {
+    if (method === 'pushAction') { pushed.push(params); return { id: 'a', errors: [] } }
+    if (method === 'listThings') return [{ id: 'part-1', type: 'inventory-miner_part-psu', rack: 'psu-rack-1', info: { location: 'site.lab' } }]
+    return null
+  })
+  ctx.authLib = mockAuthLib
+  ctx._workOrderRackId = RACK
+  await handlers.createWorkOrder(ctx, {
+    ...userMeta(),
+    body: { type: 2, deviceType: 'psu', deviceModel: 'P', deviceIdentifier: 'SN-1', info: { location: 'site.warehouse' } }
+  })
+  const partPush = pushed.find(p => p.action === 'updateThing')
+  t.is(partPush.params[0].rackId, 'psu-rack-1', 'relocation targets the part rack')
+  t.is(partPush.params[0].info.location, 'site.warehouse', 'part moved to the destination')
+})
+
+test('handlers: createWorkOrdersBatch Type 2 (move) relocates every part', async (t) => {
+  const pushed = []
+  const ctx = createMockCtxWithOrks([{ rpcPublicKey: 'k' }], async (_k, method, params) => {
+    if (method === 'pushAction') { pushed.push(params); return { id: 'a', errors: [] } }
+    if (method === 'listThings') {
+      const sn = (params.query?.$or || []).map(c => c['info.serialNum']).find(Boolean)
+      return [{ id: sn, type: 'inventory-miner_part-psu', rack: 'psu-rack-1', info: { location: 'site.warehouse' } }]
+    }
+    return null
+  })
+  ctx.authLib = mockAuthLib
+  ctx._workOrderRackId = RACK
+  await handlers.createWorkOrdersBatch(ctx, {
+    ...userMeta(),
+    body: {
+      type: 2,
+      devices: [
+        { deviceType: 'psu', deviceModel: 'P', deviceIdentifier: 'SN-1' },
+        { deviceType: 'psu', deviceModel: 'P', deviceIdentifier: 'SN-2' }
+      ],
+      info: { location: 'site.miner-room' }
+    }
+  })
+  const partPushes = pushed.filter(p => p.action === 'updateThing')
+  t.is(partPushes.length, 2, 'one relocation per device')
+  t.is(partPushes[0].params[0].info.location, 'site.miner-room')
 })
 
 test('handlers: createWorkOrder merges info.notes, info.remarks, info.site, info.location into thing info', async (t) => {
@@ -61,7 +126,7 @@ test('handlers: createWorkOrder merges info.notes, info.remarks, info.site, info
         notes: 'batch registration',
         remarks: 'test remark',
         site: 'Ivinhema',
-        location: 'Site Warehouse'
+        location: 'site.warehouse'
       }
     }
   })
@@ -69,7 +134,7 @@ test('handlers: createWorkOrder merges info.notes, info.remarks, info.site, info
   t.is(info.notes, 'batch registration')
   t.is(info.remarks, 'test remark')
   t.is(info.site, 'Ivinhema')
-  t.is(info.location, 'Site Warehouse')
+  t.is(info.location, 'site.warehouse')
   t.is(info.deviceType, 'psu', 'top-level fields still present')
   t.ok(!info.info, 'no nested info.info')
 })
@@ -90,10 +155,73 @@ test('handlers: createWorkOrder 400s ERR_PART_NOT_FOUND when deviceIdentifier re
   await t.exception(
     () => handlers.createWorkOrder(flow.ctx, {
       ...userMeta(),
-      body: { type: 2, deviceType: 'psu', deviceModel: 'm', deviceIdentifier: 'unknown-sn', issue: 'i' }
+      body: { type: 3, deviceType: 'psu', deviceModel: 'm', deviceIdentifier: 'unknown-sn', issue: 'i' }
     }),
     /ERR_PART_NOT_FOUND/
   )
+})
+
+test('handlers: createWorkOrdersBatch builds one WO with a parts-move per device, first device as summary', async (t) => {
+  const parts = [
+    { id: 'part-1', code: 'WMM-1', type: 'inventory-miner_part-controller', info: { serialNum: 'WMM63S-2024-04829', location: 'site.warehouse' } },
+    { id: 'part-2', code: 'WMM-2', type: 'inventory-miner_part-controller', info: { serialNum: 'WMM63S-2024-04830', location: 'site.warehouse' } },
+    { id: 'part-3', code: 'WMM-3', type: 'inventory-miner_part-controller', info: { serialNum: 'WMM63S-2024-04831', location: 'site.warehouse' } }
+  ]
+  let lastPush
+  const handler = async (_key, method, params) => {
+    if (method === 'pushAction') { lastPush = params; return { id: 'action-1', errors: [] } }
+    if (method === 'listThings') {
+      const or = params.query?.$or || []
+      const sn = or.map(c => c.id || c.code || c['info.serialNum'] || c['info.macAddress']).find(Boolean)
+      return parts.filter(p => p.info.serialNum === sn)
+    }
+    return null
+  }
+  const ctx = createMockCtxWithOrks([{ rpcPublicKey: 'k' }], handler)
+  ctx.authLib = mockAuthLib
+  ctx._workOrderRackId = RACK
+
+  await handlers.createWorkOrdersBatch(ctx, {
+    ...userMeta(),
+    body: {
+      type: 2,
+      devices: [
+        { deviceType: 'miner', deviceModel: 'whatsminer-m63s', deviceIdentifier: 'WMM63S-2024-04829' },
+        { deviceType: 'miner', deviceModel: 'whatsminer-m63s', deviceIdentifier: 'WMM63S-2024-04830' },
+        { deviceType: 'miner', deviceModel: 'whatsminer-m63s', deviceIdentifier: 'WMM63S-2024-04831' }
+      ],
+      info: { location: 'site.miner-room' }
+    }
+  })
+
+  const info = lastPush.params[0].info
+  t.is(lastPush.action, 'registerThing')
+  t.is(info.deviceCount, 3, 'records device count for the scope badge')
+  t.is(info.deviceIdentifier, 'WMM63S-2024-04829', 'first device is the summary identifier')
+  t.is(info.partsMoves.length, 3, 'one parts-move per device')
+  t.alike(info.partsMoves.map(m => m.deviceIdentifier), ['WMM63S-2024-04829', 'WMM63S-2024-04830', 'WMM63S-2024-04831'])
+  t.alike(info.partsMoves.map(m => m.partId), ['part-1', 'part-2', 'part-3'], 'each move resolves its own part')
+  t.is(info.partsMoves[0].role, 'move')
+  t.is(info.partsMoves[0].fromLocation, 'site.warehouse')
+  t.is(info.partsMoves[0].toLocation, 'site.miner-room', 'all moved to the WO target location')
+})
+
+test('handlers: createWorkOrdersBatch rejects the whole batch if any device type is invalid', async (t) => {
+  const flow = buildSubmitFlow({ parts: [{ id: 'p', code: 'c', type: 'inventory-miner_part-psu', info: { serialNum: 'SN-1' } }] })
+  await t.exception(
+    () => handlers.createWorkOrdersBatch(flow.ctx, {
+      ...userMeta(),
+      body: {
+        type: 2,
+        devices: [
+          { deviceType: 'miner', deviceModel: 'm', deviceIdentifier: 'SN-1' },
+          { deviceType: 'cooling', deviceModel: 'm', deviceIdentifier: 'SN-2' }
+        ]
+      }
+    }),
+    /ERR_INVALID_DEVICE_TYPE/
+  )
+  t.absent(flow.lastPush, 'nothing pushed when validation fails')
 })
 
 test('handlers: updateWorkOrder forwards warranty payload to updateThing', async (t) => {
@@ -119,6 +247,7 @@ test('handlers: closeWorkOrder maps to updateThing with status=closed and finalR
   t.is(flow.lastPush.params[0].id, 'wo-1')
   t.is(flow.lastPush.params[0].info.status, 'closed')
   t.is(flow.lastPush.params[0].info.finalResult, 'replaced PSU')
+  t.ok(flow.lastPush.params[0].info.closedAt, 'stamps closedAt')
 })
 
 test('handlers: cancelWorkOrder maps to updateThing with status=cancelled', async (t) => {
@@ -327,6 +456,21 @@ test('handlers: exportWorkOrder csv sets text/csv content-type and attachment fi
   t.is(rep._headers['content-type'], 'text/csv; charset=utf-8')
   t.ok(rep._headers['content-disposition'].includes('IVI-2-0001.csv'))
   t.ok(typeof rep._body === 'string' && rep._body.startsWith('code,status,type'))
+})
+
+test('handlers: exportWorkOrdersRma returns CSV of only the MicroBT Miner WOs selected', async (t) => {
+  const miner = { id: 'wo-3', code: 'IVI-3-0001', info: { type: 3, deviceModel: 'M63S++_VL28', deviceIdentifier: 'MINER-SN-1', issue: 'low hashrate', finalResult: 'replaced HB', remarks: 'r', assignedTo: 'eng@test', createdAt: 1, partsMoves: [{ role: 'diagnosis', partCode: 'HB-OLD' }, { role: 'replacement', partCode: 'HB-NEW' }] } }
+  const move = { id: 'wo-2', code: 'IVI-2-0002', info: { type: 2, partsMoves: [] } }
+  const ctx = createMockCtxWithOrks([{ rpcPublicKey: 'k' }], async () => [miner, move])
+  const rep = mkRep()
+  await handlers.exportWorkOrdersRma(ctx, { query: { ids: 'IVI-3-0001,IVI-2-0002' } }, rep)
+  t.is(rep._headers['content-type'], 'text/csv; charset=utf-8')
+  t.ok(rep._headers['content-disposition'].includes('rma.csv'))
+  const lines = rep._body.trim().split('\r\n')
+  t.is(lines.length, 2, 'header + 1 MicroBT Miner row (Move WO ignored)')
+  t.ok(lines[0].startsWith('Ticket,Repaired type'))
+  t.ok(lines[1].startsWith('IVI-3-0001,'))
+  t.ok(lines[1].includes('HB-OLD') && lines[1].includes('HB-NEW'))
 })
 
 test('handlers: getWorkOrderAudit calls getHistoricalLogs filtered by id', async (t) => {

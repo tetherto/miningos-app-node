@@ -11,6 +11,7 @@ const wsRoutes = require('./routes/ws.routes')
 const financeRoutes = require('./routes/finance.routes')
 const poolsRoutes = require('./routes/pools.routes')
 const siteRoutes = require('./routes/site.routes')
+const powerConsumptionRoutes = require('./routes/power.consumption.routes')
 const configsRoutes = require('./routes/configs.routes')
 const devicesRoutes = require('./routes/devices.routes')
 const metricsRoutes = require('./routes/metrics.routes')
@@ -43,6 +44,7 @@ function routes (ctx) {
     ...financeRoutes(ctx),
     ...poolsRoutes(ctx),
     ...siteRoutes(ctx),
+    ...powerConsumptionRoutes(ctx),
     ...configsRoutes(ctx),
     ...devicesRoutes(ctx),
     ...metricsRoutes(ctx),

@@ -2,6 +2,23 @@
 
 const { downloadLogFile } = require('./actions.handlers')
 
+// Worker error code prefixes -> human-readable messages (raw code stays in `error`)
+const WORKER_ERROR_MESSAGES = [
+  ['ERR_DOWNLOAD_LOGS_PARSE_FAILED', 'The miner sent a malformed response header; the download was aborted'],
+  ['ERR_DOWNLOAD_LOGS_FAILED', 'The miner rejected the download-logs command'],
+  ['ERR_DOWNLOAD_LOGS_EMPTY', 'The miner reports an empty log archive — there is nothing to download'],
+  ['ERR_DOWNLOAD_LOGS_TIMEOUT', 'The miner did not deliver the log within the time limit'],
+  ['ERR_DOWNLOAD_LOGS_INCOMPLETE', 'The connection to the miner dropped before the full log was transferred'],
+  ['ERR_DOWNLOAD_LOGS_CONNECT_FAILED', 'Could not connect to the miner to download logs'],
+  ['ERR_LOG_CORE_MANAGER_NOT_READY', 'The rack worker is not ready to serve log transfers yet'],
+  ['ERR_LOG_NOT_AVAILABLE', 'The action completed but produced no downloadable log']
+]
+
+function describeWorkerError (errorCode) {
+  const match = WORKER_ERROR_MESSAGES.find(([prefix]) => errorCode.startsWith(prefix))
+  return match ? match[1] : 'The download-logs action failed on the rack worker'
+}
+
 /**
  * Miner log download — three-step REST flow for large async file transfers:
  *
@@ -109,10 +126,12 @@ async function getMinerLogDownloadStatus (ctx, req, reply) {
   }
 
   if (!meta) {
+    const error = firstError || 'ERR_LOG_NOT_AVAILABLE'
     return reply.code(200).send({
       status: 'failed',
       jobId,
-      error: firstError || 'ERR_LOG_NOT_AVAILABLE'
+      error,
+      message: describeWorkerError(error)
     })
   }
 

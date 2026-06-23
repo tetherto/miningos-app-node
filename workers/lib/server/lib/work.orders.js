@@ -14,8 +14,8 @@ async function getWorkOrderRackId (ctx) {
   return rack.id
 }
 
-async function submitWorkOrderAction (ctx, req, action, paramObj) {
-  const rackId = await getWorkOrderRackId(ctx)
+async function submitWorkOrderAction (ctx, req, action, paramObj, rackId) {
+  rackId = rackId || await getWorkOrderRackId(ctx)
   const { permissions } = await ctx.authLib.getTokenPerms(req._info.authToken)
 
   return ctx.dataProxy.requestData('pushAction', {
