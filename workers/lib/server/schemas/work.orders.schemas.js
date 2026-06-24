@@ -181,6 +181,15 @@ const cancel = {
   }
 }
 
+const reopen = {
+  params: byId.params,
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    properties: { reason: { type: 'string', minLength: 1, maxLength: 2000 } }
+  }
+}
+
 const assign = {
   params: byId.params,
   body: {
@@ -238,4 +247,4 @@ const exportRma = {
   }
 }
 
-module.exports = { create, createBatch, list, byId, update, close, cancel, assign, audit, log, export: exportRoute, exportRma }
+module.exports = { create, createBatch, list, byId, update, close, cancel, reopen, assign, audit, log, export: exportRoute, exportRma }

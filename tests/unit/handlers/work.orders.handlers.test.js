@@ -261,6 +261,20 @@ test('handlers: cancelWorkOrder maps to updateThing with status=cancelled', asyn
   t.is(flow.lastPush.params[0].info.cancelReason, 'duplicate')
 })
 
+test('handlers: reopenWorkOrder maps to updateThing with status=open and clears closedAt', async (t) => {
+  const flow = buildSubmitFlow()
+  await handlers.reopenWorkOrder(flow.ctx, {
+    ...userMeta(),
+    params: { id: 'wo-1' },
+    body: { reason: 'rework needed' }
+  })
+  t.is(flow.lastPush.action, 'updateThing')
+  t.is(flow.lastPush.params[0].id, 'wo-1')
+  t.is(flow.lastPush.params[0].info.status, 'open')
+  t.is(flow.lastPush.params[0].info.closedAt, null, 'clears closedAt')
+  t.is(flow.lastPush.params[0].info.reopenReason, 'rework needed')
+})
+
 test('handlers: assignWorkOrder maps to updateThing with assignedTo', async (t) => {
   const flow = buildSubmitFlow()
   await handlers.assignWorkOrder(flow.ctx, {

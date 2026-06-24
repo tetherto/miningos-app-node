@@ -179,6 +179,12 @@ async function cancelWorkOrder (ctx, req) {
   return submitWorkOrderAction(ctx, req, 'updateThing', { id: req.params.id, info })
 }
 
+async function reopenWorkOrder (ctx, req) {
+  const info = { status: 'open', closedAt: null }
+  if (req.body?.reason) info.reopenReason = req.body.reason
+  return submitWorkOrderAction(ctx, req, 'updateThing', { id: req.params.id, info })
+}
+
 async function assignWorkOrder (ctx, req) {
   return submitWorkOrderAction(ctx, req, 'updateThing', {
     id: req.params.id,
@@ -332,6 +338,7 @@ module.exports = {
   updateWorkOrder,
   closeWorkOrder,
   cancelWorkOrder,
+  reopenWorkOrder,
   assignWorkOrder,
   appendWorkLogEntry,
   getWorkOrderAudit,

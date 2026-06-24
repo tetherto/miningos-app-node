@@ -209,6 +209,7 @@ const ENDPOINTS = {
   WORK_ORDER_ASSIGN: '/auth/work-orders/:id/assign',
   WORK_ORDER_CLOSE: '/auth/work-orders/:id/close',
   WORK_ORDER_CANCEL: '/auth/work-orders/:id/cancel',
+  WORK_ORDER_REOPEN: '/auth/work-orders/:id/reopen',
   // Spare Part endpoints
   SPARE_PARTS: '/auth/spare-parts',
   SPARE_PARTS_BATCH: '/auth/spare-parts/batch',
@@ -267,7 +268,8 @@ const OPERATIONS = {
   WORK_ORDER_UPDATE: 'work_order.update',
   WORK_ORDER_CLOSE: 'work_order.close',
   WORK_ORDER_CANCEL: 'work_order.cancel',
-  WORK_ORDER_ASSIGN: 'work_order.assign'
+  WORK_ORDER_ASSIGN: 'work_order.assign',
+  WORK_ORDER_REOPEN: 'work_order.reopen'
 }
 
 const DEFAULTS = {
