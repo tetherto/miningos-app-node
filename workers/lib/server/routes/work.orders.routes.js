@@ -14,6 +14,7 @@ const {
   updateWorkOrder,
   closeWorkOrder,
   cancelWorkOrder,
+  reopenWorkOrder,
   assignWorkOrder,
   appendWorkLogEntry,
   getWorkOrderAudit,
@@ -104,6 +105,12 @@ module.exports = (ctx) => [
     url: ENDPOINTS.WORK_ORDER_CANCEL,
     schema: schemas.cancel,
     ...createAuthRoute(ctx, cancelWorkOrder, [AUTH_PERMISSIONS.WORK_ORDER])
+  },
+  {
+    method: HTTP_METHODS.POST,
+    url: ENDPOINTS.WORK_ORDER_REOPEN,
+    schema: schemas.reopen,
+    ...createAuthRoute(ctx, reopenWorkOrder, [AUTH_PERMISSIONS.WORK_ORDER])
   },
   {
     method: HTTP_METHODS.POST,
