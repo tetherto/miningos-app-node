@@ -1,5 +1,6 @@
 'use strict'
 
+const { randomUUID } = require('crypto')
 const { parseJsonQueryParam, flattenRpcResults, escapeRegex, listThingsWithCount } = require('../../utils')
 const {
   WORK_ORDER_THING_TYPE,
@@ -9,7 +10,7 @@ const {
   SPARE_PART_INITIAL_LOCATION
 } = require('../../constants')
 const { renderWorkOrderCsv, renderRmaCsv } = require('../lib/work.order.export')
-const { submitWorkOrderAction, getWorkOrderRackId } = require('../lib/work.orders')
+const { submitWorkOrderAction, getWorkOrderRackId, assertActionApplied } = require('../lib/work.orders')
 
 async function _resolvePartByIdentifier (ctx, identifier) {
   const results = await ctx.dataProxy.requestData('listThings', {
@@ -35,6 +36,7 @@ async function createWorkOrder (ctx, req) {
   }
 
   const voter = req._info.user.metadata.email
+  const woId = randomUUID()
   const { info: extraInfo, ...body } = req.body
   const info = { ...body, ...extraInfo, createdBy: voter, createdAt: Date.now() }
 
@@ -85,10 +87,14 @@ async function createWorkOrder (ctx, req) {
       user: voter
     }]
     // Move WOs auto-close, so the relocation has to happen here or it never will.
-    if (info.location != null) await submitWorkOrderAction(ctx, req, 'updateThing', { id: part.id, info: { location: info.location } }, part.rack)
+    // The part rack rejects a location change that omits workOrderId (ERR_PART_MOVE_REQUIRES_WO).
+    if (info.location != null) {
+      const partResults = await submitWorkOrderAction(ctx, req, 'updateThing', { id: part.id, info: { location: info.location, workOrderId: woId } }, part.rack)
+      assertActionApplied(partResults, 'ERR_PART_MOVE_PUSH_FAILED')
+    }
   }
 
-  return submitWorkOrderAction(ctx, req, 'registerThing', { info })
+  return submitWorkOrderAction(ctx, req, 'registerThing', { id: woId, info })
 }
 
 function _buildPartsMove (type, part, device, info, voter, ts) {
@@ -126,6 +132,7 @@ async function createWorkOrdersBatch (ctx, req) {
   }
 
   const voter = req._info.user.metadata.email
+  const woId = randomUUID()
   const ts = Date.now()
   const [summary] = devices
 
@@ -153,13 +160,15 @@ async function createWorkOrdersBatch (ctx, req) {
     const move = _buildPartsMove(type, part, device, info, voter, ts)
     if (move) partsMoves.push(move)
     // Move WOs auto-close, so relocate each part here or it never happens.
+    // The part rack rejects a location change that omits workOrderId (ERR_PART_MOVE_REQUIRES_WO).
     if (type === WORK_ORDER_TYPES.MOVE && info.location != null) {
-      await submitWorkOrderAction(ctx, req, 'updateThing', { id: part.id, info: { location: info.location } }, part.rack)
+      const partResults = await submitWorkOrderAction(ctx, req, 'updateThing', { id: part.id, info: { location: info.location, workOrderId: woId } }, part.rack)
+      assertActionApplied(partResults, 'ERR_PART_MOVE_PUSH_FAILED')
     }
   }
   info.partsMoves = partsMoves
 
-  return submitWorkOrderAction(ctx, req, 'registerThing', { info })
+  return submitWorkOrderAction(ctx, req, 'registerThing', { id: woId, info })
 }
 
 async function updateWorkOrder (ctx, req) {
