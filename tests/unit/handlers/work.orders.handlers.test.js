@@ -81,8 +81,31 @@ test('handlers: createWorkOrder Type 2 (move) relocates the part on its own rack
     body: { type: 2, deviceType: 'psu', deviceModel: 'P', deviceIdentifier: 'SN-1', info: { location: 'site.warehouse' } }
   })
   const partPush = pushed.find(p => p.action === 'updateThing')
+  const regPush = pushed.find(p => p.action === 'registerThing')
   t.is(partPush.params[0].rackId, 'psu-rack-1', 'relocation targets the part rack')
   t.is(partPush.params[0].info.location, 'site.warehouse', 'part moved to the destination')
+  t.ok(partPush.params[0].info.workOrderId, 'relocation carries a workOrderId (part-move gate)')
+  t.is(partPush.params[0].info.workOrderId, regPush.params[0].id, 'relocation references the created WO id')
+})
+
+test('handlers: createWorkOrder Type 2 (move) surfaces a failed relocation push instead of swallowing it', async (t) => {
+  const ctx = createMockCtxWithOrks([{ rpcPublicKey: 'k' }], async (_k, method, params) => {
+    if (method === 'pushAction') {
+      if (params.action === 'updateThing') return { id: null, errors: ['ERR_ORK_ACTION_CALLS_EMPTY'] }
+      return { id: 'a', errors: [] }
+    }
+    if (method === 'listThings') return [{ id: 'part-1', type: 'inventory-miner_part-psu', rack: 'psu-rack-1', info: { location: 'site.lab' } }]
+    return null
+  })
+  ctx.authLib = mockAuthLib
+  ctx._workOrderRackId = RACK
+  await t.exception(
+    () => handlers.createWorkOrder(ctx, {
+      ...userMeta(),
+      body: { type: 2, deviceType: 'psu', deviceModel: 'P', deviceIdentifier: 'SN-1', info: { location: 'site.warehouse' } }
+    }),
+    /ERR_PART_MOVE_PUSH_FAILED/
+  )
 })
 
 test('handlers: createWorkOrdersBatch Type 2 (move) relocates every part', async (t) => {
@@ -109,8 +132,10 @@ test('handlers: createWorkOrdersBatch Type 2 (move) relocates every part', async
     }
   })
   const partPushes = pushed.filter(p => p.action === 'updateThing')
+  const regPush = pushed.find(p => p.action === 'registerThing')
   t.is(partPushes.length, 2, 'one relocation per device')
   t.is(partPushes[0].params[0].info.location, 'site.miner-room')
+  t.ok(partPushes.every(p => p.params[0].info.workOrderId === regPush.params[0].id), 'every relocation references the created WO id')
 })
 
 test('handlers: createWorkOrder merges info.notes, info.remarks, info.site, info.location into thing info', async (t) => {
