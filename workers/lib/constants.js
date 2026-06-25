@@ -132,6 +132,7 @@ const ENDPOINTS = {
   SETTINGS: '/auth/settings',
   WORKER_CONFIG: '/auth/worker-config',
   THING_CONFIG: '/auth/thing-config',
+  PDU_LAYOUT: '/auth/pdu-layout',
 
   // WebSocket endpoint
   WEBSOCKET: '/ws',
