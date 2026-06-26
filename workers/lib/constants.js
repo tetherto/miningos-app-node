@@ -340,7 +340,7 @@ const ALERTS_MAX_HISTORY_LIMIT = 1000
 const SITE_ALERTS_FILTER_FIELDS = ['severity', 'type', 'container', 'deviceId', 'message']
 const SITE_ALERTS_SEARCH_FIELDS = ['id', 'code', 'container', 'message', 'description', 'name']
 
-const HISTORY_FILTER_FIELDS = ['severity', 'code', 'deviceType', 'container', 'deviceId', 'tags', 'message']
+const HISTORY_FILTER_FIELDS = ['severity', 'code', 'type', 'container', 'deviceId', 'tags', 'message']
 const HISTORY_SEARCH_FIELDS = ['name', 'description', 'position', 'code', 'message']
 
 // Operators allowed inside a filter value; anything else is rejected.
@@ -363,7 +363,7 @@ const HISTORY_ALERTS_QUERY_MAP = {
   severity: 'severity',
   message: 'message',
   code: 'thing.code',
-  deviceType: 'thing.type',
+  type: 'thing.type',
   container: 'thing.info.container',
   deviceId: 'thing.id',
   tags: 'thing.tags'

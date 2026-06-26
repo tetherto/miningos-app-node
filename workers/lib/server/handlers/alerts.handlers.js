@@ -29,7 +29,8 @@ function extractAlertsFromThings (things) {
             deviceId: thing.id,
             type: thing.type,
             code: thing.code,
-            container: thing.info?.container
+            container: thing.info?.container,
+            position: thing.info?.pos
           })
         }
       }
@@ -86,7 +87,7 @@ function flattenHistoryAlert (entry) {
     uuid: entry.uuid,
     message: entry.message,
     deviceId: thing.id,
-    deviceType: thing.type,
+    type: thing.type,
     code: thing.code,
     container: thing.info?.container,
     position: thing.info?.pos,
@@ -144,6 +145,7 @@ async function getSiteAlerts (ctx, req) {
     fields: {
       'last.alerts': 1,
       'info.container': 1,
+      'info.pos': 1,
       type: 1,
       id: 1,
       code: 1
@@ -198,7 +200,7 @@ async function getAlertsHistory (ctx, req) {
   alerts = deduplicateAlerts(alerts)
 
   // Re-apply on the merged result for global correctness.
-  alerts = applyMongoFilter(alerts, combineAnd(filter, typeCond ? { deviceType: typeCond } : null))
+  alerts = applyMongoFilter(alerts, combineAnd(filter, typeCond ? { type: typeCond } : null))
   alerts = alerts.filter(a => matchesSearch(a, search, HISTORY_SEARCH_FIELDS))
 
   alerts = applySort(alerts, sort)

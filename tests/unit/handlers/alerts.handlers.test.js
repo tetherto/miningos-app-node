@@ -25,7 +25,7 @@ test('extractAlertsFromThings - extracts alerts with device info', (t) => {
       id: 'miner-1',
       type: 'miner',
       code: 'S19',
-      info: { container: 'container-A' },
+      info: { container: 'container-A', pos: '1-2_c3' },
       last: {
         alerts: [
           { severity: 'high', name: 'Fan failure' },
@@ -41,6 +41,7 @@ test('extractAlertsFromThings - extracts alerts with device info', (t) => {
   t.is(result[0].type, 'miner', 'should enrich with device type')
   t.is(result[0].code, 'S19', 'should enrich with device code')
   t.is(result[0].container, 'container-A', 'should enrich with container')
+  t.is(result[0].position, '1-2_c3', 'should enrich with position')
   t.is(result[0].severity, 'high', 'should preserve alert severity')
 })
 
@@ -409,7 +410,7 @@ test('flattenHistoryAlert - flattens nested thing structure', (t) => {
 
   const result = flattenHistoryAlert(alert)
   t.is(result.deviceId, 'miner-1', 'should flatten thing.id to deviceId')
-  t.is(result.deviceType, 'miner-am-s19xp', 'should flatten thing.type to deviceType')
+  t.is(result.type, 'miner-am-s19xp', 'should flatten thing.type to type')
   t.is(result.code, 'AM-S19XP-0104', 'should flatten thing.code to code')
   t.is(result.container, 'cont-A', 'should flatten thing.info.container to container')
   t.is(result.position, '1-2_c3', 'should flatten thing.info.pos to position')
@@ -766,22 +767,22 @@ const mixedHistory = () => [
   makeHistoryAlert('p1', 3000, 'low', { type: 'powermeter' })
 ]
 
-test('getAlertsHistory - miner alerts only (deviceType equality)', async (t) => {
+test('getAlertsHistory - miner alerts only (type equality)', async (t) => {
   const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => mixedHistory())
-  const mockReq = { query: { start: 1, end: 5000, filter: JSON.stringify({ deviceType: 'miner' }) } }
+  const mockReq = { query: { start: 1, end: 5000, filter: JSON.stringify({ type: 'miner' }) } }
 
   const result = await getAlertsHistory(mockCtx, mockReq)
   t.is(result.total, 1, 'should keep only miner alerts')
-  t.is(result.alerts[0].deviceType, 'miner', 'should be a miner alert')
+  t.is(result.alerts[0].type, 'miner', 'should be a miner alert')
 })
 
-test('getAlertsHistory - operational alerts (deviceType $ne miner)', async (t) => {
+test('getAlertsHistory - operational alerts (type $ne miner)', async (t) => {
   const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => mixedHistory())
-  const mockReq = { query: { start: 1, end: 5000, filter: JSON.stringify({ deviceType: { $ne: 'miner' } }) } }
+  const mockReq = { query: { start: 1, end: 5000, filter: JSON.stringify({ type: { $ne: 'miner' } }) } }
 
   const result = await getAlertsHistory(mockCtx, mockReq)
   t.is(result.total, 2, 'should keep all non-miner alerts')
-  t.absent(result.alerts.find(a => a.deviceType === 'miner'), 'should exclude miner alerts')
+  t.absent(result.alerts.find(a => a.type === 'miner'), 'should exclude miner alerts')
 })
 
 // ==================== `type` query param (all/operational/miner) ====================
@@ -852,14 +853,14 @@ test('getAlertsHistory - type=miner keeps miner + subtypes', async (t) => {
   const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => typedHistory())
   const result = await getAlertsHistory(mockCtx, { query: { start: 1, end: 9000, type: 'miner' } })
   t.is(result.total, 2, 'miner and miner-am-s19xp')
-  t.ok(result.alerts.every(a => a.deviceType.startsWith('miner')), 'only miner-family alerts')
+  t.ok(result.alerts.every(a => a.type.startsWith('miner')), 'only miner-family alerts')
 })
 
 test('getAlertsHistory - type=operational excludes miner family', async (t) => {
   const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => typedHistory())
   const result = await getAlertsHistory(mockCtx, { query: { start: 1, end: 9000, type: 'operational' } })
   t.is(result.total, 2, 'dcs + powermeter')
-  t.absent(result.alerts.find(a => a.deviceType.startsWith('miner')), 'no miner alerts')
+  t.absent(result.alerts.find(a => a.type.startsWith('miner')), 'no miner alerts')
 })
 
 test('getAlertsHistory - type=all returns everything', async (t) => {
