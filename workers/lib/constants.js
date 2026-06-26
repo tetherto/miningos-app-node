@@ -343,6 +343,32 @@ const SITE_ALERTS_SEARCH_FIELDS = ['id', 'code', 'container', 'message', 'descri
 const HISTORY_FILTER_FIELDS = ['severity', 'code', 'deviceType', 'container', 'deviceId', 'tags', 'message']
 const HISTORY_SEARCH_FIELDS = ['name', 'description', 'position', 'code', 'message']
 
+// Operators allowed inside a filter value; anything else is rejected.
+const ALERTS_FILTER_OPERATORS = ['$eq', '$ne', '$in', '$nin', '$gt', '$gte', '$lt', '$lte']
+
+const ALERT_TYPE_CATEGORIES = ['all', 'operational', 'miner']
+
+// Matches the miner base type and its subtypes (e.g. 'miner-am-s19xp'), not 'minerals'.
+const MINER_TYPE_REGEX = '^miner(-|$)'
+
+// Maps site-alert filter fields to the thing-level path used by `listThings`,
+// so type/container/deviceId filtering is pushed down to each rack. Fields not
+// listed here (severity, message) live inside `last.alerts[]` and are matched
+// per-alert after extraction.
+const SITE_ALERTS_THING_QUERY_MAP = { type: 'type', container: 'info.container', deviceId: 'id' }
+
+// Maps history-alert filter fields to the transformed-entry path used by the
+// worker's `getHistoricalLogs` query (thing metadata is nested under `thing`).
+const HISTORY_ALERTS_QUERY_MAP = {
+  severity: 'severity',
+  message: 'message',
+  code: 'thing.code',
+  deviceType: 'thing.type',
+  container: 'thing.info.container',
+  deviceId: 'thing.id',
+  tags: 'thing.tags'
+}
+
 const POOL_ALERT_TYPES = [
   'all_pools_dead',
   'wrong_miner_pool',
@@ -812,6 +838,11 @@ module.exports = {
   SITE_ALERTS_SEARCH_FIELDS,
   HISTORY_FILTER_FIELDS,
   HISTORY_SEARCH_FIELDS,
+  ALERTS_FILTER_OPERATORS,
+  ALERT_TYPE_CATEGORIES,
+  MINER_TYPE_REGEX,
+  SITE_ALERTS_THING_QUERY_MAP,
+  HISTORY_ALERTS_QUERY_MAP,
   DEVICE_LIST_FIELDS,
   MINER_FIELD_MAP,
   MINER_PROJECTION_MAP,
