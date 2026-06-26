@@ -9,9 +9,13 @@ const {
   SITE_ALERTS_FILTER_FIELDS,
   SITE_ALERTS_SEARCH_FIELDS,
   HISTORY_FILTER_FIELDS,
-  HISTORY_SEARCH_FIELDS
+  HISTORY_SEARCH_FIELDS,
+  ALERTS_FILTER_OPERATORS,
+  MINER_TYPE_REGEX,
+  SITE_ALERTS_THING_QUERY_MAP,
+  HISTORY_ALERTS_QUERY_MAP
 } = require('../../constants')
-const { parseJsonQueryParam, matchesFilter, deduplicateAlerts } = require('../../utils')
+const { parseJsonQueryParam, validateFilter, applyMongoFilter, combineAnd, deduplicateAlerts } = require('../../utils')
 
 function extractAlertsFromThings (things) {
   const alerts = []
@@ -25,7 +29,8 @@ function extractAlertsFromThings (things) {
             deviceId: thing.id,
             type: thing.type,
             code: thing.code,
-            container: thing.info?.container
+            container: thing.info?.container,
+            position: thing.info?.pos
           })
         }
       }
@@ -82,7 +87,7 @@ function flattenHistoryAlert (entry) {
     uuid: entry.uuid,
     message: entry.message,
     deviceId: thing.id,
-    deviceType: thing.type,
+    type: thing.type,
     code: thing.code,
     container: thing.info?.container,
     position: thing.info?.pos,
@@ -90,19 +95,57 @@ function flattenHistoryAlert (entry) {
   }
 }
 
+// Pushes thing-level fields (type/container/deviceId) to the rack query;
+// per-alert fields (severity/message) go in $elemMatch on last.alerts.
+function buildSiteAlertsQuery (filter) {
+  const query = {}
+  const elem = {}
+  for (const [field, cond] of Object.entries(filter)) {
+    const thingPath = SITE_ALERTS_THING_QUERY_MAP[field]
+    if (thingPath) query[thingPath] = cond
+    else elem[field] = cond
+  }
+  query['last.alerts'] = Object.keys(elem).length ? { $elemMatch: elem } : { $ne: null }
+  return query
+}
+
+// Maps filter fields to the worker's nested `thing.*` paths for getHistoricalLogs.
+function buildHistoryAlertsQuery (filter) {
+  const query = {}
+  for (const [field, cond] of Object.entries(filter)) {
+    query[HISTORY_ALERTS_QUERY_MAP[field]] = cond
+  }
+  return Object.keys(query).length ? query : undefined
+}
+
+// `type` param -> type-field condition; undefined means no extra constraint.
+function alertTypeCondition (type) {
+  if (type === 'miner') return { $regex: MINER_TYPE_REGEX }
+  if (type === 'operational') return { $not: { $regex: MINER_TYPE_REGEX } }
+  return undefined
+}
+
 async function getSiteAlerts (ctx, req) {
-  const filter = parseJsonQueryParam(req.query.filter, 'ERR_INVALID_FILTER')
+  const filter = validateFilter(
+    parseJsonQueryParam(req.query.filter, 'ERR_INVALID_FILTER'),
+    SITE_ALERTS_FILTER_FIELDS,
+    ALERTS_FILTER_OPERATORS
+  )
   const sort = parseJsonQueryParam(req.query.sort, 'ERR_INVALID_SORT')
   const search = req.query.search || ''
   const offset = Number(req.query.offset) || 0
   const limit = Math.min(Number(req.query.limit) || ALERTS_DEFAULT_LIMIT, ALERTS_MAX_SITE_LIMIT)
 
+  const typeCond = alertTypeCondition(req.query.type)
+  const typeFilter = typeCond ? { type: typeCond } : null
+
   const results = await ctx.dataProxy.requestDataMap(RPC_METHODS.LIST_THINGS, {
     status: 1,
-    query: { 'last.alerts': { $ne: null } },
+    query: combineAnd(buildSiteAlertsQuery(filter), typeFilter),
     fields: {
       'last.alerts': 1,
       'info.container': 1,
+      'info.pos': 1,
       type: 1,
       id: 1,
       code: 1
@@ -112,10 +155,9 @@ async function getSiteAlerts (ctx, req) {
   const things = results.flat()
   let alerts = extractAlertsFromThings(things)
 
-  alerts = alerts.filter(a =>
-    matchesFilter(a, filter, SITE_ALERTS_FILTER_FIELDS) &&
-    matchesSearch(a, search, SITE_ALERTS_SEARCH_FIELDS)
-  )
+  // Re-apply on the merged result for per-alert fields and multi-rack correctness.
+  alerts = applyMongoFilter(alerts, combineAnd(filter, typeFilter))
+  alerts = alerts.filter(a => matchesSearch(a, search, SITE_ALERTS_SEARCH_FIELDS))
 
   const summary = buildSeveritySummary(alerts)
   alerts = applySort(alerts, sort)
@@ -133,25 +175,33 @@ async function getAlertsHistory (ctx, req) {
     throw new Error('ERR_INVALID_DATE_RANGE')
   }
 
-  const filter = parseJsonQueryParam(req.query.filter, 'ERR_INVALID_FILTER')
+  const filter = validateFilter(
+    parseJsonQueryParam(req.query.filter, 'ERR_INVALID_FILTER'),
+    HISTORY_FILTER_FIELDS,
+    ALERTS_FILTER_OPERATORS
+  )
   const sort = parseJsonQueryParam(req.query.sort, 'ERR_INVALID_SORT') || { createdAt: -1 }
   const search = req.query.search || ''
   const offset = Number(req.query.offset) || 0
   const limit = Math.min(Number(req.query.limit) || ALERTS_DEFAULT_LIMIT, ALERTS_MAX_HISTORY_LIMIT)
 
+  // Worker filters on nested `thing.type`; handler re-filters on flattened `deviceType`.
+  const typeCond = alertTypeCondition(req.query.type)
+  const workerQuery = combineAnd(buildHistoryAlertsQuery(filter) || {}, typeCond ? { 'thing.type': typeCond } : null)
+
   const results = await ctx.dataProxy.requestDataMap(RPC_METHODS.GET_HISTORICAL_LOGS, {
     start,
     end,
-    logType: 'alerts'
+    logType: 'alerts',
+    query: Object.keys(workerQuery).length ? workerQuery : undefined
   })
 
   let alerts = results.flat().map(flattenHistoryAlert)
   alerts = deduplicateAlerts(alerts)
 
-  alerts = alerts.filter(a =>
-    matchesFilter(a, filter, HISTORY_FILTER_FIELDS) &&
-    matchesSearch(a, search, HISTORY_SEARCH_FIELDS)
-  )
+  // Re-apply on the merged result for global correctness.
+  alerts = applyMongoFilter(alerts, combineAnd(filter, typeCond ? { type: typeCond } : null))
+  alerts = alerts.filter(a => matchesSearch(a, search, HISTORY_SEARCH_FIELDS))
 
   alerts = applySort(alerts, sort)
   const total = alerts.length

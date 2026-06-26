@@ -10,7 +10,11 @@ const {
   buildSeveritySummary,
   flattenHistoryAlert
 } = require('../../../workers/lib/server/handlers/alerts.handlers')
-const { matchesFilter, deduplicateAlerts } = require('../../../workers/lib/utils')
+const { validateFilter, applyMongoFilter, combineAnd, deduplicateAlerts } = require('../../../workers/lib/utils')
+const {
+  SITE_ALERTS_FILTER_FIELDS,
+  ALERTS_FILTER_OPERATORS
+} = require('../../../workers/lib/constants')
 const { createMockCtxWithOrks } = require('../helpers/mockHelpers')
 
 // ==================== extractAlertsFromThings Tests ====================
@@ -21,7 +25,7 @@ test('extractAlertsFromThings - extracts alerts with device info', (t) => {
       id: 'miner-1',
       type: 'miner',
       code: 'S19',
-      info: { container: 'container-A' },
+      info: { container: 'container-A', pos: '1-2_c3' },
       last: {
         alerts: [
           { severity: 'high', name: 'Fan failure' },
@@ -37,6 +41,7 @@ test('extractAlertsFromThings - extracts alerts with device info', (t) => {
   t.is(result[0].type, 'miner', 'should enrich with device type')
   t.is(result[0].code, 'S19', 'should enrich with device code')
   t.is(result[0].container, 'container-A', 'should enrich with container')
+  t.is(result[0].position, '1-2_c3', 'should enrich with position')
   t.is(result[0].severity, 'high', 'should preserve alert severity')
 })
 
@@ -67,28 +72,82 @@ test('extractAlertsFromThings - skips invalid alert entries', (t) => {
   t.is(result.length, 1, 'should only include valid object alerts')
 })
 
-// ==================== matchesFilter Tests ====================
+// ==================== validateFilter Tests ====================
 
-test('matchesFilter - returns true when no filter', (t) => {
-  t.ok(matchesFilter({ severity: 'high' }, null, ['severity']), 'null filter should match')
-  t.ok(matchesFilter({ severity: 'high' }, undefined, ['severity']), 'undefined filter should match')
+test('validateFilter - returns {} for null/undefined', (t) => {
+  t.alike(validateFilter(null, SITE_ALERTS_FILTER_FIELDS, ALERTS_FILTER_OPERATORS), {}, 'null -> {}')
+  t.alike(validateFilter(undefined, SITE_ALERTS_FILTER_FIELDS, ALERTS_FILTER_OPERATORS), {}, 'undefined -> {}')
 })
 
-test('matchesFilter - matches exact value', (t) => {
-  const item = { severity: 'high', type: 'miner' }
-  t.ok(matchesFilter(item, { severity: 'high' }, ['severity', 'type']), 'should match')
-  t.ok(!matchesFilter(item, { severity: 'low' }, ['severity', 'type']), 'should not match')
+test('validateFilter - passes through scalar equality', (t) => {
+  const out = validateFilter({ type: 'miner' }, SITE_ALERTS_FILTER_FIELDS, ALERTS_FILTER_OPERATORS)
+  t.alike(out, { type: 'miner' }, 'scalar stays as equality')
 })
 
-test('matchesFilter - matches array values', (t) => {
-  const item = { severity: 'high' }
-  t.ok(matchesFilter(item, { severity: ['high', 'critical'] }, ['severity']), 'should match when in array')
-  t.ok(!matchesFilter(item, { severity: ['low', 'medium'] }, ['severity']), 'should not match when not in array')
+test('validateFilter - normalises bare array to $in', (t) => {
+  const out = validateFilter({ severity: ['high', 'critical'] }, SITE_ALERTS_FILTER_FIELDS, ALERTS_FILTER_OPERATORS)
+  t.alike(out, { severity: { $in: ['high', 'critical'] } }, 'array -> $in')
 })
 
-test('matchesFilter - ignores fields not in allowedFields', (t) => {
-  const item = { severity: 'high', secret: 'value' }
-  t.ok(matchesFilter(item, { secret: 'wrong' }, ['severity']), 'should ignore non-allowed fields')
+test('validateFilter - allows whitelisted operators ($ne for operational)', (t) => {
+  const out = validateFilter({ type: { $ne: 'miner' } }, SITE_ALERTS_FILTER_FIELDS, ALERTS_FILTER_OPERATORS)
+  t.alike(out, { type: { $ne: 'miner' } }, 'keeps $ne')
+})
+
+test('validateFilter - throws on disallowed field', (t) => {
+  t.exception(
+    () => validateFilter({ secret: 'x' }, SITE_ALERTS_FILTER_FIELDS, ALERTS_FILTER_OPERATORS),
+    /ERR_INVALID_FILTER/,
+    'unknown field is rejected'
+  )
+})
+
+test('validateFilter - throws on disallowed operator', (t) => {
+  t.exception(
+    () => validateFilter({ message: { $regex: '.*' } }, SITE_ALERTS_FILTER_FIELDS, ALERTS_FILTER_OPERATORS),
+    /ERR_INVALID_FILTER/,
+    '$regex is not allowed'
+  )
+})
+
+test('validateFilter - throws when $in value is not an array', (t) => {
+  t.exception(
+    () => validateFilter({ type: { $in: 'miner' } }, SITE_ALERTS_FILTER_FIELDS, ALERTS_FILTER_OPERATORS),
+    /ERR_INVALID_FILTER/,
+    '$in requires an array'
+  )
+})
+
+// ==================== applyMongoFilter Tests ====================
+
+test('applyMongoFilter - no-op for empty filter', (t) => {
+  const items = [{ severity: 'high' }, { severity: 'low' }]
+  t.is(applyMongoFilter(items, {}).length, 2, 'empty filter returns all')
+})
+
+test('applyMongoFilter - equality and $in', (t) => {
+  const items = [{ severity: 'high' }, { severity: 'low' }, { severity: 'critical' }]
+  t.is(applyMongoFilter(items, { severity: 'high' }).length, 1, 'equality matches one')
+  t.is(applyMongoFilter(items, { severity: { $in: ['high', 'critical'] } }).length, 2, '$in matches two')
+})
+
+test('applyMongoFilter - $ne (operational = all except miner)', (t) => {
+  const items = [{ type: 'miner' }, { type: 'dcs-siemens' }, { type: 'powermeter' }]
+  const operational = applyMongoFilter(items, { type: { $ne: 'miner' } })
+  t.is(operational.length, 2, 'excludes miner')
+  t.absent(operational.find(a => a.type === 'miner'), 'no miner alerts')
+})
+
+// ==================== combineAnd Tests ====================
+
+test('combineAnd - drops empty operands', (t) => {
+  t.alike(combineAnd({ a: 1 }, null), { a: 1 }, 'nil right -> left')
+  t.alike(combineAnd({}, { b: 2 }), { b: 2 }, 'empty left -> right')
+  t.alike(combineAnd({}, null), {}, 'both empty -> {}')
+})
+
+test('combineAnd - wraps two non-empty queries in $and', (t) => {
+  t.alike(combineAnd({ a: 1 }, { b: 2 }), { $and: [{ a: 1 }, { b: 2 }] }, 'AND of both')
 })
 
 // ==================== matchesSearch Tests ====================
@@ -351,7 +410,7 @@ test('flattenHistoryAlert - flattens nested thing structure', (t) => {
 
   const result = flattenHistoryAlert(alert)
   t.is(result.deviceId, 'miner-1', 'should flatten thing.id to deviceId')
-  t.is(result.deviceType, 'miner-am-s19xp', 'should flatten thing.type to deviceType')
+  t.is(result.type, 'miner-am-s19xp', 'should flatten thing.type to type')
   t.is(result.code, 'AM-S19XP-0104', 'should flatten thing.code to code')
   t.is(result.container, 'cont-A', 'should flatten thing.info.container to container')
   t.is(result.position, '1-2_c3', 'should flatten thing.info.pos to position')
@@ -611,6 +670,16 @@ test('getSiteAlerts - filters by multiple device tags (array)', async (t) => {
   t.is(result.total, 2, 'should match both tags')
 })
 
+test('getSiteAlerts - searches by alert name', async (t) => {
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => [
+    { id: 'm-1', type: 'miner', code: 'S19', info: { container: 'cont-A' }, last: { alerts: [{ severity: 'high', name: 'hashrate_low' }] } },
+    { id: 'm-2', type: 'miner', code: 'S21', info: { container: 'cont-B' }, last: { alerts: [{ severity: 'low', name: 'temp_warning' }] } }
+  ])
+  const result = await getSiteAlerts(mockCtx, { query: { search: 'hashrate' } })
+  t.is(result.total, 1, 'should match by alert name')
+  t.is(result.alerts[0].name, 'hashrate_low', 'should return the hashrate alert')
+})
+
 test('getSiteAlerts - searches by device tag (message)', async (t) => {
   const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => dcsThings())
   const mockReq = { query: { search: 'fit-7514' } }
@@ -657,4 +726,155 @@ test('getAlertsHistory - searches by device tag (message)', async (t) => {
   const result = await getAlertsHistory(mockCtx, mockReq)
   t.is(result.total, 1, 'should find one history alert by tag')
   t.is(result.alerts[0].message, 'FIT-7513', 'should return the FIT-7513 history alert')
+})
+
+// ==================== miner vs operational split ====================
+
+const mixedThings = () => [
+  { id: 'miner-1', type: 'miner', code: 'S19', info: { container: 'cont-A' }, last: { alerts: [{ severity: 'high', name: 'hashrate_low' }] } },
+  { id: 'dcs-1', type: 'dcs-siemens', code: 'PCS7', info: { container: 'cont-A' }, last: { alerts: [{ severity: 'critical', name: 'flow_alarm' }] } },
+  { id: 'pm-1', type: 'powermeter', code: 'PM', info: { container: 'cont-B' }, last: { alerts: [{ severity: 'low', name: 'power_drift' }] } }
+]
+
+test('getSiteAlerts - miner alerts only (type equality)', async (t) => {
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => mixedThings())
+  const mockReq = { query: { filter: JSON.stringify({ type: 'miner' }) } }
+
+  const result = await getSiteAlerts(mockCtx, mockReq)
+  t.is(result.total, 1, 'should keep only miner alerts')
+  t.is(result.alerts[0].type, 'miner', 'should be a miner alert')
+})
+
+test('getSiteAlerts - operational alerts (type $ne miner)', async (t) => {
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => mixedThings())
+  const mockReq = { query: { filter: JSON.stringify({ type: { $ne: 'miner' } }) } }
+
+  const result = await getSiteAlerts(mockCtx, mockReq)
+  t.is(result.total, 2, 'should keep all non-miner alerts')
+  t.absent(result.alerts.find(a => a.type === 'miner'), 'should exclude miner alerts')
+})
+
+test('getSiteAlerts - throws on invalid filter field', async (t) => {
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => mixedThings())
+  const mockReq = { query: { filter: JSON.stringify({ bogus: 'x' }) } }
+
+  await t.exception(getSiteAlerts(mockCtx, mockReq), /ERR_INVALID_FILTER/, 'rejects unknown field')
+})
+
+const mixedHistory = () => [
+  makeHistoryAlert('m1', 1000, 'high', { type: 'miner' }),
+  makeHistoryAlert('d1', 2000, 'critical', { type: 'dcs-siemens' }),
+  makeHistoryAlert('p1', 3000, 'low', { type: 'powermeter' })
+]
+
+test('getAlertsHistory - miner alerts only (type equality)', async (t) => {
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => mixedHistory())
+  const mockReq = { query: { start: 1, end: 5000, filter: JSON.stringify({ type: 'miner' }) } }
+
+  const result = await getAlertsHistory(mockCtx, mockReq)
+  t.is(result.total, 1, 'should keep only miner alerts')
+  t.is(result.alerts[0].type, 'miner', 'should be a miner alert')
+})
+
+test('getAlertsHistory - operational alerts (type $ne miner)', async (t) => {
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => mixedHistory())
+  const mockReq = { query: { start: 1, end: 5000, filter: JSON.stringify({ type: { $ne: 'miner' } }) } }
+
+  const result = await getAlertsHistory(mockCtx, mockReq)
+  t.is(result.total, 2, 'should keep all non-miner alerts')
+  t.absent(result.alerts.find(a => a.type === 'miner'), 'should exclude miner alerts')
+})
+
+// ==================== `type` query param (all/operational/miner) ====================
+
+// Includes a subtyped miner ('miner-am-s19xp') to prove the category matches
+// miner subtypes, not just the exact 'miner' type.
+const typedThings = () => [
+  { id: 'miner-1', type: 'miner', code: 'S19', info: { container: 'cont-A' }, last: { alerts: [{ severity: 'high', name: 'a1' }] } },
+  { id: 'miner-2', type: 'miner-am-s19xp', code: 'S21', info: { container: 'cont-A' }, last: { alerts: [{ severity: 'low', name: 'a2' }] } },
+  { id: 'dcs-1', type: 'dcs-siemens', code: 'PCS7', info: { container: 'cont-B' }, last: { alerts: [{ severity: 'critical', name: 'a3' }] } },
+  { id: 'pm-1', type: 'powermeter', code: 'PM', info: { container: 'cont-B' }, last: { alerts: [{ severity: 'medium', name: 'a4' }] } }
+]
+
+test('getSiteAlerts - type=all returns everything', async (t) => {
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => typedThings())
+  const result = await getSiteAlerts(mockCtx, { query: { type: 'all' } })
+  t.is(result.total, 4, 'all alerts')
+})
+
+test('getSiteAlerts - no type returns everything', async (t) => {
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => typedThings())
+  const result = await getSiteAlerts(mockCtx, { query: {} })
+  t.is(result.total, 4, 'all alerts when type omitted')
+})
+
+test('getSiteAlerts - type=miner keeps miner + subtypes', async (t) => {
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => typedThings())
+  const result = await getSiteAlerts(mockCtx, { query: { type: 'miner' } })
+  t.is(result.total, 2, 'miner and miner-am-s19xp')
+  t.ok(result.alerts.every(a => a.type.startsWith('miner')), 'only miner-family alerts')
+})
+
+test('getSiteAlerts - type=operational excludes miner family', async (t) => {
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => typedThings())
+  const result = await getSiteAlerts(mockCtx, { query: { type: 'operational' } })
+  t.is(result.total, 2, 'dcs + powermeter')
+  t.absent(result.alerts.find(a => a.type.startsWith('miner')), 'no miner alerts')
+})
+
+test('getSiteAlerts - type combines with existing filter (AND)', async (t) => {
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => typedThings())
+  // operational + severity=critical -> only the dcs critical alert
+  const mockReq = { query: { type: 'operational', filter: JSON.stringify({ severity: 'critical' }) } }
+  const result = await getSiteAlerts(mockCtx, mockReq)
+  t.is(result.total, 1, 'AND of type and filter')
+  t.is(result.alerts[0].id, 'dcs-1', 'the critical operational alert')
+})
+
+test('getSiteAlerts - type pushes thing.type constraint to the worker query', async (t) => {
+  let captured
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async (_pk, _method, params) => {
+    captured = params
+    return typedThings()
+  })
+  await getSiteAlerts(mockCtx, { query: { type: 'operational' } })
+  t.alike(captured.query, { $and: [{ 'last.alerts': { $ne: null } }, { type: { $not: { $regex: '^miner(-|$)' } } }] },
+    'operational constraint is pushed down to listThings')
+})
+
+const typedHistory = () => [
+  makeHistoryAlert('m1', 1000, 'high', { type: 'miner' }),
+  makeHistoryAlert('m2', 2000, 'low', { type: 'miner-am-s19xp' }),
+  makeHistoryAlert('d1', 3000, 'critical', { type: 'dcs-siemens' }),
+  makeHistoryAlert('p1', 4000, 'medium', { type: 'powermeter' })
+]
+
+test('getAlertsHistory - type=miner keeps miner + subtypes', async (t) => {
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => typedHistory())
+  const result = await getAlertsHistory(mockCtx, { query: { start: 1, end: 9000, type: 'miner' } })
+  t.is(result.total, 2, 'miner and miner-am-s19xp')
+  t.ok(result.alerts.every(a => a.type.startsWith('miner')), 'only miner-family alerts')
+})
+
+test('getAlertsHistory - type=operational excludes miner family', async (t) => {
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => typedHistory())
+  const result = await getAlertsHistory(mockCtx, { query: { start: 1, end: 9000, type: 'operational' } })
+  t.is(result.total, 2, 'dcs + powermeter')
+  t.absent(result.alerts.find(a => a.type.startsWith('miner')), 'no miner alerts')
+})
+
+test('getAlertsHistory - type=all returns everything', async (t) => {
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => typedHistory())
+  const result = await getAlertsHistory(mockCtx, { query: { start: 1, end: 9000, type: 'all' } })
+  t.is(result.total, 4, 'all alerts')
+})
+
+test('getAlertsHistory - type pushes thing.type constraint to the worker query', async (t) => {
+  let captured
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async (_pk, _method, params) => {
+    captured = params
+    return typedHistory()
+  })
+  await getAlertsHistory(mockCtx, { query: { start: 1, end: 9000, type: 'miner' } })
+  t.alike(captured.query, { 'thing.type': { $regex: '^miner(-|$)' } }, 'miner constraint pushed to getHistoricalLogs')
 })
