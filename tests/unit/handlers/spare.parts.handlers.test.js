@@ -293,6 +293,8 @@ test('handlers: registerSparePart fires part + Type-1 WO pushActions in parallel
   const woAction = pushed.find(p => p.params[0].rackId === WO_RACK)
   t.is(partAction.action, 'registerThing')
   t.is(woAction.action, 'registerThing')
+  t.alike(partAction.params[0].opts, {}, 'part registration carries empty opts so device racks (miners) accept it')
+  t.is(woAction.params[0].opts, undefined, 'WO registration carries no opts')
   t.is(woAction.params[0].info.type, 1, 'Type-1 WO')
   t.is(woAction.params[0].info.notes, 'NOTES', 'operator note recorded on the register WO')
   t.is(woAction.params[0].info.partsMoves[0].fromLocation, null)
@@ -343,8 +345,10 @@ test('handlers: registerSparePartsBatch creates one shared register WO carrying 
   t.is(woInfo.notes, 'Pallets 1-3', 'note recorded on the register WO')
   t.alike(woInfo.partsMoves.map(m => m.partId).sort(), out.parts.map(p => p.partId).sort(), 'WO links every returned part')
 
+  t.is(woAction.params[0].opts, undefined, 'WO registration carries no opts')
   for (const pa of partActions) {
     t.is(pa.params[0].info.notes, 'Pallets 1-3', 'note attached to each registered part')
+    t.alike(pa.params[0].opts, {}, 'each part registration carries empty opts so device racks accept it')
   }
   t.is(out.parts.length, 3, 'returns a result row per part')
   t.alike(out.errors, [], 'no errors on happy path')

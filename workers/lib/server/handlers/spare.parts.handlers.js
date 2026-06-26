@@ -216,10 +216,10 @@ async function registerSparePart (ctx, req) {
     }]
   }
 
-  const pushSingleAction = (rack, id, info) => ctx.dataProxy.requestData('pushAction', {
+  const pushSingleAction = (rack, id, info, opts) => ctx.dataProxy.requestData('pushAction', {
     action: 'registerThing',
     query: { rack },
-    params: [{ rackId: rack, id, info }],
+    params: [{ rackId: rack, id, info, ...(opts ? { opts } : {}) }],
     voter,
     authPerms
   }, (res, arr) => {
@@ -228,7 +228,7 @@ async function registerSparePart (ctx, req) {
   })
 
   const [partResults, woResults] = await Promise.all([
-    pushSingleAction(rackId, partId, partInfo),
+    pushSingleAction(rackId, partId, partInfo, {}),
     pushSingleAction(workOrderRackId, woId, woInfo)
   ])
 
@@ -304,10 +304,10 @@ async function registerSparePartsBatch (ctx, req) {
   }
   if (note) woInfo.notes = note
 
-  const pushSingleAction = (rack, id, info) => ctx.dataProxy.requestData('pushAction', {
+  const pushSingleAction = (rack, id, info, opts) => ctx.dataProxy.requestData('pushAction', {
     action: 'registerThing',
     query: { rack },
-    params: [{ rackId: rack, id, info }],
+    params: [{ rackId: rack, id, info, ...(opts ? { opts } : {}) }],
     voter,
     authPerms
   }, (res, arr) => {
@@ -317,7 +317,7 @@ async function registerSparePartsBatch (ctx, req) {
 
   const [woResults, ...partResultsList] = await Promise.all([
     pushSingleAction(workOrderRackId, woId, woInfo),
-    ...prepared.map(({ partId, partInfo }) => pushSingleAction(rackId, partId, partInfo))
+    ...prepared.map(({ partId, partInfo }) => pushSingleAction(rackId, partId, partInfo, {}))
   ])
 
   const partsOut = prepared.map(({ partId }, i) => ({
