@@ -205,6 +205,7 @@ async function registerSparePart (ctx, req) {
     deviceIdentifier: info.serialNum,
     createdBy: voter,
     createdAt: ts,
+    ...(info.notes ? { notes: info.notes } : {}),
     partsMoves: [{
       partId,
       fromLocation: null,
@@ -275,7 +276,7 @@ async function registerSparePartsBatch (ctx, req) {
       ...part,
       location: part.location ?? SPARE_PART_INITIAL_LOCATION
     }
-    if (note) partInfo.note = note
+    if (note) partInfo.notes = note
     return { partId: randomUUID(), part, partInfo }
   })
 
@@ -301,7 +302,7 @@ async function registerSparePartsBatch (ctx, req) {
       user: voter
     }))
   }
-  if (note) woInfo.note = note
+  if (note) woInfo.notes = note
 
   const pushSingleAction = (rack, id, info) => ctx.dataProxy.requestData('pushAction', {
     action: 'registerThing',

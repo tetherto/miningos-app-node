@@ -285,7 +285,7 @@ test('handlers: registerSparePart fires part + Type-1 WO pushActions in parallel
   const { ctx, pushed } = buildRegisterCtx()
   const out = await handlers.registerSparePart(ctx, {
     ...userMeta(),
-    body: { rackId: PART_RACK, info: { deviceType: 'psu', deviceModel: 'PSU-WM-CB6_V5', serialNum: 'SN-99' } }
+    body: { rackId: PART_RACK, info: { deviceType: 'psu', deviceModel: 'PSU-WM-CB6_V5', serialNum: 'SN-99', notes: 'NOTES' } }
   })
 
   t.is(pushed.length, 2, 'one part action, one WO action')
@@ -294,6 +294,7 @@ test('handlers: registerSparePart fires part + Type-1 WO pushActions in parallel
   t.is(partAction.action, 'registerThing')
   t.is(woAction.action, 'registerThing')
   t.is(woAction.params[0].info.type, 1, 'Type-1 WO')
+  t.is(woAction.params[0].info.notes, 'NOTES', 'operator note recorded on the register WO')
   t.is(woAction.params[0].info.partsMoves[0].fromLocation, null)
   t.is(woAction.params[0].info.partsMoves[0].toLocation, 'site.warehouse')
   t.is(woAction.params[0].info.partsMoves[0].partId, out.partId, 'WO partsMoves entry links to the pre-generated partId')
@@ -339,11 +340,11 @@ test('handlers: registerSparePartsBatch creates one shared register WO carrying 
   t.is(woInfo.type, 1, 'single Type-1 register WO')
   t.is(woInfo.deviceCount, 3)
   t.is(woInfo.partsMoves.length, 3, 'register WO carries every part')
-  t.is(woInfo.note, 'Pallets 1-3', 'note recorded on the register WO')
+  t.is(woInfo.notes, 'Pallets 1-3', 'note recorded on the register WO')
   t.alike(woInfo.partsMoves.map(m => m.partId).sort(), out.parts.map(p => p.partId).sort(), 'WO links every returned part')
 
   for (const pa of partActions) {
-    t.is(pa.params[0].info.note, 'Pallets 1-3', 'note attached to each registered part')
+    t.is(pa.params[0].info.notes, 'Pallets 1-3', 'note attached to each registered part')
   }
   t.is(out.parts.length, 3, 'returns a result row per part')
   t.alike(out.errors, [], 'no errors on happy path')
