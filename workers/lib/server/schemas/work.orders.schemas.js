@@ -132,6 +132,7 @@ const update = {
         type: 'object',
         additionalProperties: false,
         properties: {
+          issue: { type: 'string', minLength: 1, maxLength: 2000 },
           notes: { type: 'string', maxLength: 4000 },
           remarks: { type: 'string', maxLength: 4000 },
           site: { type: 'string', maxLength: 200 },

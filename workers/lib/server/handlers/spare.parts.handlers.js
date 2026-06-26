@@ -205,6 +205,7 @@ async function registerSparePart (ctx, req) {
     deviceIdentifier: info.serialNum,
     createdBy: voter,
     createdAt: ts,
+    ...(info.notes ? { notes: info.notes } : {}),
     partsMoves: [{
       partId,
       fromLocation: null,
@@ -215,10 +216,10 @@ async function registerSparePart (ctx, req) {
     }]
   }
 
-  const pushSingleAction = (rack, id, info) => ctx.dataProxy.requestData('pushAction', {
+  const pushSingleAction = (rack, id, info, opts) => ctx.dataProxy.requestData('pushAction', {
     action: 'registerThing',
     query: { rack },
-    params: [{ rackId: rack, id, info }],
+    params: [{ rackId: rack, id, info, ...(opts ? { opts } : {}) }],
     voter,
     authPerms
   }, (res, arr) => {
@@ -227,7 +228,7 @@ async function registerSparePart (ctx, req) {
   })
 
   const [partResults, woResults] = await Promise.all([
-    pushSingleAction(rackId, partId, partInfo),
+    pushSingleAction(rackId, partId, partInfo, {}),
     pushSingleAction(workOrderRackId, woId, woInfo)
   ])
 
@@ -275,7 +276,7 @@ async function registerSparePartsBatch (ctx, req) {
       ...part,
       location: part.location ?? SPARE_PART_INITIAL_LOCATION
     }
-    if (note) partInfo.note = note
+    if (note) partInfo.notes = note
     return { partId: randomUUID(), part, partInfo }
   })
 
@@ -301,12 +302,12 @@ async function registerSparePartsBatch (ctx, req) {
       user: voter
     }))
   }
-  if (note) woInfo.note = note
+  if (note) woInfo.notes = note
 
-  const pushSingleAction = (rack, id, info) => ctx.dataProxy.requestData('pushAction', {
+  const pushSingleAction = (rack, id, info, opts) => ctx.dataProxy.requestData('pushAction', {
     action: 'registerThing',
     query: { rack },
-    params: [{ rackId: rack, id, info }],
+    params: [{ rackId: rack, id, info, ...(opts ? { opts } : {}) }],
     voter,
     authPerms
   }, (res, arr) => {
@@ -316,7 +317,7 @@ async function registerSparePartsBatch (ctx, req) {
 
   const [woResults, ...partResultsList] = await Promise.all([
     pushSingleAction(workOrderRackId, woId, woInfo),
-    ...prepared.map(({ partId, partInfo }) => pushSingleAction(rackId, partId, partInfo))
+    ...prepared.map(({ partId, partInfo }) => pushSingleAction(rackId, partId, partInfo, {}))
   ])
 
   const partsOut = prepared.map(({ partId }, i) => ({
