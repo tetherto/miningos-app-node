@@ -669,6 +669,16 @@ test('getSiteAlerts - filters by multiple device tags (array)', async (t) => {
   t.is(result.total, 2, 'should match both tags')
 })
 
+test('getSiteAlerts - searches by alert name', async (t) => {
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => [
+    { id: 'm-1', type: 'miner', code: 'S19', info: { container: 'cont-A' }, last: { alerts: [{ severity: 'high', name: 'hashrate_low' }] } },
+    { id: 'm-2', type: 'miner', code: 'S21', info: { container: 'cont-B' }, last: { alerts: [{ severity: 'low', name: 'temp_warning' }] } }
+  ])
+  const result = await getSiteAlerts(mockCtx, { query: { search: 'hashrate' } })
+  t.is(result.total, 1, 'should match by alert name')
+  t.is(result.alerts[0].name, 'hashrate_low', 'should return the hashrate alert')
+})
+
 test('getSiteAlerts - searches by device tag (message)', async (t) => {
   const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => dcsThings())
   const mockReq = { query: { search: 'fit-7514' } }

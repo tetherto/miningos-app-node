@@ -338,7 +338,7 @@ const ALERTS_MAX_HISTORY_LIMIT = 1000
 // `message` carries the per-alert device/equipment tag (e.g. 'FIT-7513'), so it
 // is filterable and searchable on both endpoints.
 const SITE_ALERTS_FILTER_FIELDS = ['severity', 'type', 'container', 'deviceId', 'message']
-const SITE_ALERTS_SEARCH_FIELDS = ['id', 'code', 'container', 'message', 'description']
+const SITE_ALERTS_SEARCH_FIELDS = ['id', 'code', 'container', 'message', 'description', 'name']
 
 const HISTORY_FILTER_FIELDS = ['severity', 'code', 'deviceType', 'container', 'deviceId', 'tags', 'message']
 const HISTORY_SEARCH_FIELDS = ['name', 'description', 'position', 'code', 'message']
