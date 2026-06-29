@@ -238,6 +238,10 @@ const RMA_COLUMNS = [
   'Engineer'
 ]
 
+const MINER_MODEL_DISPLAY_NAMES = {
+  'miner-wm-m63spp': 'M63S'
+}
+
 const HTTP_METHODS = {
   GET: 'GET',
   POST: 'POST',
@@ -875,5 +879,6 @@ module.exports = {
   WORK_ORDER_FILE_MIME_ALLOWLIST_DEFAULT,
   WORK_ORDER_EXPORT_FORMATS,
   RMA_COLUMNS,
+  MINER_MODEL_DISPLAY_NAMES,
   MICROSOFT_AUTH_SCOPE
 }
