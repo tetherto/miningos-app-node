@@ -99,3 +99,28 @@ test('work.order.export: RMA CSV maps a MicroBT Miner WO to the fixed columns', 
   t.is(row[9], new Date(wo.info.closedAt).toISOString().slice(0, 10), 'Repair Date from closedAt')
   t.is(row[10], 'eng@test', 'Engineer')
 })
+
+test('work.order.export: RMA CSV maps a known miner type slug to its friendly model name', (t) => {
+  const wo = {
+    code: 'IVI-1-0090',
+    info: {
+      type: 1,
+      deviceModel: 'miner-wm-m63spp',
+      deviceIdentifier: 'MINER-SN-9',
+      createdAt: 1730000000000,
+      partsMoves: [{ role: 'diagnosis', partCode: 'HB-1' }]
+    }
+  }
+  const row = renderRmaCsv([wo]).trim().split('\r\n')[1].split(',')
+  t.is(row[1], 'M63S', 'Repaired type shows the friendly model name, not the worker slug')
+  t.is(row[8], 'M63S', 'Miner Model column shows the friendly name too')
+})
+
+test('work.order.export: RMA CSV leaves an unmapped deviceModel untouched', (t) => {
+  const wo = {
+    code: 'IVI-1-0091',
+    info: { type: 1, deviceModel: 'miner-am-s21', deviceIdentifier: 'SN', partsMoves: [] }
+  }
+  const row = renderRmaCsv([wo]).trim().split('\r\n')[1].split(',')
+  t.is(row[1], 'miner-am-s21', 'unmapped model falls back to the raw value')
+})
