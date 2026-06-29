@@ -1409,6 +1409,30 @@ test('6 - differential_pressure populated when per-group PTs configured', (t) =>
   t.pass()
 })
 
+test('6 - differential_pressure from single-transmitter array (supply/return/diff)', (t) => {
+  const equipment = createMockEquipment()
+  equipment.pressures = [
+    ...equipment.pressures,
+    { equipment: 'PT-7502-A', value: 2.81, unit: 'bar', supply_pressure: 2.81, return_pressure: 2.2, differential_pressure: 0.61 },
+    { equipment: 'PT-7502-B', value: 2.9, unit: 'bar', supply_pressure: 2.9, return_pressure: 2.3 }
+  ]
+  const config = createMockConfig()
+  config.cooling_system.miner_loop.line1.group_pressure_sensors = ['PT-7502-A', 'PT-7502-B']
+  const view = buildMinersCircuit1View(equipment, config)
+
+  const dp = view.lines[0].differential_pressure
+  t.is(dp.length, 2, 'one row per transmitter')
+  // Group 1: device-provided differential is preferred
+  t.is(dp[0].supply.tag, 'PT-7502-A', 'supply tag = transmitter id')
+  t.is(dp[0].return.tag, 'PT-7502-A', 'return tag = same transmitter id')
+  t.is(dp[0].supply.reading.value, 2.81, 'supply from supply_pressure')
+  t.is(dp[0].return.reading.value, 2.2, 'return from return_pressure')
+  t.is(dp[0].delta_p.value, 0.61, 'uses device-provided differential_pressure')
+  // Group 2: no device differential -> derived from supply - return
+  t.is(dp[1].delta_p.value, 0.6, 'derived delta-p = supply - return when DP absent')
+  t.pass()
+})
+
 test('7 - rack_statuses derived from live rack power (online = power > 0)', (t) => {
   const equipment = createMockEquipment()
   const config = createMockConfig()

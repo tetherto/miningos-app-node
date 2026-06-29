@@ -76,6 +76,34 @@ function buildVibrationSwitch (vibrationSwitches, switchTag) {
 
 function buildGroupDifferentialPressure (lineConfig, pressures) {
   const groupSensors = lineConfig.group_pressure_sensors || {}
+
+  if (Array.isArray(groupSensors)) {
+    return groupSensors.map((sensorId, i) => {
+      const pt = pressures?.find(s => s.equipment === sensorId) || null
+      const mkSlot = (val) => ({
+        tag: sensorId,
+        type: pt?.type || null,
+        reading: val != null ? { value: val, unit: pt?.unit || 'bar' } : null
+      })
+      const supply = mkSlot(pt?.supply_pressure)
+      const ret = mkSlot(pt?.return_pressure)
+      const supplyVal = supply.reading?.value
+      const returnVal = ret.reading?.value
+      const deltaPVal = pt?.differential_pressure != null
+        ? Math.round(pt.differential_pressure * 100) / 100
+        : (supplyVal != null && returnVal != null
+            ? Math.round((supplyVal - returnVal) * 100) / 100
+            : null)
+      const unit = supply.reading?.unit || ret.reading?.unit || pt?.unit || 'bar'
+      return {
+        group: i + 1,
+        supply,
+        return: ret,
+        delta_p: deltaPVal != null ? { value: deltaPVal, unit } : null
+      }
+    })
+  }
+
   const supplyIds = groupSensors.supply || []
   const returnIds = groupSensors.return || []
   const count = Math.max(supplyIds.length, returnIds.length)
