@@ -833,8 +833,10 @@ test('getSiteAlerts - type combines with existing filter (AND)', async (t) => {
 
 test('getSiteAlerts - type pushes thing.type constraint to the worker query', async (t) => {
   let captured
-  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async (_pk, _method, params) => {
-    captured = params
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async (_pk, method, params) => {
+    // getSiteAlerts also reads worker ext data via getWrkExtData; only capture
+    // the listThings call this assertion is about.
+    if (method === 'listThings') captured = params
     return typedThings()
   })
   await getSiteAlerts(mockCtx, { query: { type: 'operational' } })
@@ -871,10 +873,76 @@ test('getAlertsHistory - type=all returns everything', async (t) => {
 
 test('getAlertsHistory - type pushes thing.type constraint to the worker query', async (t) => {
   let captured
-  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async (_pk, _method, params) => {
-    captured = params
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async (_pk, method, params) => {
+    // getAlertsHistory also reads worker ext data via getWrkExtData; only capture
+    // the getHistoricalLogs call this assertion is about.
+    if (method === 'getHistoricalLogs') captured = params
     return typedHistory()
   })
   await getAlertsHistory(mockCtx, { query: { start: 1, end: 9000, type: 'miner' } })
   t.alike(captured.query, { 'thing.type': { $regex: '^miner(-|$)' } }, 'miner constraint pushed to getHistoricalLogs')
+})
+
+// ==================== Worker-level alert merge (ext data) ====================
+
+const oceanExtAlert = (createdAt = 1000, uuid = 'datum-uuid-1') => ({
+  name: 'Datum_Offline',
+  code: 'ocean',
+  description: 'DATUM gateway is offline',
+  severity: 'critical',
+  createdAt,
+  uuid,
+  id: 'minerpool-ocean',
+  deviceId: 'minerpool-ocean',
+  type: 'minerpool',
+  container: null,
+  position: null
+})
+
+test('getSiteAlerts - merges worker-level alerts from ext data', async (t) => {
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async (_pk, method) => {
+    if (method === 'listThings') {
+      return [{ id: 'm1', type: 'miner', code: 'S19', info: {}, last: { alerts: [{ severity: 'high', name: 'fan' }] } }]
+    }
+    if (method === 'getWrkExtData') return [{ ts: 1000, alerts: [oceanExtAlert()] }]
+    return []
+  })
+  const result = await getSiteAlerts(mockCtx, { query: {} })
+  t.ok(result.alerts.some(a => a.name === 'Datum_Offline'), 'worker alert merged into site alerts')
+  t.ok(result.alerts.some(a => a.name === 'fan'), 'thing alert still present')
+  t.is(result.summary.critical, 1, 'critical worker alert counted in summary')
+  t.is(result.summary.high, 1, 'thing alert still counted')
+})
+
+test('getSiteAlerts - worker alerts respect the type filter (minerpool is operational)', async (t) => {
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async (_pk, method) => {
+    if (method === 'getWrkExtData') return [{ ts: 1000, alerts: [oceanExtAlert()] }]
+    return []
+  })
+  const operational = await getSiteAlerts(mockCtx, { query: { type: 'operational' } })
+  t.ok(operational.alerts.some(a => a.name === 'Datum_Offline'), 'kept under operational')
+  const miner = await getSiteAlerts(mockCtx, { query: { type: 'miner' } })
+  t.absent(miner.alerts.find(a => a.name === 'Datum_Offline'), 'excluded under miner')
+})
+
+test('getAlertsHistory - merges worker-level alert history from ext data', async (t) => {
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async (_pk, method) => {
+    if (method === 'getHistoricalLogs') return [makeHistoryAlert('m1', 1000, 'high', { type: 'miner' })]
+    if (method === 'getWrkExtData') return [{ ts: 5000, alerts: [oceanExtAlert(5000, 'datum-uuid-2')] }]
+    return []
+  })
+  const result = await getAlertsHistory(mockCtx, { query: { start: 1, end: 9000 } })
+  t.ok(result.alerts.some(a => a.name === 'Datum_Offline'), 'worker history alert merged')
+  t.ok(result.alerts.some(a => a.type === 'miner'), 'thing history alert still present')
+})
+
+test('getAlertsHistory - dedupes repeated worker alerts by uuid', async (t) => {
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async (_pk, method) => {
+    if (method === 'getHistoricalLogs') return []
+    // same alert reported in two buckets (same uuid)
+    if (method === 'getWrkExtData') return [{ ts: 5000, alerts: [oceanExtAlert(5000, 'dup')] }, { ts: 6000, alerts: [oceanExtAlert(5000, 'dup')] }]
+    return []
+  })
+  const result = await getAlertsHistory(mockCtx, { query: { start: 1, end: 9000 } })
+  t.is(result.alerts.filter(a => a.uuid === 'dup').length, 1, 'duplicate uuid collapsed to one')
 })

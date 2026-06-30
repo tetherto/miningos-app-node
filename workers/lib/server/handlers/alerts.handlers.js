@@ -13,7 +13,8 @@ const {
   ALERTS_FILTER_OPERATORS,
   MINER_TYPE_REGEX,
   SITE_ALERTS_THING_QUERY_MAP,
-  HISTORY_ALERTS_QUERY_MAP
+  HISTORY_ALERTS_QUERY_MAP,
+  ALERT_EXT_DATA_WORKER_TYPES
 } = require('../../constants')
 const { parseJsonQueryParam, validateFilter, applyMongoFilter, combineAnd, deduplicateAlerts } = require('../../utils')
 
@@ -34,6 +35,23 @@ function extractAlertsFromThings (things) {
           })
         }
       }
+    }
+  }
+  return alerts
+}
+
+// Worker alerts use the same flat shape as thing alerts, so they merge as-is.
+async function fetchWorkerExtAlerts (ctx, query) {
+  const alerts = []
+  for (const type of ALERT_EXT_DATA_WORKER_TYPES) {
+    let results
+    try {
+      results = await ctx.dataProxy.requestDataMap(RPC_METHODS.GET_WRK_EXT_DATA, { type, query })
+    } catch {
+      continue
+    }
+    for (const entry of results.flat()) {
+      if (Array.isArray(entry?.alerts)) alerts.push(...entry.alerts)
     }
   }
   return alerts
@@ -155,6 +173,8 @@ async function getSiteAlerts (ctx, req) {
   const things = results.flat()
   let alerts = extractAlertsFromThings(things)
 
+  alerts = alerts.concat(await fetchWorkerExtAlerts(ctx, { key: 'alerts' }))
+
   // Re-apply on the merged result for per-alert fields and multi-rack correctness.
   alerts = applyMongoFilter(alerts, combineAnd(filter, typeFilter))
   alerts = alerts.filter(a => matchesSearch(a, search, SITE_ALERTS_SEARCH_FIELDS))
@@ -197,6 +217,9 @@ async function getAlertsHistory (ctx, req) {
   })
 
   let alerts = results.flat().map(flattenHistoryAlert)
+
+  // Worker history entries are already flat, so concat directly (no flatten).
+  alerts = alerts.concat(await fetchWorkerExtAlerts(ctx, { key: 'alerts-history', start, end }))
   alerts = deduplicateAlerts(alerts)
 
   // Re-apply on the merged result for global correctness.

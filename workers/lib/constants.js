@@ -352,6 +352,8 @@ const ALERTS_FILTER_OPERATORS = ['$eq', '$ne', '$in', '$nin', '$gt', '$gte', '$l
 
 const ALERT_TYPE_CATEGORIES = ['all', 'operational', 'miner']
 
+const ALERT_EXT_DATA_WORKER_TYPES = [WORKER_TYPES.MINERPOOL]
+
 // Matches the miner base type and its subtypes (e.g. 'miner-am-s19xp'), not 'minerals'.
 const MINER_TYPE_REGEX = '^miner(-|$)'
 
@@ -844,6 +846,7 @@ module.exports = {
   HISTORY_SEARCH_FIELDS,
   ALERTS_FILTER_OPERATORS,
   ALERT_TYPE_CATEGORIES,
+  ALERT_EXT_DATA_WORKER_TYPES,
   MINER_TYPE_REGEX,
   SITE_ALERTS_THING_QUERY_MAP,
   HISTORY_ALERTS_QUERY_MAP,
