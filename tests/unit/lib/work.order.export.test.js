@@ -124,3 +124,10 @@ test('work.order.export: RMA CSV leaves an unmapped deviceModel untouched', (t) 
   const row = renderRmaCsv([wo]).trim().split('\r\n')[1].split(',')
   t.is(row[1], 'miner-am-s21', 'unmapped model falls back to the raw value')
 })
+
+test('work.order.export: CSV maps a known miner type slug in the deviceModel column', (t) => {
+  const wo = { ...WO, info: { ...WO.info, deviceModel: 'miner-wm-m63spp', partsMoves: [] } }
+  const lines = renderWorkOrderCsv(wo).trim().split('\r\n')
+  const idx = lines[0].split(',').indexOf('deviceModel')
+  t.is(lines[1].split(',')[idx], 'M63S', 'deviceModel column shows the friendly model name')
+})

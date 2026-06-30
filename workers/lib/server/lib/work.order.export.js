@@ -12,7 +12,10 @@ function renderWorkOrderCsv (wo) {
   const { partsMoves, ...woFields } = wo.info || {}
   const base = { code: wo.code, ...woFields }
   const moves = Array.isArray(partsMoves) ? partsMoves : []
-  const rows = moves.length ? moves.map(move => ({ ...base, ...move })) : [base]
+  const rawRows = moves.length ? moves.map(move => ({ ...base, ...move })) : [base]
+  const rows = rawRows.map(row => (
+    row.deviceModel == null ? row : { ...row, deviceModel: displayMinerModel(row.deviceModel) }
+  ))
 
   const headers = []
   const seen = new Set()
