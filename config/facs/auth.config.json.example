@@ -150,6 +150,31 @@
         "alerts:r",
         "work_order:r"
       ],
+      "admin_external": [
+        "miner:r",
+        "container:r",
+        "minerpool:r",
+        "powermeter:r",
+        "temp:r",
+        "electricity:r",
+        "features:r",
+        "revenue:r",
+        "users:r",
+        "actions:r",
+        "production:r",
+        "alerts:r",
+        "cabinets:r",
+        "comments:r",
+        "explorer:r",
+        "inventory:r",
+        "reporting:r",
+        "settings:r",
+        "ticket:r",
+        "power_spot_forecast:r",
+        "pool_config:r",
+        "pool_config_approve:r",
+        "work_order:r"
+      ],
       "pool_manager": [
         "pool_config:rw",
         "miner:r",
@@ -164,6 +189,7 @@
         "field_operator",
         "repair_technician",
         "read_only_user",
+        "admin_external",
         "pool_manager"
       ]
     }
