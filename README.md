@@ -368,6 +368,28 @@ DEBUG="*" node worker.js --wtype wrk-node-http --env development --port 3000
         "ticket:r",
         "alerts:r"
       ],
+      "admin_external": [
+        "miner:r",
+        "container:r",
+        "minerpool:r",
+        "powermeter:r",
+        "temp:r",
+        "electricity:r",
+        "features:r",
+        "revenue:r",
+        "users:r",
+        "actions:r",
+        "production:r",
+        "alerts:r",
+        "cabinets:r",
+        "comments:r",
+        "explorer:r",
+        "inventory:r",
+        "reporting:r",
+        "settings:r",
+        "ticket:r",
+        "power_spot_forecast:r"
+      ],
       "dev": [
         "miner:r",
         "container:r",
@@ -393,6 +415,7 @@ DEBUG="*" node worker.js --wtype wrk-node-http --env development --port 3000
         "field_operator",
         "repair_technician",
         "read_only_user",
+        "admin_external",
         "dev"
       ]
     }
@@ -422,6 +445,7 @@ DEBUG="*" node worker.js --wtype wrk-node-http --env development --port 3000
 - `field_operator` - Read-only access with comment/ticket creation
 - `repair_technician` - Read access with action/inventory/comment management
 - `read_only_user` - Read-only access to all resources
+- `admin_external` - Read-only access to all resources, including admin-only features (users, revenue, actions, production, pool config)
 - `dev` - Developer access with elevated explorer/inventory/settings permissions
 
 **Role Management Rules:**

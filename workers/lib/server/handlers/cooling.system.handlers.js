@@ -11,7 +11,8 @@ const {
   isCentralDCSEnabled,
   getDCSTag,
   extractDcsThing,
-  getSensorReading
+  getSensorReading,
+  sensorReading
 } = require('../../dcs.utils')
 const { aggregateRackStats } = require('./explorer.handlers')
 
@@ -62,8 +63,10 @@ function getSensorWithTag (sensors, sensorId, defaultConfig) {
   return {
     tag: sensorId,
     type: sensor?.type || null,
-    reading: sensor?.value != null
-      ? { value: sensor.value, unit: sensor.unit }
+    // Keep the unit and surface value: null when a configured sensor is
+    // present but its tag isn't readable; fall back only when absent entirely.
+    reading: sensor
+      ? { value: sensor.value ?? null, unit: sensor.unit ?? null }
       : (defaultConfig || null)
   }
 }
@@ -211,13 +214,25 @@ function buildMinersCircuit1View (equipment, config) {
   // Compute summary values from line sensor data — units derived from sensors
   const tempUnit = lines[0]?.supply?.temperature?.unit
   const flowUnit = lines[0]?.supply?.flow?.unit
-  const pressureUnit = lines[0]?.supply?.pressure?.unit
+  // avg over the 16 per-group PTs, not the unset per-line pressure sensors
+  const allGroups = lines.flatMap(l => l.differential_pressure || [])
+  const pressureUnit = allGroups.find(g => g.supply?.reading?.unit)?.supply?.reading?.unit ||
+    allGroups.find(g => g.return?.reading?.unit)?.return?.reading?.unit ||
+    lines[0]?.supply?.pressure?.unit
 
   const allSupplyTemps = lines.map(l => l.supply.temperature?.value).filter(v => v != null)
   const allReturnTemps = lines.map(l => l.return.temperature?.value).filter(v => v != null)
   const allSupplyFlows = lines.map(l => l.supply.flow?.value).filter(v => v != null)
-  const allSupplyPressures = lines.map(l => l.supply.pressure?.value).filter(v => v != null)
-  const allReturnPressures = lines.map(l => l.return.pressure?.value).filter(v => v != null)
+  const groupSupplyPressures = allGroups.map(g => g.supply?.reading?.value).filter(v => v != null)
+  const groupReturnPressures = allGroups.map(g => g.return?.reading?.value).filter(v => v != null)
+  const allGroupDeltaP = allGroups.map(g => g.delta_p?.value).filter(v => v != null)
+  // prefer per-group PTs; fall back to line-level pressure
+  const allSupplyPressures = groupSupplyPressures.length > 0
+    ? groupSupplyPressures
+    : lines.map(l => l.supply.pressure?.value).filter(v => v != null)
+  const allReturnPressures = groupReturnPressures.length > 0
+    ? groupReturnPressures
+    : lines.map(l => l.return.pressure?.value).filter(v => v != null)
 
   const avgSupplyTemp = allSupplyTemps.length > 0
     ? Math.round((allSupplyTemps.reduce((a, b) => a + b, 0) / allSupplyTemps.length) * 10) / 10
@@ -241,9 +256,11 @@ function buildMinersCircuit1View (equipment, config) {
   const outletPressureAvg = allReturnPressures.length > 0
     ? Math.round((allReturnPressures.reduce((a, b) => a + b, 0) / allReturnPressures.length) * 100) / 100
     : null
-  const deltaPAvg = (inletPressureAvg != null && outletPressureAvg != null)
-    ? Math.round((inletPressureAvg - outletPressureAvg) * 100) / 100
-    : null
+  const deltaPAvg = allGroupDeltaP.length > 0
+    ? Math.round((allGroupDeltaP.reduce((a, b) => a + b, 0) / allGroupDeltaP.length) * 100) / 100
+    : ((inletPressureAvg != null && outletPressureAvg != null)
+        ? Math.round((inletPressureAvg - outletPressureAvg) * 100) / 100
+        : null)
 
   const controlValveEntries = coolingConfig.control_valves || {}
   const controlValves = {}
@@ -289,7 +306,7 @@ function buildMinersCircuit2View (equipment, config) {
   const temperatures = equipment.temperatures
   const levels = equipment.levels
   const heatExchangers = equipment.heat_exchangers
-  const coolingTowers = equipment.cooling_towers
+  const coolingTowers = (equipment.cooling_towers || []).filter(ct => ct.circuit === 'COOLING_TOWER')
   const vibrationSwitches = equipment.vibration_switches
   const valves = equipment.valves
   const tanks = equipment.tanks
@@ -349,23 +366,27 @@ function buildMinersCircuit2View (equipment, config) {
     }
   })
 
-  // Summary: pre-HX and post-HX temps from heat exchangers
+  // pre/post-HX from the loop's configured sensors, else HX-derived
+  const preHxConfigReading = getSensorReading(temperatures, towerConfig.pre_hx_temp_sensor)
+  const postHxConfigReading = getSensorReading(temperatures, towerConfig.post_hx_temp_sensor)
+
   const allTowerSideIn = heatExchangerData.map(hx => hx.tower_side_in_temp?.value).filter(v => v != null)
   const allTowerSideOut = heatExchangerData.map(hx => hx.tower_side_out_temp?.value).filter(v => v != null)
-  const preHxTemp = allTowerSideIn.length > 0
+  const hxPreHxTemp = allTowerSideIn.length > 0
     ? Math.round((allTowerSideIn.reduce((a, b) => a + b, 0) / allTowerSideIn.length) * 10) / 10
     : null
-  const postHxTemp = allTowerSideOut.length > 0
+  const hxPostHxTemp = allTowerSideOut.length > 0
     ? Math.round((allTowerSideOut.reduce((a, b) => a + b, 0) / allTowerSideOut.length) * 10) / 10
     : null
+  const preHxTemp = preHxConfigReading?.value ?? hxPreHxTemp
+  const postHxTemp = postHxConfigReading?.value ?? hxPostHxTemp
   const deltaT = (preHxTemp != null && postHxTemp != null)
     ? Math.round((postHxTemp - preHxTemp) * 10) / 10
     : null
-  const tempUnit = heatExchangerData[0]?.tower_side_in_temp?.unit
+  const tempUnit = preHxConfigReading?.unit || postHxConfigReading?.unit || heatExchangerData[0]?.tower_side_in_temp?.unit
 
   // Tower level from config sensor
   const towerLevelSensor = towerConfig.tower_level_sensor
-  const towerLevel = getSensorReading(levels, towerLevelSensor)
 
   // Cooling towers with sensor tag references
   const towerFanId = towerConfig.tower_fan
@@ -402,12 +423,14 @@ function buildMinersCircuit2View (equipment, config) {
       level: getSensorReading(levels, makeupConfig.level_sensor),
       level_sensor: makeupConfig.level_sensor
     },
-    pump: makeupPump
+    pump: makeupPumpId
       ? {
-          id: makeupPump.equipment,
-          name: makeupPump.equipment,
-          status: makeupPump.status,
-          is_running: makeupPump.fbk_run_out || false,
+          id: makeupPumpId,
+          name: makeupPumpId,
+          status: makeupPump?.status ?? null,
+          is_running: makeupPump?.fbk_run_out || false,
+          speed: makeupPump?.speed ?? null,
+          current: makeupPump?.current ?? null,
           rated_head: makeupGlobalConfig.defaults?.pump_head || null,
           rated_flow: makeupGlobalConfig.defaults?.pump_flow || null
         }
@@ -438,14 +461,16 @@ function buildMinersCircuit2View (equipment, config) {
     description: towerConfig.description || viewConfig.description,
     water_type: towerConfig.water_type || viewConfig.water_type,
     summary: {
-      pre_hx_temp: preHxTemp != null ? { value: preHxTemp, unit: tempUnit } : null,
-      post_hx_temp: postHxTemp != null ? { value: postHxTemp, unit: tempUnit } : null,
+      pre_hx_temp: towerConfig.pre_hx_temp_sensor
+        ? { value: preHxTemp ?? null, unit: tempUnit || '°C', sensor: towerConfig.pre_hx_temp_sensor }
+        : (preHxTemp != null ? { value: preHxTemp, unit: tempUnit } : null),
+      post_hx_temp: towerConfig.post_hx_temp_sensor
+        ? { value: postHxTemp ?? null, unit: tempUnit || '°C', sensor: towerConfig.post_hx_temp_sensor }
+        : (postHxTemp != null ? { value: postHxTemp, unit: tempUnit } : null),
       delta_t: deltaT != null ? { value: deltaT, unit: tempUnit } : null,
       tower_capacity: towerConfig.defaults?.tower_capacity || null,
       tower_capacity_gcal: towerConfig.defaults?.tower_capacity_gcal || null,
-      tower_level: towerLevel
-        ? { ...towerLevel, sensor: towerLevelSensor }
-        : null
+      tower_level: sensorReading(levels, towerLevelSensor, '%')
     },
     pumps_config: towerConfig.defaults?.pumps_config || null,
     heat_exchangers: heatExchangerData,
@@ -712,9 +737,7 @@ function buildHvacCircuit1View (equipment, config) {
       delta_t: deltaT != null ? { value: deltaT, unit: tempUnit } : null,
       total_flow: totalFlow != null ? { value: totalFlow, unit: flowUnit } : null,
       rated_flow: chilledConfig.defaults?.rated_flow || null,
-      system_pressure: systemPressure
-        ? { ...systemPressure, sensor: supplyReturnConfig.pressure_sensor }
-        : null
+      system_pressure: sensorReading(pressures, supplyReturnConfig.pressure_sensor, 'bar')
     },
     chiller: chillerData,
     supply_return: supplyReturn,
@@ -734,7 +757,7 @@ function buildHvacCircuit2View (equipment, config) {
   const temperatures = equipment.temperatures
   const flows = equipment.flows
   const levels = equipment.levels
-  const coolingTowers = equipment.cooling_towers
+  const coolingTowers = (equipment.cooling_towers || []).filter(ct => ct.circuit === 'HVAC_CONDENSER')
   const condenserConfig = config?.cooling_system?.hvac_condenser || {}
   const viewConfig = config?.cooling_system?.view_metadata?.hvac?.circuit2 || {}
 
@@ -776,7 +799,6 @@ function buildHvacCircuit2View (equipment, config) {
 
   const towerConfigRef = condenserConfig.tower || {}
   const towerLevelSensorId = towerConfigRef.level_sensor
-  const towerLevel = getSensorReading(levels, towerLevelSensorId)
   const towerFanId = towerConfigRef.fan
   const towerVibrationSwitch = buildVibrationSwitch(equipment.vibration_switches, towerConfigRef.vibration_switch)
 
@@ -808,9 +830,7 @@ function buildHvacCircuit2View (equipment, config) {
       delta_t: deltaT != null ? { value: deltaT, unit: tempUnit } : null,
       total_flow: totalFlow != null ? { value: totalFlow, unit: flowUnit } : null,
       rated_flow: condenserConfig.defaults?.pumps_config?.rated_flow || null,
-      tower_level: towerLevel
-        ? { ...towerLevel, sensor: towerLevelSensorId }
-        : null
+      tower_level: sensorReading(levels, towerLevelSensorId, '%')
     },
     pumps_config: condenserConfig.defaults?.pumps_config || null,
     supply_return: supplyReturn,
