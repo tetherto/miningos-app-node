@@ -55,6 +55,30 @@
         "pool_config_approve:rw",
         "work_order:rw"
       ],
+      "admin_external": [
+        "miner:r",
+        "container:r",
+        "minerpool:r",
+        "powermeter:r",
+        "temp:r",
+        "electricity:r",
+        "features:r",
+        "revenue:r",
+        "users:r",
+        "actions:r",
+        "production:r",
+        "alerts:r",
+        "cabinets:r",
+        "comments:r",
+        "explorer:r",
+        "inventory:r",
+        "reporting:r",
+        "settings:r",
+        "ticket:r",
+        "power_spot_forecast:r",
+        "pool_config:r",
+        "pool_config_approve:r"
+      ],      
       "reporting_tool_manager": [
         "revenue:rw",
         "production:rw",
@@ -91,7 +115,6 @@
         "electricity:rw",
         "explorer:rw",
         "inventory:rw",
-        "reporting:rw",
         "cabinets:rw",
         "comments:rw",
         "settings:rw",
@@ -158,6 +181,16 @@
     },
     "roleManagement": {
       "admin": [
+        "site_manager",
+        "site_operator",
+        "reporting_tool_manager",
+        "field_operator",
+        "repair_technician",
+        "read_only_user",
+        "pool_manager",
+        "admin_external"
+      ],
+      "admin_external": [
         "site_manager",
         "site_operator",
         "reporting_tool_manager",
