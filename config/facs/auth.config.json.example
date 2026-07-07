@@ -2,7 +2,6 @@
   "a0": {
     "superAdmin": "test@localhost",
     "ttl": 86400,
-    "saltRounds": 10,
     "superAdminPerms": [
       "miner:rw",
       "container:rw",
