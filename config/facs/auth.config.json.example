@@ -78,7 +78,7 @@
         "ticket:r",
         "power_spot_forecast:r",
         "pool_config:r",
-        "pool_config_approve:r"
+        "work_order:r"
       ],      
       "reporting_tool_manager": [
         "revenue:rw",
