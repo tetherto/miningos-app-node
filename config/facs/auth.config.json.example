@@ -1,8 +1,7 @@
 {
   "a0": {
     "superAdmin": "test@localhost",
-    "ttl": 900,
-    "jwtSecret": "REPLACE_WITH_LONG_RANDOM_HEX_SECRET",
+    "ttl": 86400,
     "saltRounds": 10,
     "superAdminPerms": [
       "miner:rw",
@@ -22,6 +21,7 @@
       "explorer:rw",
       "inventory:rw",
       "reporting:rw",
+      "forecast:rw",
       "settings:rw",
       "ticket:rw",
       "power_spot_forecast:rw",
@@ -48,6 +48,7 @@
         "explorer:rw",
         "inventory:rw",
         "reporting:rw",
+        "forecast:rw",
         "settings:rw",
         "ticket:rw",
         "power_spot_forecast:rw",
@@ -73,6 +74,7 @@
         "explorer:r",
         "inventory:r",
         "reporting:r",
+        "forecast:r",
         "settings:r",
         "ticket:r",
         "power_spot_forecast:r",
@@ -83,6 +85,7 @@
         "revenue:rw",
         "production:rw",
         "reporting:rw",
+        "forecast:rw",
         "settings:r",
         "power_spot_forecast:r",
         "revenue:r"
@@ -101,6 +104,7 @@
         "explorer:rw",
         "inventory:rw",
         "reporting:rw",
+        "forecast:rw",
         "settings:rw",
         "ticket:rw",
         "work_order:rw"
@@ -120,7 +124,8 @@
         "settings:rw",
         "ticket:rw",
         "alerts:rw",
-        "work_order:rw"
+        "work_order:rw",
+        "pool_config:rw"
       ],
       "field_operator": [
         "miner:r",
@@ -131,7 +136,6 @@
         "electricity:r",
         "explorer:r",
         "inventory:r",
-        "reporting:r",
         "cabinets:r",
         "comments:rw",
         "settings:r",
@@ -165,7 +169,6 @@
         "electricity:r",
         "explorer:r",
         "inventory:r",
-        "reporting:r",
         "cabinets:r",
         "comments:r",
         "settings:r",
