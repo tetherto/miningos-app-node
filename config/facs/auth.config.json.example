@@ -53,7 +53,8 @@
         "power_spot_forecast:rw",
         "pool_config:rw",
         "pool_config_approve:rw",
-        "work_order:rw"
+        "work_order:rw",
+        "user:rw"
       ],
       "admin_external": [
         "miner:r",
@@ -96,7 +97,11 @@
         "powermeter:rw",
         "temp:rw",
         "electricity:rw",
+        "features:r",
+        "revenue:r",
+        "users:r",
         "actions:rw",
+        "production:r",
         "alerts:rw",
         "cabinets:rw",
         "comments:rw",
@@ -106,7 +111,9 @@
         "forecast:rw",
         "settings:rw",
         "ticket:rw",
-        "work_order:rw"
+        "work_order:rw",
+        "power_spot_forecast:r",
+        "pool_config:r"
       ],
       "site_operator": [
         "miner:rw",
@@ -190,7 +197,8 @@
         "repair_technician",
         "read_only_user",
         "pool_manager",
-        "admin_external"
+        "admin_external",
+        "admin"
       ],
       "admin_external": [
         "site_manager",
@@ -199,7 +207,9 @@
         "field_operator",
         "repair_technician",
         "read_only_user",
-        "pool_manager"
+        "pool_manager",
+        "admin_external",
+        "admin"
       ]
     }
   }
