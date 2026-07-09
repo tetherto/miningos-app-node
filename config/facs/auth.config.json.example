@@ -12,6 +12,7 @@
       "features:rw",
       "revenue:rw",
       "users:rw",
+      "user:rw"
       "actions:rw",
       "production:rw",
       "alerts:rw",
@@ -26,8 +27,7 @@
       "power_spot_forecast:rw",
       "pool_config:rw",
       "pool_config_approve:rw",
-      "work_order:rw",
-      "user:rw"
+      "work_order:rw"
     ],
     "roles": {
       "admin": [
@@ -40,6 +40,7 @@
         "features:rw",
         "revenue:rw",
         "users:rw",
+        "user:rw"
         "actions:rw",
         "production:rw",
         "alerts:rw",
@@ -54,8 +55,7 @@
         "power_spot_forecast:rw",
         "pool_config:rw",
         "pool_config_approve:rw",
-        "work_order:rw",
-        "user:rw"
+        "work_order:rw"
       ],
       "admin_external": [
         "miner:r",
