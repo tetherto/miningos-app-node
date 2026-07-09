@@ -26,7 +26,8 @@
       "power_spot_forecast:rw",
       "pool_config:rw",
       "pool_config_approve:rw",
-      "work_order:rw"
+      "work_order:rw",
+      "user:rw"
     ],
     "roles": {
       "admin": [
@@ -66,6 +67,7 @@
         "features:r",
         "revenue:r",
         "users:r",
+        "user:r"
         "actions:r",
         "production:r",
         "alerts:r",
@@ -100,6 +102,7 @@
         "features:r",
         "revenue:r",
         "users:r",
+        "user:r"
         "actions:rw",
         "production:r",
         "alerts:rw",
