@@ -12,7 +12,7 @@
       "features:rw",
       "revenue:rw",
       "users:rw",
-      "user:rw"
+      "user:rw",
       "actions:rw",
       "production:rw",
       "alerts:rw",
@@ -40,7 +40,7 @@
         "features:rw",
         "revenue:rw",
         "users:rw",
-        "user:rw"
+        "user:rw",
         "actions:rw",
         "production:rw",
         "alerts:rw",
@@ -67,7 +67,7 @@
         "features:r",
         "revenue:r",
         "users:r",
-        "user:r"
+        "user:r",
         "actions:r",
         "production:r",
         "alerts:r",
@@ -102,7 +102,7 @@
         "features:r",
         "revenue:r",
         "users:r",
-        "user:r"
+        "user:r",
         "actions:rw",
         "production:r",
         "alerts:rw",
