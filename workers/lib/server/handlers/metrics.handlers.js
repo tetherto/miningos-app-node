@@ -104,28 +104,15 @@ async function getGoupedHashrate (ctx, req) {
 }
 
 function calculateHashrateSummary (log) {
-  if (!log.length) {
-    return {
-      avgHashrateMhs: null,
-      totalHashrateMhs: 0
-    }
-  }
+  if (!log.length) return { avgHashrateMhs: null }
 
   const total = log.reduce((sum, entry) => sum + (entry.hashrateMhs || 0), 0)
 
-  return {
-    avgHashrateMhs: safeDiv(total, log.length),
-    totalHashrateMhs: total
-  }
+  return { avgHashrateMhs: safeDiv(total, log.length) }
 }
 
 function calculateGroupedHashrateSummary (log, groupBy) {
-  if (!log.length) {
-    return {
-      avgHashrateMhs: null,
-      totalHashrateMhs: 0
-    }
-  }
+  if (!log.length) return { avgHashrateMhs: null }
 
   const groupTotals = {}
   const groupCounts = {}
@@ -144,16 +131,12 @@ function calculateGroupedHashrateSummary (log, groupBy) {
   const byGroup = {}
   let siteTotal = 0
   for (const [name, total] of Object.entries(groupTotals)) {
-    byGroup[name] = {
-      avgHashrateMhs: safeDiv(total, groupCounts[name]),
-      totalHashrateMhs: total
-    }
+    byGroup[name] = { avgHashrateMhs: safeDiv(total, groupCounts[name]) }
     siteTotal += total
   }
 
   return {
     avgHashrateMhs: safeDiv(siteTotal, log.length),
-    totalHashrateMhs: siteTotal,
     groupedBy: byGroup
   }
 }

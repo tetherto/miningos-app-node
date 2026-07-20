@@ -60,7 +60,6 @@ test('getHashrate - happy path', async (t) => {
   t.ok(result.log.length > 0, 'log should have entries')
   t.is(result.log[0].hashrateMhs, 100000, 'should have hashrate value')
   t.ok(result.summary.avgHashrateMhs !== null, 'should have avg hashrate')
-  t.is(result.summary.totalHashrateMhs, 100000, 'should have total hashrate')
   t.pass()
 })
 
@@ -87,11 +86,10 @@ test('getHashrate - grouped by miner uses type group aggregation', async (t) => 
   t.is(capturedPayload.aggrFields.hashrate_mhs_5m_type_group_sum_aggr, 1, 'should request type-group aggregate field')
   t.is(result.log.length, 1, 'should map one grouped row')
   t.alike(result.log[0].hashrateMhs, { 'S19-Pro': 100000, S21: 23456 }, 'should map grouped hashrate value')
-  t.is(result.summary.totalHashrateMhs, 123456, 'should have site-wide total')
   t.is(result.summary.avgHashrateMhs, 123456, 'should have site-wide average')
-  t.ok(result.summary.groupedBy, 'should have per-miner breakdown')
-  t.is(result.summary.groupedBy['S19-Pro'].totalHashrateMhs, 100000, 'should have per-miner total')
-  t.is(result.summary.groupedBy.S21.totalHashrateMhs, 23456, 'should have per-miner total')
+  t.is(result.summary.groupedBy['S19-Pro'].avgHashrateMhs, 100000, 'should have per-miner average')
+  t.is(result.summary.groupedBy.S21.avgHashrateMhs, 23456, 'should have per-miner average')
+  t.absent('totalHashrateMhs' in result.summary, 'summary should not expose a time-summed total')
   t.pass()
 })
 
@@ -118,10 +116,9 @@ test('getHashrate - grouped by container uses container group aggregation', asyn
   t.is(capturedPayload.aggrFields.hashrate_mhs_5m_container_group_sum_aggr, 1, 'should request container-group aggregate field')
   t.is(result.log.length, 1, 'should map grouped row')
   t.alike(result.log[0].hashrateMhs, { 'container-A': 500, 'container-B': 277 }, 'should map container grouped hashrate value')
-  t.is(result.summary.totalHashrateMhs, 777, 'should have site-wide total')
-  t.ok(result.summary.groupedBy, 'should have per-container breakdown')
-  t.is(result.summary.groupedBy['container-A'].totalHashrateMhs, 500, 'should have per-container total')
-  t.is(result.summary.groupedBy['container-B'].totalHashrateMhs, 277, 'should have per-container total')
+  t.is(result.summary.avgHashrateMhs, 777, 'should have site-wide average')
+  t.is(result.summary.groupedBy['container-A'].avgHashrateMhs, 500, 'should have per-container average')
+  t.is(result.summary.groupedBy['container-B'].avgHashrateMhs, 277, 'should have per-container average')
   t.pass()
 })
 
@@ -150,8 +147,8 @@ test('getHashrate - grouped by rack uses rack group aggregation', async (t) => {
   t.is(capturedPayload.aggrFields.hashrate_mhs_5m_pdu_rack_group_sum_aggr, 1, 'should request rack-group aggregate field')
   t.is(result.log.length, 1, 'should map grouped row')
   t.alike(result.log[0].hashrateMhs, { 'group-1_rack-1': 1000, 'group-1_rack-2': 2000, 'group-2_rack-1': 3000 }, 'should map all racks when no filter given')
-  t.is(result.summary.totalHashrateMhs, 6000, 'should total all racks')
-  t.ok(result.summary.groupedBy['group-1_rack-1'], 'should have per-rack breakdown')
+  t.is(result.summary.avgHashrateMhs, 6000, 'should average all racks')
+  t.is(result.summary.groupedBy['group-1_rack-1'].avgHashrateMhs, 1000, 'should have per-rack average')
   t.pass()
 })
 
@@ -178,8 +175,8 @@ test('getHashrate - grouped by rack filters to requested racks', async (t) => {
   })
 
   t.alike(result.log[0].hashrateMhs, { 'group-1_rack-1': 1000, 'group-2_rack-1': 3000 }, 'should keep only requested racks')
-  t.is(result.summary.totalHashrateMhs, 4000, 'summary should reflect filtered racks only')
   t.absent(result.summary.groupedBy['group-1_rack-2'], 'filtered-out rack should be absent from summary')
+  t.is(result.summary.avgHashrateMhs, 4000, 'summary should reflect filtered racks only')
   t.pass()
 })
 
@@ -195,7 +192,6 @@ test('getHashrate - grouped mode handles empty results', async (t) => {
 
   t.is(result.log.length, 0, 'grouped log should be empty when no data is returned')
   t.is(result.summary.avgHashrateMhs, null, 'grouped empty summary should have null avg')
-  t.is(result.summary.totalHashrateMhs, 0, 'grouped empty summary should have zero total')
   t.pass()
 })
 
@@ -254,7 +250,6 @@ test('getHashrate - empty ork results', async (t) => {
   t.ok(result.log, 'should return log array')
   t.ok(result.summary, 'should return summary')
   t.is(result.log.length, 0, 'log should be empty with no data')
-  t.is(result.summary.totalHashrateMhs, 0, 'total should be zero')
   t.is(result.summary.avgHashrateMhs, null, 'avg should be null')
   t.pass()
 })
@@ -315,14 +310,13 @@ test('calculateHashrateSummary - calculates from log entries', (t) => {
   ]
 
   const summary = calculateHashrateSummary(log)
-  t.is(summary.totalHashrateMhs, 220000, 'should sum hashrate')
   t.is(summary.avgHashrateMhs, 110000, 'should average hashrate')
+  t.absent('totalHashrateMhs' in summary, 'should not expose a total that is just avg x bucket count')
   t.pass()
 })
 
 test('calculateHashrateSummary - handles empty log', (t) => {
   const summary = calculateHashrateSummary([])
-  t.is(summary.totalHashrateMhs, 0, 'should be zero')
   t.is(summary.avgHashrateMhs, null, 'should be null')
   t.pass()
 })
