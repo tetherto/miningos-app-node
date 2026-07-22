@@ -601,12 +601,9 @@ function processMinersByContainer (results) {
     high: {}
   }
 
-  let asOf = null
   for (const orkResult of results) {
     const entry = extractKeyEntry(orkResult, 0)
     if (!entry) continue
-    const ts = parseEntryTs(entry.ts || entry.timestamp)
-    if (ts && (!asOf || ts > asOf)) asOf = ts
     mergeGroupedField(f.hashrate, entry[AGGR_FIELDS.HASHRATE_SUM_CONTAINER_GROUP_AGGR])
     mergeGroupedField(f.power, entry[AGGR_FIELDS.POWER_W_CONTAINER_GROUP_SUM])
     mergeGroupedField(f.efficiency, entry[AGGR_FIELDS.EFFICIENCY_CONTAINER_GROUP_AVG], true)
@@ -652,7 +649,7 @@ function processMinersByContainer (results) {
     }
   }
 
-  return { asOf, containers }
+  return { containers }
 }
 
 async function getPowerMode (ctx, req) {

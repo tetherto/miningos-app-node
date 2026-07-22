@@ -1225,7 +1225,6 @@ test('getMinersByContainer - rolls up counts and metrics per container', async (
   t.is(payload.limit, 1, 'should take the latest snapshot only')
   t.is(payload.aggrFields.offline_cnt, 1, 'should request container-keyed status counts')
   t.is(payload.aggrFields.hashrate_mhs_5m_active_container_group_cnt, 1, 'should request active count')
-  t.is(result.asOf, 1769630399999, 'should surface the snapshot timestamp')
 
   const bd = result.containers['bitdeer-1a']
   t.is(bd.minerCount, 200, 'minerCount sums the mutually exclusive statuses (5+2+0+1+0+190+2)')
@@ -1269,7 +1268,6 @@ test('getMinersByContainer - no data returns empty container map', async (t) => 
   })
   const result = await getMinersByContainer(mockCtx, { query: {} })
   t.alike(result.containers, {}, 'should return an empty container map')
-  t.is(result.asOf, null, 'asOf is null with no data')
   t.pass()
 })
 
