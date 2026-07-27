@@ -39,6 +39,8 @@ module.exports = (ctx) => {
           req.query.end,
           req.query.interval,
           req.query.groupBy,
+          req.query.container,
+          req.query.current,
           req.query.racks
         ],
         ENDPOINTS.METRICS_HASHRATE,
@@ -228,6 +230,7 @@ module.exports = (ctx) => {
           req.params.id,
           req.query.start,
           req.query.end,
+          req.query.interval,
           req.query.limit
         ],
         ENDPOINTS.METRICS_CONTAINER_HISTORY,
