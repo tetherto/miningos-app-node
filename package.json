@@ -17,7 +17,7 @@
     "url": "https://github.com/tetherto/miningos-app-node/issues"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
   },
   "files": [
     "worker.js",
