@@ -738,6 +738,25 @@ const RPC_TIMEOUT = 15000
 const RPC_CONCURRENCY_LIMIT = 2
 const RPC_PAGE_LIMIT = 100
 
+// A pooled protomux-rpc channel can be torn down between requests, so the first
+// jRequest that reuses it fails while an immediate re-dial succeeds. Retry those.
+const RPC_RETRYABLE_ERRORS = ['CHANNEL_CLOSED', 'channel closed']
+const RPC_MAX_ATTEMPTS = 3
+const RPC_RETRY_DELAY = 100
+
+// Upper bound on rows a single tail-log request may span. Sized to allow every
+// legitimate caller (30 days of stat-1m is 43.2k buckets) while rejecting the
+// unbounded ranges that pull hundreds of thousands of rows over one RPC channel.
+const TAIL_LOG_MAX_ROWS = 50000
+
+// Bucket width per stat key, used to estimate the row count of a range.
+// Keys absent here (e.g. the realtime stat-rtd) are not range-checked.
+const TAIL_LOG_BUCKET_MS = {
+  'stat-1m': 60 * 1000,
+  'stat-5m': 5 * 60 * 1000,
+  'stat-3h': 3 * 60 * 60 * 1000
+}
+
 const AUTH_CACHE_TTL = 60 * 1000
 
 const ACTIONS_MAX_QUERIES = 10
@@ -853,6 +872,11 @@ module.exports = {
   RPC_TIMEOUT,
   RPC_CONCURRENCY_LIMIT,
   RPC_PAGE_LIMIT,
+  RPC_RETRYABLE_ERRORS,
+  RPC_MAX_ATTEMPTS,
+  RPC_RETRY_DELAY,
+  TAIL_LOG_MAX_ROWS,
+  TAIL_LOG_BUCKET_MS,
   AUTH_CACHE_TTL,
   ACTIONS_MAX_QUERIES,
   ACTIONS_QUERIES_MAX_LENGTH,

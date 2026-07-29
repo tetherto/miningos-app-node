@@ -1,6 +1,27 @@
 'use strict'
 
 const { parseJsonQueryParam } = require('../../utils')
+const { TAIL_LOG_MAX_ROWS, TAIL_LOG_BUCKET_MS } = require('../../constants')
+
+/**
+ * Rejects unbounded ranges whose bucket count would blow past TAIL_LOG_MAX_ROWS,
+ * so such a request fails fast with a clear code instead of streaming hundreds of
+ * thousands of rows over a single RPC channel. Callers should coarsen the stat key
+ * (e.g. stat-5m to stat-3h) for long ranges.
+ *
+ * A request that supplies its own limit is already bounded by it (the schema caps
+ * limit at TAIL_LOG_MAX_ROWS), so only limitless requests are range-checked.
+ * Keys with no known bucket width, and open ranges, are not checked either.
+ */
+const assertRangeWithinRowLimit = (key, start, end, limit) => {
+  if (limit) return
+
+  const bucketMs = TAIL_LOG_BUCKET_MS[key]
+
+  if (!bucketMs || !start || !end || end <= start) return
+
+  if ((end - start) / bucketMs > TAIL_LOG_MAX_ROWS) throw new Error('ERR_RANGE_TOO_LARGE')
+}
 
 async function tailLogRoute (ctx, req, rep) {
   if (req.query.fields) {
@@ -18,6 +39,8 @@ async function tailLogRoute (ctx, req, rep) {
       throw new Error('ERR_AGGRTIMES_INVALID_ARRAY')
     }
   }
+
+  assertRangeWithinRowLimit(req.query.key, req.query.start, req.query.end, req.query.limit)
 
   return await ctx.dataProxy.requestDataMap('tailLog', req.query)
 }
@@ -45,6 +68,10 @@ async function tailLogMultiRoute (ctx, req, rep) {
     if (!Array.isArray(req.query.aggrTimes)) {
       throw new Error('ERR_AGGRTIMES_INVALID_ARRAY')
     }
+  }
+
+  for (const { key } of req.query.keys || []) {
+    assertRangeWithinRowLimit(key, req.query.start, req.query.end, req.query.limit)
   }
 
   return await ctx.dataProxy.requestDataMap('tailLogMulti', req.query)

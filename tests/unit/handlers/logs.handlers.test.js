@@ -229,3 +229,83 @@ test('getHistoryLogRoute - with query parameter', async (t) => {
 
   t.pass()
 })
+
+const DAY_MS = 24 * 60 * 60 * 1000
+const END = 1785331176210
+
+test('tailLogRoute - rejects a range that would exceed the row limit', async (t) => {
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => [])
+  // a year of 5-minute buckets is ~105k rows, past TAIL_LOG_MAX_ROWS
+  const mockReq = createMockReq({ key: 'stat-5m', start: END - 365 * DAY_MS, end: END })
+
+  await t.exception(
+    tailLogRoute(mockCtx, mockReq, {}),
+    /ERR_RANGE_TOO_LARGE/,
+    'should reject before hitting the data layer'
+  )
+})
+
+test('tailLogRoute - allows the same range at a coarser bucket', async (t) => {
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => [])
+  // the same year at 3-hour buckets is ~2.9k rows
+  const mockReq = createMockReq({ key: 'stat-3h', start: END - 365 * DAY_MS, end: END })
+
+  await tailLogRoute(mockCtx, mockReq, {})
+
+  t.pass()
+})
+
+test('tailLogRoute - allows 30 days of 1-minute buckets', async (t) => {
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => [])
+  const mockReq = createMockReq({ key: 'stat-1m', start: END - 30 * DAY_MS, end: END })
+
+  await tailLogRoute(mockCtx, mockReq, {})
+
+  t.pass()
+})
+
+test('tailLogRoute - skips the check for unknown keys and open ranges', async (t) => {
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => [])
+
+  await tailLogRoute(
+    mockCtx,
+    createMockReq({ key: 'stat-rtd', start: END - 365 * DAY_MS, end: END }),
+    {}
+  )
+  await tailLogRoute(mockCtx, createMockReq({ key: 'stat-5m' }), {})
+
+  t.pass()
+})
+
+test('tailLogMultiRoute - rejects when any requested key exceeds the row limit', async (t) => {
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => [])
+  const mockReq = createMockReq({
+    keys: JSON.stringify([
+      { key: 'stat-3h', type: 'container', tag: 't-container' },
+      { key: 'stat-5m', type: 'miner', tag: 't-miner' }
+    ]),
+    start: END - 365 * DAY_MS,
+    end: END
+  })
+
+  await t.exception(
+    tailLogMultiRoute(mockCtx, mockReq, {}),
+    /ERR_RANGE_TOO_LARGE/,
+    'should reject on the finest requested key'
+  )
+})
+
+test('tailLogRoute - allows a long range when the client bounds it with a limit', async (t) => {
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => [])
+  // the chart paths always send a limit, so the response is already bounded
+  const mockReq = createMockReq({
+    key: 'stat-5m',
+    start: END - 365 * DAY_MS,
+    end: END,
+    limit: 288
+  })
+
+  await tailLogRoute(mockCtx, mockReq, {})
+
+  t.pass()
+})
