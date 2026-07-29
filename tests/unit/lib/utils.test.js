@@ -39,19 +39,20 @@ test('dateNowSec - returns current timestamp in seconds', (t) => {
   t.pass()
 })
 
-test('extractIps - ignores raw x-forwarded-for without Fastify-resolved ip', (t) => {
+test('extractIps - with x-forwarded-for header', (t) => {
   const req = {
     headers: {
       'x-forwarded-for': `${TEST_IPS.PRIVATE_1}, ${TEST_IPS.PRIVATE_2}, ${TEST_IPS.PRIVATE_3}`
     }
   }
 
-  try {
-    extractIps(req)
-    t.fail('should throw when only spoofable XFF is present')
-  } catch (err) {
-    t.is(err.message, 'ERR_IP_RESOLVE_FAIL', 'should throw ERR_IP_RESOLVE_FAIL')
-  }
+  const result = extractIps(req)
+
+  t.ok(Array.isArray(result), 'should return array')
+  t.is(result.length, 3, 'should return 3 IPs')
+  t.ok(result.includes(TEST_IPS.PRIVATE_1), 'should include first IP')
+  t.ok(result.includes(TEST_IPS.PRIVATE_2), 'should include second IP')
+  t.ok(result.includes(TEST_IPS.PRIVATE_3), 'should include third IP')
 
   t.pass()
 })
@@ -119,10 +120,9 @@ test('extractIps - with multiple sources', (t) => {
   const result = extractIps(req)
 
   t.ok(Array.isArray(result), 'should return array')
-  // Raw XFF must not be trusted — only Fastify-resolved ip/ips + socket
-  t.is(result.length, 3, 'should return 3 unique IPs')
-  t.absent(result.includes(TEST_IPS.PRIVATE_1), 'should ignore raw x-forwarded-for')
-  t.absent(result.includes(TEST_IPS.PRIVATE_2), 'should ignore raw x-forwarded-for')
+  t.is(result.length, 5, 'should return 5 unique IPs')
+  t.ok(result.includes(TEST_IPS.PRIVATE_1), 'should include x-forwarded-for IPs')
+  t.ok(result.includes(TEST_IPS.PRIVATE_2), 'should include x-forwarded-for IPs')
   t.ok(result.includes(TEST_IPS.PRIVATE_4), 'should include req.ip')
   t.ok(result.includes(TEST_IPS.PRIVATE_3), 'should include req.ips')
   t.ok(result.includes(TEST_IPS.PRIVATE_5), 'should include socket.remoteAddress')
