@@ -1,6 +1,7 @@
 'use strict'
 
 const { parseJsonQueryParam } = require('../../utils')
+const { assertSafeMongoQuery } = require('../lib/queryUtils')
 const {
   TAIL_LOG_MAX_ROWS,
   TAIL_LOG_BUCKET_MS,
@@ -104,6 +105,7 @@ async function getHistoryLogRoute (ctx, req) {
   }
   if (req.query.query) {
     req.query.query = parseJsonQueryParam(req.query.query, 'ERR_QUERY_INVALID_JSON')
+    assertSafeMongoQuery(req.query.query)
   }
 
   return await ctx.dataProxy.requestDataMap('getHistoricalLogs', req.query)
