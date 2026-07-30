@@ -286,15 +286,90 @@ test('tailLogRoute - rejects 30 days of 1-minute buckets', async (t) => {
   )
 })
 
-test('tailLogRoute - skips the check for unknown keys and open ranges', async (t) => {
+test('tailLogRoute - skips the check for stat-rtd, non-stat keys and open ranges', async (t) => {
   const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => [])
 
+  // stat-rtd is the latest sample per thing, not a series, so a range does not
+  // size it; non-stat keys are not the guard's business; an open range has
+  // nothing to size at all
   await tailLogRoute(
     mockCtx,
     createMockReq({ key: 'stat-rtd', start: END - 365 * DAY_MS, end: END }),
     {}
   )
+  await tailLogRoute(
+    mockCtx,
+    createMockReq({ key: 'audit-log', start: END - 365 * DAY_MS, end: END }),
+    {}
+  )
   await tailLogRoute(mockCtx, createMockReq({ key: 'stat-5m' }), {})
+
+  t.pass()
+})
+
+test('tailLogRoute - range-checks every fixed-width stat key, not just three', async (t) => {
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => [])
+
+  // stat-20s, stat-30m and stat-1D used to have no bucket width, so the guard
+  // failed open on them: a limitless year of stat-20s is ~1.58M buckets
+  await t.exception(
+    tailLogRoute(
+      mockCtx,
+      createMockReq({ key: 'stat-20s', start: END - 365 * DAY_MS, end: END }),
+      {}
+    ),
+    /ERR_RANGE_TOO_LARGE/,
+    'should reject a limitless year of the finest bucket'
+  )
+  await t.exception(
+    tailLogRoute(
+      mockCtx,
+      createMockReq({ key: 'stat-30m', start: END - 365 * DAY_MS, end: END }),
+      {}
+    ),
+    /ERR_RANGE_TOO_LARGE/,
+    'a year of 30-minute buckets is 17.5k rows, over the budget'
+  )
+
+  // and still admit the ranges those keys can serve: 9000 buckets of stat-20s is
+  // 50 hours, and a year of stat-1D is 365 rows
+  await tailLogRoute(
+    mockCtx,
+    createMockReq({ key: 'stat-20s', start: END - DAY_MS, end: END }),
+    {}
+  )
+  await tailLogRoute(
+    mockCtx,
+    createMockReq({ key: 'stat-1D', start: END - 365 * DAY_MS, end: END }),
+    {}
+  )
+
+  t.pass()
+})
+
+test('tailLogRoute - fails closed on a stat key with no known bucket width', async (t) => {
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => [])
+  // a stat key added upstream without a width in TAIL_LOG_BUCKET_MS must be
+  // rejected rather than waved through as effectively unbounded
+  const mockReq = createMockReq({ key: 'stat-10s', start: END - 365 * DAY_MS, end: END })
+
+  await t.exception(
+    tailLogRoute(mockCtx, mockReq, {}),
+    /ERR_KEY_NOT_RANGE_CHECKABLE/,
+    'should reject an unrecognised stat key it cannot size'
+  )
+})
+
+test('tailLogRoute - an unsizeable stat key is still allowed when bounded by a limit', async (t) => {
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => [])
+  const mockReq = createMockReq({
+    key: 'stat-10s',
+    start: END - 365 * DAY_MS,
+    end: END,
+    limit: 288
+  })
+
+  await tailLogRoute(mockCtx, mockReq, {})
 
   t.pass()
 })

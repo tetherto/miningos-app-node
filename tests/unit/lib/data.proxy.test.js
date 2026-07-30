@@ -118,3 +118,70 @@ test('requestData - retries a closed channel per store', async (t) => {
   t.is(calls, 2, 'should retry once')
   t.alike(result, [{ ok: true }], 'should collect the retried result')
 })
+
+// A channel can drop after the ork applied the request, so a retried write can
+// execute twice — and a single pushAction carries no idempotency key. Writes must
+// keep failing on the first CHANNEL_CLOSED.
+test('requestData - does not retry a write on a closed channel', async (t) => {
+  let calls = 0
+  const ctx = createCtx(async () => {
+    calls++
+    throw new Error('CHANNEL_CLOSED: channel closed')
+  })
+
+  const result = await createDataProxy(ctx).requestData('pushAction', {})
+
+  t.is(calls, 1, 'should attempt a miner control action exactly once')
+  t.alike(
+    result,
+    [{ error: 'CHANNEL_CLOSED: channel closed' }],
+    'should surface the failure instead of re-sending the action'
+  )
+})
+
+test('requestDataMap - does not retry a write on a closed channel', async (t) => {
+  silenceWarnings(t)
+
+  let calls = 0
+  const ctx = createCtx(async () => {
+    calls++
+    throw new Error('CHANNEL_CLOSED: channel closed')
+  })
+
+  await t.exception(
+    createDataProxy(ctx).requestDataMap('setGlobalConfig', {}),
+    /CHANNEL_CLOSED/,
+    'should propagate rather than re-apply the config write'
+  )
+  t.is(calls, 1, 'should attempt the write exactly once')
+})
+
+test('requestData - does not retry a method it does not recognise', async (t) => {
+  let calls = 0
+  const ctx = createCtx(async () => {
+    calls++
+    throw new Error('CHANNEL_CLOSED: channel closed')
+  })
+
+  // things.handlers passes the comment operation through dynamically, so an
+  // unlisted method must default to no retry rather than to retrying
+  await createDataProxy(ctx).requestData('someFutureMethod', {})
+
+  t.is(calls, 1, 'should not retry an unlisted method')
+})
+
+test('requestDataAllPages - retries a closed channel on a read method', async (t) => {
+  silenceWarnings(t)
+
+  let calls = 0
+  const ctx = createCtx(async () => {
+    calls++
+    if (calls === 1) throw new Error('CHANNEL_CLOSED: channel closed')
+    return []
+  })
+
+  const result = await createDataProxy(ctx).requestDataAllPages('listThings', {})
+
+  t.is(calls, 2, 'should retry the page fetch')
+  t.alike(result, [[]], 'should return the empty page set')
+})

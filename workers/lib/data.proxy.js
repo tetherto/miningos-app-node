@@ -5,6 +5,7 @@ const {
   RPC_CONCURRENCY_LIMIT,
   RPC_PAGE_LIMIT,
   RPC_RETRYABLE_ERRORS,
+  RPC_RETRYABLE_METHODS,
   RPC_MAX_ATTEMPTS,
   RPC_RETRY_DELAY
 } = require('./constants')
@@ -22,13 +23,20 @@ const _sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
  * A single dropped protomux-rpc channel would otherwise reject the whole
  * request, so retry the transient channel failures before giving up. Any other
  * error, and the final attempt, propagate unchanged.
+ *
+ * Retries are confined to the read methods in RPC_RETRYABLE_METHODS: a channel
+ * can drop after the ork applied the request, so retrying a write risks
+ * executing it twice. Writes keep the pre-existing behaviour of failing on the
+ * first CHANNEL_CLOSED, which is the safe direction for a miner control action.
  */
 const _jRequest = async (ctx, publicKey, method, params, timeout) => {
+  const retryable = RPC_RETRYABLE_METHODS.has(method)
+
   for (let attempt = 1; ; attempt++) {
     try {
       return await ctx.net_r0.jRequest(publicKey, method, params, { timeout })
     } catch (err) {
-      if (attempt >= RPC_MAX_ATTEMPTS || !_isRetryableRpcError(err)) throw err
+      if (!retryable || attempt >= RPC_MAX_ATTEMPTS || !_isRetryableRpcError(err)) throw err
 
       console.warn(
         `[DataProxy] rpc ${method} failed with "${err.message}", ` +
