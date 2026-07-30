@@ -10,7 +10,7 @@ const { TAIL_LOG_MAX_ROWS, TAIL_LOG_BUCKET_MS } = require('../../constants')
  * (e.g. stat-5m to stat-3h) for long ranges.
  *
  * A request that supplies its own limit is already bounded by it (the schema caps
- * limit at TAIL_LOG_MAX_ROWS), so only limitless requests are range-checked.
+ * limit at TAIL_LOG_MAX_LIMIT), so only limitless requests are range-checked.
  * Keys with no known bucket width, and open ranges, are not checked either.
  */
 const assertRangeWithinRowLimit = (key, start, end, limit) => {

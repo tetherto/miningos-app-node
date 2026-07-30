@@ -3,7 +3,7 @@ const { parseJsonQueryParam } = require('../../utils')
 const {
   ENDPOINTS,
   HTTP_METHODS,
-  TAIL_LOG_MAX_ROWS
+  TAIL_LOG_MAX_LIMIT
 } = require('../../constants')
 const {
   tailLogRoute,
@@ -28,7 +28,7 @@ module.exports = (ctx) => {
             start: { type: 'integer' },
             end: { type: 'integer' },
             offset: { type: 'integer' },
-            limit: { type: 'integer', minimum: 1, maximum: TAIL_LOG_MAX_ROWS },
+            limit: { type: 'integer', minimum: 1, maximum: TAIL_LOG_MAX_LIMIT },
             fields: { type: 'string' },
             aggrFields: { type: 'string' },
             aggrTimes: { type: 'string' },
@@ -62,7 +62,7 @@ module.exports = (ctx) => {
             start: { type: 'integer' },
             end: { type: 'integer' },
             offset: { type: 'integer' },
-            limit: { type: 'integer', minimum: 1, maximum: TAIL_LOG_MAX_ROWS },
+            limit: { type: 'integer', minimum: 1, maximum: TAIL_LOG_MAX_LIMIT },
             fields: { type: 'string' },
             aggrFields: { type: 'string' },
             aggrTimes: { type: 'string' },

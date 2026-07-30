@@ -744,10 +744,18 @@ const RPC_RETRYABLE_ERRORS = ['CHANNEL_CLOSED', 'channel closed']
 const RPC_MAX_ATTEMPTS = 3
 const RPC_RETRY_DELAY = 100
 
-// Upper bound on rows a single tail-log request may span. Sized to allow every
-// legitimate caller (30 days of stat-1m is 43.2k buckets) while rejecting the
+// Upper bound on rows a request that sends no limit may span, rejecting the
 // unbounded ranges that pull hundreds of thousands of rows over one RPC channel.
-const TAIL_LOG_MAX_ROWS = 50000
+// Sized off the only limitless caller, the UI's historical miner KPI export: it
+// picks the finest stat key whose bucket count fits its own 8640-row budget, so
+// 8640 is the largest range it ever asks for (30 days of stat-5m, or 6 days of
+// stat-1m on a 1-minute site).
+const TAIL_LOG_MAX_ROWS = 9000
+
+// Upper bound on a client-supplied limit, which bounds the response on its own
+// and so exempts the request from the range check above. Sized off the UI's
+// widest limit, the dashboard power-mode timeline's 7 days of stat-1m.
+const TAIL_LOG_MAX_LIMIT = 10080
 
 // Bucket width per stat key, used to estimate the row count of a range.
 // Keys absent here (e.g. the realtime stat-rtd) are not range-checked.
@@ -876,6 +884,7 @@ module.exports = {
   RPC_MAX_ATTEMPTS,
   RPC_RETRY_DELAY,
   TAIL_LOG_MAX_ROWS,
+  TAIL_LOG_MAX_LIMIT,
   TAIL_LOG_BUCKET_MS,
   AUTH_CACHE_TTL,
   ACTIONS_MAX_QUERIES,

@@ -255,13 +255,35 @@ test('tailLogRoute - allows the same range at a coarser bucket', async (t) => {
   t.pass()
 })
 
-test('tailLogRoute - allows 30 days of 1-minute buckets', async (t) => {
+test('tailLogRoute - allows the widest range the export ladder asks for', async (t) => {
   const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => [])
-  const mockReq = createMockReq({ key: 'stat-1m', start: END - 30 * DAY_MS, end: END })
-
-  await tailLogRoute(mockCtx, mockReq, {})
+  // the export coarsens to fit its own 8640-row budget, which both of these hit
+  // exactly: 30 days of stat-5m, and 6 days of stat-1m on a 1-minute site
+  await tailLogRoute(
+    mockCtx,
+    createMockReq({ key: 'stat-5m', start: END - 30 * DAY_MS, end: END }),
+    {}
+  )
+  await tailLogRoute(
+    mockCtx,
+    createMockReq({ key: 'stat-1m', start: END - 6 * DAY_MS, end: END }),
+    {}
+  )
 
   t.pass()
+})
+
+test('tailLogRoute - rejects 30 days of 1-minute buckets', async (t) => {
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async () => [])
+  // 43.2k rows, well past the budget. No caller asks for this: the export's
+  // ladder is already on stat-5m by day 7, which is what the budget is sized to.
+  const mockReq = createMockReq({ key: 'stat-1m', start: END - 30 * DAY_MS, end: END })
+
+  await t.exception(
+    tailLogRoute(mockCtx, mockReq, {}),
+    /ERR_RANGE_TOO_LARGE/,
+    'should reject a limitless month of the finest bucket'
+  )
 })
 
 test('tailLogRoute - skips the check for unknown keys and open ranges', async (t) => {
