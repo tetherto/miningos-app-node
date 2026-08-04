@@ -202,7 +202,9 @@ async function getConsumption (ctx, req) {
 
   // Central-DCS sites report site power through the Siemens DCS worker's stat log
   // (site_power_w), not a powermeter worker
-  const requestParams = isCentralDCSEnabled(ctx)
+  const dcsEnabled = isCentralDCSEnabled(ctx)
+
+  const requestParams = dcsEnabled
     ? {
         type: WORKER_TYPES.DCS,
         tag: getDCSTag(ctx)
@@ -224,11 +226,9 @@ async function getConsumption (ctx, req) {
   })
 
   const hours = bucketHours(groupRange)
-
   const log = firstOrkEntries(res).map(val => {
     const powerW = Number(val[AGGR_FIELDS.SITE_POWER]) || 0
     const timeRange = parseEntryTimeRange(val.ts)
-
     return {
       ts: parseEntryTs(val.ts),
       ...(timeRange && { timeRange }),
