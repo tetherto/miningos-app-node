@@ -789,6 +789,80 @@ test('handlers: createWorkOrdersBatch builds one WO with a parts-move per device
   t.is(info.partsMoves[0].toLocation, 'site.miner-room', 'all moved to the WO target location')
 })
 
+test('handlers: createWorkOrdersBatch summarizes a MicroBT miner repair by the miner, not the first part', async (t) => {
+  const things = [
+    { id: 'hb-1', code: 'QAHB01', type: 'inventory-miner_part-hashboard', info: { serialNum: 'QAHB01-WM63SPP00750', location: 'site.lab' } },
+    { id: 'hb-2', code: 'QAHB02', type: 'inventory-miner_part-hashboard', info: { serialNum: 'QAHB02-WM63SPP00750', location: 'site.lab' } },
+    { id: 'miner-1', code: 'WM-750', type: 'miner-wm-m63spp', info: { serialNum: 'WM63SPP00750', location: 'site.miner-room' } }
+  ]
+  let lastPush
+  const handler = async (_key, method, params) => {
+    if (method === 'pushAction') { lastPush = params; return { id: 'action-1', errors: [] } }
+    if (method === 'listThings') {
+      const wanted = (params.query?.$or || []).map(c => Object.values(c)[0]).find(Boolean)
+      return things.filter(p => p.id === wanted || p.code === wanted || p.info.serialNum === wanted)
+    }
+    return null
+  }
+  const ctx = createMockCtxWithOrks([{ rpcPublicKey: 'k' }], handler)
+  ctx.authLib = mockAuthLib
+  ctx._workOrderRackId = RACK
+
+  await handlers.createWorkOrdersBatch(ctx, {
+    ...userMeta(),
+    body: {
+      type: 3,
+      issue: 'Boot but no hashrate',
+      devices: [
+        { deviceType: 'hashboard', deviceModel: 'miner-wm-m63spp', deviceIdentifier: 'QAHB01-WM63SPP00750' },
+        { deviceType: 'hashboard', deviceModel: 'miner-wm-m63spp', deviceIdentifier: 'QAHB02-WM63SPP00750' }
+      ],
+      info: { minerIdentifier: 'miner-1' }
+    }
+  })
+
+  const info = lastPush.params[0].info
+  t.is(info.deviceType, 'miner', 'the WO subject is the miner')
+  t.is(info.deviceModel, 'miner-wm-m63spp', 'model comes from the resolved miner thing')
+  t.is(info.deviceIdentifier, 'WM63SPP00750', 'identifier is the miner serial, not the first part')
+  t.is(info.deviceCount, 2, 'device count still reflects the parts')
+  t.alike(info.partsMoves.map(m => m.deviceIdentifier), ['QAHB01-WM63SPP00750', 'QAHB02-WM63SPP00750'], 'parts stay in partsMoves')
+})
+
+test('handlers: createWorkOrdersBatch keeps the first-device summary when no minerIdentifier is given', async (t) => {
+  const things = [
+    { id: 'psu-1', code: 'PSU01', type: 'inventory-miner_part-psu', info: { serialNum: 'PSU-SN-1', location: 'site.lab' } }
+  ]
+  let lastPush
+  const handler = async (_key, method, params) => {
+    if (method === 'pushAction') { lastPush = params; return { id: 'action-1', errors: [] } }
+    if (method === 'listThings') {
+      const wanted = (params.query?.$or || []).map(c => Object.values(c)[0]).find(Boolean)
+      return things.filter(p => p.id === wanted || p.code === wanted || p.info.serialNum === wanted)
+    }
+    return null
+  }
+  const ctx = createMockCtxWithOrks([{ rpcPublicKey: 'k' }], handler)
+  ctx.authLib = mockAuthLib
+  ctx._workOrderRackId = RACK
+
+  await handlers.createWorkOrdersBatch(ctx, {
+    ...userMeta(),
+    body: {
+      type: 4,
+      issue: 'PSU dead',
+      devices: [
+        { deviceType: 'psu', deviceModel: 'miner-wm-m63spp', deviceIdentifier: 'PSU-SN-1' }
+      ],
+      info: {}
+    }
+  })
+
+  const info = lastPush.params[0].info
+  t.is(info.deviceType, 'psu', 'non-miner repairs keep the first-device summary')
+  t.is(info.deviceIdentifier, 'PSU-SN-1')
+})
+
 test('handlers: createWorkOrdersBatch rejects the whole batch if any device type is invalid', async (t) => {
   const flow = buildSubmitFlow({ parts: [{ id: 'p', code: 'c', type: 'inventory-miner_part-psu', info: { serialNum: 'SN-1' } }] })
   await t.exception(
