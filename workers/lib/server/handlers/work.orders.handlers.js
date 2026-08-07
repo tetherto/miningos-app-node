@@ -323,14 +323,30 @@ async function createWorkOrdersBatch (ctx, req) {
   const ts = Date.now()
   const [summary] = devices
 
-  // First device is the summary used by the thing-side validator, RMA export, and single-device views.
+  // The summary fields feed the thing-side validator, RMA export, and
+  // single-device views. A MicroBT repair WO's real subject is the miner
+  // (info.minerIdentifier) - its devices array only lists the repaired parts,
+  // so summarizing by devices[0] would label the whole WO with one part's
+  // serial number. Fall back to the first device for every other case.
+  const repairedMiner = type === WORK_ORDER_TYPES.MICROBT_MINER && extraInfo?.minerIdentifier
+    ? await _resolvePartByIdentifier(ctx, extraInfo.minerIdentifier)
+    : null
+
   const info = {
     type,
     ...rest,
     ...extraInfo,
-    deviceType: summary.deviceType,
-    deviceModel: summary.deviceModel,
-    deviceIdentifier: summary.deviceIdentifier,
+    ...(repairedMiner
+      ? {
+          deviceType: 'miner',
+          deviceModel: repairedMiner.type ?? null,
+          deviceIdentifier: repairedMiner.info?.serialNum ?? repairedMiner.code
+        }
+      : {
+          deviceType: summary.deviceType,
+          deviceModel: summary.deviceModel,
+          deviceIdentifier: summary.deviceIdentifier
+        }),
     deviceCount: devices.length,
     createdBy: voter,
     createdAt: ts
@@ -399,7 +415,7 @@ async function createWorkOrdersBatch (ctx, req) {
   // MicroBT repair WOs list only the repaired parts as devices; the miner
   // itself rides in info.minerIdentifier, so its status change lands here.
   if (type === WORK_ORDER_TYPES.MICROBT_MINER && info.deviceStatus && info.minerIdentifier) {
-    const miner = await _resolvePartByIdentifier(ctx, info.minerIdentifier)
+    const miner = repairedMiner
     if (!miner) {
       const err = new Error('ERR_PART_NOT_FOUND')
       err.statusCode = 400
