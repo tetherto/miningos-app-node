@@ -770,6 +770,85 @@ test('buildMinersCircuit2View - summary with pre_hx and post_hx temps', (t) => {
   t.pass()
 })
 
+// The base fixture leaves pre_hx_temp_sensor / post_hx_temp_sensor unset, so the
+// configured-sensor branch of buildMinersCircuit2View was never exercised — even
+// though that is the branch every real site takes. These tests pin the contract the
+// UI depends on: a configured tag always yields { value, unit, sensor }, with value
+// null when the tag can't be read.
+const createConfigWithHxSensors = () => {
+  const config = createMockConfig()
+  config.cooling_system.cooling_tower_loop.pre_hx_temp_sensor = 'TT-7581-B'
+  config.cooling_system.cooling_tower_loop.post_hx_temp_sensor = 'TT-7581-A'
+  return config
+}
+
+test('buildMinersCircuit2View - configured pre/post-HX sensors win over the HX-derived average', (t) => {
+  const equipment = createMockEquipment()
+  // HX-derived would average to 29.15 / 36.85 from tower_side_in/out_temp.
+  equipment.temperatures.push(
+    { equipment: 'TT-7581-B', value: 31.4, unit: '°C' },
+    { equipment: 'TT-7581-A', value: 43.6, unit: '°C' }
+  )
+  const view = buildMinersCircuit2View(equipment, createConfigWithHxSensors())
+
+  t.alike(view.summary.pre_hx_temp, { value: 31.4, unit: '°C', sensor: 'TT-7581-B' })
+  t.alike(view.summary.post_hx_temp, { value: 43.6, unit: '°C', sensor: 'TT-7581-A' })
+  t.alike(view.summary.delta_t, { value: 12.2, unit: '°C' }, 'delta_t is post - pre')
+})
+
+test('buildMinersCircuit2View - keeps the sensor id with value null when a configured tag is unreadable', (t) => {
+  // No heat exchangers, so there is no HX-derived value to fall back to — this is
+  // the shape a live site reports when the tag is dead or unwired.
+  const equipment = createEmptyEquipment()
+  const view = buildMinersCircuit2View(equipment, createConfigWithHxSensors())
+
+  t.alike(view.summary.pre_hx_temp, { value: null, unit: '°C', sensor: 'TT-7581-B' },
+    'reading is emitted with a null value so the UI can still label the sensor')
+  t.alike(view.summary.post_hx_temp, { value: null, unit: '°C', sensor: 'TT-7581-A' })
+  t.is(view.summary.delta_t, null, 'delta_t is null rather than derived from a missing leg')
+})
+
+test('buildMinersCircuit2View - a tag present in the snap with a null value is also reported as null', (t) => {
+  const equipment = createEmptyEquipment()
+  equipment.temperatures.push(
+    { equipment: 'TT-7581-B', value: null, unit: '°C' },
+    { equipment: 'TT-7581-A', value: 43.6, unit: '°C' }
+  )
+  const view = buildMinersCircuit2View(equipment, createConfigWithHxSensors())
+
+  t.is(view.summary.pre_hx_temp.value, null, 'unreadable leg stays null, never 0')
+  t.is(view.summary.pre_hx_temp.sensor, 'TT-7581-B')
+  t.is(view.summary.post_hx_temp.value, 43.6)
+  t.is(view.summary.delta_t, null, 'one unreadable leg makes delta_t null')
+})
+
+// Deliberate: a reported 0 is a value, not a missing reading, so it is passed
+// through and wins over the HX-derived fallback. Treating 0 as invalid would need a
+// plausibility band, which is a process decision — change this test only alongside one.
+test('buildMinersCircuit2View - a reported zero is preserved as a real reading', (t) => {
+  const equipment = createMockEquipment()
+  equipment.temperatures.push(
+    { equipment: 'TT-7581-B', value: 0, unit: '°C' },
+    { equipment: 'TT-7581-A', value: 43.6, unit: '°C' }
+  )
+  const view = buildMinersCircuit2View(equipment, createConfigWithHxSensors())
+
+  t.is(view.summary.pre_hx_temp.value, 0, 'zero is not treated as missing')
+  t.alike(view.summary.delta_t, { value: 43.6, unit: '°C' })
+})
+
+test('buildMinersLayoutView - legend C2 tower temps alias the circuit2 summary readings', (t) => {
+  const equipment = createEmptyEquipment()
+  const view = buildMinersLayoutView(equipment, createConfigWithHxSensors())
+
+  // The UI reads the tower legs off `legend`, so the sensor id and the nullable
+  // value have to survive the aliasing.
+  t.alike(view.legend.c2_tower_cold, view.circuit2.summary.pre_hx_temp)
+  t.alike(view.legend.c2_tower_hot, view.circuit2.summary.post_hx_temp)
+  t.is(view.legend.c2_tower_cold.sensor, 'TT-7581-B')
+  t.is(view.legend.c2_tower_cold.value, null)
+})
+
 test('buildMinersCircuit2View - makeup system includes pump and on_off_valves', (t) => {
   const equipment = createMockEquipment()
   const config = createMockConfig()
