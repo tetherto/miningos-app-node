@@ -22,7 +22,7 @@ const schemas = {
       properties: {
         start: { type: 'integer', minimum: 0 },
         end: { type: 'integer', minimum: 0 },
-        interval: { type: 'string', enum: ['1h', '1d', '1w'] },
+        interval: { type: 'string', enum: ['1h', '1d', '1w', '1M'] },
         groupBy: { type: 'string', enum: ['miner', 'container', 'rack'] },
         byMeter: { type: 'boolean' },
         racks: { type: 'string' },

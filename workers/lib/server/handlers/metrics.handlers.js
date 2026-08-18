@@ -236,6 +236,7 @@ function calculateGroupedHashrateSummary (log, groupBy) {
 function bucketHours (groupRange) {
   if (groupRange === '1D') return 24
   if (groupRange === '1W') return 168
+  if (groupRange === '1M') return 720 // 30-day month, matching RANGE_BUCKETS
   return 1 // '1H'
 }
 
