@@ -352,13 +352,46 @@ function _buildSparePartQuery (qs) {
   return query
 }
 
+
+async function _computeLinkedWoCounts (ctx, partIds) {
+  const results = await ctx.dataProxy.requestData('listThings', {
+    query: {
+      type: WORK_ORDER_THING_TYPE,
+      'info.partsMoves.partId': { $in: partIds }
+    }
+  })
+
+  const counts = new Map()
+  for (const wo of flattenRpcResults(results)) {
+    const seen = new Set()
+    for (const move of wo.info?.partsMoves || []) {
+      if (!move.partId || seen.has(move.partId)) continue
+      seen.add(move.partId)
+      counts.set(move.partId, (counts.get(move.partId) || 0) + 1)
+    }
+  }
+  return counts
+}
+
 async function listSpareParts (ctx, req) {
-  return listThingsWithCount(ctx, _buildSparePartQuery(req.query), {
+  const result = await listThingsWithCount(ctx, _buildSparePartQuery(req.query), {
     offset: req.query.offset ?? 0,
     limit: req.query.limit ?? 100,
     sort: req.query.sort && parseJsonQueryParam(req.query.sort, 'ERR_SORT_INVALID_JSON'),
     fields: req.query.fields && parseJsonQueryParam(req.query.fields, 'ERR_FIELDS_INVALID_JSON')
   })
+
+  const partIds = result.data.map(part => part?.id).filter(Boolean)
+  if (!partIds.length) return result
+
+  const linkedWoCounts = await _computeLinkedWoCounts(ctx, partIds)
+  return {
+    ...result,
+    data: result.data.map(part => ({
+      ...part,
+      linkedWoCount: linkedWoCounts.get(part.id) || 0
+    }))
+  }
 }
 
 async function getRepairHistory (ctx, req) {
