@@ -106,7 +106,7 @@ function getIntervalConfig (interval) {
       return { key: LOG_KEYS.STAT_30M, groupRange: '1H' }
     case '1w':
       return { key: LOG_KEYS.STAT_3H, groupRange: '1W' }
-    case '1M':
+    case '1M': // 30-day month; distinct from 1m (one minute)
       return { key: LOG_KEYS.STAT_3H, groupRange: '1M' }
     case '1d':
     default:

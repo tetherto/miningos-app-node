@@ -899,7 +899,7 @@ test('getConsumption - byMeter applies the 1M interval to the ork query and MWh 
   })
 
   const result = await getConsumption(mockCtx, {
-    query: { start: 1700000000000, end: 1700100000000, byMeter: true, interval: '1M' }
+    query: { start: 1700000000000, end: 1705276800000, byMeter: true, interval: '1M' }
   })
 
   t.is(capturedPayload.key, 'stat-3h', 'monthly interval tails the 3h stat log')
@@ -927,7 +927,7 @@ test('getConsumption - site power applies the 1M interval to the ork query and M
   })
 
   const result = await getConsumption(mockCtx, {
-    query: { start: 1700000000000, end: 1700100000000, interval: '1M' }
+    query: { start: 1700000000000, end: 1705276800000, interval: '1M' }
   })
 
   t.is(capturedPayload.key, 'stat-3h', 'monthly interval tails the 3h stat log')
