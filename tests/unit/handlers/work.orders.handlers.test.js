@@ -1211,6 +1211,35 @@ test('handlers: exportWorkOrdersBulk unions headers across differently-shaped wo
   t.ok(header.includes('issue'), 'repair-only field present in union header')
 })
 
+test('handlers: exportWorkOrdersBulk emits one row per partsMove, not one row per WO', async (t) => {
+  const repair = {
+    id: 'wo-3',
+    code: 'IVI-3-0001',
+    info: {
+      type: 3,
+      partsMoves: [
+        { role: 'diagnosis', partCode: 'HB-OLD' },
+        { role: 'replacement', partCode: 'HB-NEW' }
+      ]
+    }
+  }
+  const ctx = createMockCtxWithOrks([{ rpcPublicKey: 'k' }], async () => [repair])
+  const rep = mkRep()
+  await handlers.exportWorkOrdersBulk(ctx, { query: { ids: 'IVI-3-0001' } }, rep)
+  const lines = rep._body.trim().split('\r\n')
+  t.is(lines.length, 3, 'header + 2 rows, one per partsMove')
+  t.ok(lines[1].startsWith('IVI-3-0001,') && lines[1].includes('HB-OLD'))
+  t.ok(lines[2].startsWith('IVI-3-0001,') && lines[2].includes('HB-NEW'), 'second row shares the same WO code')
+})
+
+test('handlers: exportWorkOrdersBulk 404s when none of the ids match', async (t) => {
+  const ctx = createMockCtxWithOrks([{ rpcPublicKey: 'k' }], async () => [])
+  await t.exception(
+    () => handlers.exportWorkOrdersBulk(ctx, { query: { ids: 'nope-1,nope-2' } }, mkRep()),
+    /ERR_WORK_ORDERS_NOT_FOUND/
+  )
+})
+
 test('handlers: getWorkOrderAudit calls getHistoricalLogs filtered by id', async (t) => {
   let received
   const ctx = createMockCtxWithOrks(
