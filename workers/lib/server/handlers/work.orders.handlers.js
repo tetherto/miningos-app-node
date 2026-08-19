@@ -12,7 +12,7 @@ const {
   MAINTENANCE_CONTAINER,
   IN_OPERATION_STATUS
 } = require('../../constants')
-const { renderWorkOrderCsv, renderRmaCsv } = require('../lib/work.order.export')
+const { renderWorkOrderCsv, renderWorkOrdersBulkCsv, renderRmaCsv } = require('../lib/work.order.export')
 const { submitWorkOrderAction, getWorkOrderRackId, assertActionApplied, assertActionsExecuted } = require('../lib/work.orders')
 
 async function _resolvePartByIdentifier (ctx, identifier) {
@@ -601,6 +601,24 @@ async function exportWorkOrdersRma (ctx, req, rep) {
   return rep.send(renderRmaCsv(wos))
 }
 
+// Bulk sibling of exportWorkOrder: N ids, one combined CSV, so a large list-page
+// selection downloads as a single file instead of one browser download per WO.
+async function exportWorkOrdersBulk (ctx, req, rep) {
+  const ids = req.query.ids.split(',').map(s => s.trim()).filter(Boolean)
+  const params = {
+    query: {
+      type: WORK_ORDER_THING_TYPE,
+      $or: [{ id: { $in: ids } }, { code: { $in: ids } }]
+    }
+  }
+  const results = await ctx.dataProxy.requestData('listThings', params)
+  const wos = flattenRpcResults(results)
+
+  rep.header('content-type', 'text/csv; charset=utf-8')
+  rep.header('content-disposition', 'attachment; filename="work-orders.csv"')
+  return rep.send(renderWorkOrdersBulkCsv(wos))
+}
+
 async function getWorkOrderAudit (ctx, req) {
   const payload = {
     logType: 'info',
@@ -627,5 +645,6 @@ module.exports = {
   appendWorkLogEntry,
   getWorkOrderAudit,
   exportWorkOrder,
-  exportWorkOrdersRma
+  exportWorkOrdersRma,
+  exportWorkOrdersBulk
 }

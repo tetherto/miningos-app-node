@@ -260,4 +260,15 @@ const exportRma = {
   }
 }
 
-module.exports = { create, createBatch, list, byId, update, close, cancel, reopen, assign, audit, log, export: exportRoute, exportRma }
+const exportBulk = {
+  querystring: {
+    type: 'object',
+    required: ['ids'],
+    additionalProperties: false,
+    properties: {
+      ids: { type: 'string', minLength: 1, maxLength: 4000 }
+    }
+  }
+}
+
+module.exports = { create, createBatch, list, byId, update, close, cancel, reopen, assign, audit, log, export: exportRoute, exportRma, exportBulk }
