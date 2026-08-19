@@ -249,26 +249,21 @@ const exportRoute = {
   }
 }
 
-const exportRma = {
-  querystring: {
-    type: 'object',
-    required: ['ids'],
-    additionalProperties: false,
-    properties: {
-      ids: { type: 'string', minLength: 1, maxLength: 4000 }
-    }
+const idsQuerystring = (maxLength) => ({
+  type: 'object',
+  required: ['ids'],
+  additionalProperties: false,
+  properties: {
+    ids: { type: 'string', minLength: 1, maxLength }
   }
+})
+
+const exportRma = {
+  querystring: idsQuerystring(4000)
 }
 
 const exportBulk = {
-  querystring: {
-    type: 'object',
-    required: ['ids'],
-    additionalProperties: false,
-    properties: {
-      ids: { type: 'string', minLength: 1, maxLength: 4000 }
-    }
-  }
+  querystring: idsQuerystring(8000)
 }
 
 module.exports = { create, createBatch, list, byId, update, close, cancel, reopen, assign, audit, log, export: exportRoute, exportRma, exportBulk }
