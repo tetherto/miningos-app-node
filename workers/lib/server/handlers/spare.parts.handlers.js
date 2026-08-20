@@ -352,20 +352,21 @@ function _buildSparePartQuery (qs) {
   return query
 }
 
-
 async function _computeLinkedWoCounts (ctx, partIds) {
-  const results = await ctx.dataProxy.requestData('listThings', {
+  const idSet = new Set(partIds)
+  const results = await ctx.dataProxy.requestDataAllPages('listThings', {
     query: {
       type: WORK_ORDER_THING_TYPE,
       'info.partsMoves.partId': { $in: partIds }
-    }
+    },
+    fields: { 'info.partsMoves.partId': 1 }
   })
 
   const counts = new Map()
   for (const wo of flattenRpcResults(results)) {
     const seen = new Set()
     for (const move of wo.info?.partsMoves || []) {
-      if (!move.partId || seen.has(move.partId)) continue
+      if (!move.partId || !idSet.has(move.partId) || seen.has(move.partId)) continue
       seen.add(move.partId)
       counts.set(move.partId, (counts.get(move.partId) || 0) + 1)
     }

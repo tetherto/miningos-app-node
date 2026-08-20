@@ -582,6 +582,7 @@ test('handlers: listSpareParts skips the linked-WO lookup entirely when the page
   const flow = listFlow({ items: [], total: 0 })
   const out = await handlers.listSpareParts(flow.ctx, { query: {} })
   t.alike(out.data, [])
+  t.is(flow.linkedWoLookupCall, undefined)
 })
 
 test('handlers: listSpareParts ANDs location/status/q in a single query payload', async (t) => {
