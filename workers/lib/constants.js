@@ -43,7 +43,8 @@ const AUTH_PERMISSIONS = {
   FORECAST: 'forecast',
   POOL_CONFIG: 'pool_config',
   POOL_CONFIG_APPROVE: 'pool_config_approve',
-  WORK_ORDER: 'work_order'
+  WORK_ORDER: 'work_order',
+  ALERT_CONFIG: 'alert_config'
 }
 
 const WORK_ORDER_THING_TYPE = 'inventory-work_order'
@@ -199,6 +200,8 @@ const ENDPOINTS = {
   // Alerts endpoints
   ALERTS_SITE: '/auth/alerts/site',
   ALERTS_HISTORY: '/auth/alerts/history',
+  ALERTS_CONFIG: '/auth/alerts/config',
+  ALERTS_PARAMS: '/auth/alerts/params',
 
   MINERS: '/auth/miners',
   CONTAINER_MINERS: '/auth/containers/:id/miners',
@@ -325,7 +328,10 @@ const RPC_METHODS = {
   TAIL_LOG: 'tailLog',
   TAIL_LOG_MULTI: 'tailLogMulti',
   GLOBAL_CONFIG: 'getGlobalConfig',
-  GET_CONFIGS: 'getConfigs'
+  GET_CONFIGS: 'getConfigs',
+  GET_ALERT_CONF: 'getAlertConf',
+  GET_ALERT_PARAMS: 'getAlertParams',
+  SET_ALERT_PARAMS: 'setAlertParams'
 }
 
 const WORKER_TYPES = {
@@ -805,6 +811,8 @@ const RPC_RETRY_DELAY = 100
 const RPC_RETRYABLE_METHODS = new Set([
   'getAction',
   'getActionsBatch',
+  'getAlertConf',
+  'getAlertParams',
   'getConfigs',
   'getGlobalConfig',
   'getHistoricalLogs',

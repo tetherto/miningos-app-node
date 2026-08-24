@@ -195,6 +195,18 @@ async function getSiteAlerts (ctx, req) {
   return { alerts, summary, total }
 }
 
+async function getAlertConf (ctx) {
+  return await ctx.dataProxy.requestDataMap(RPC_METHODS.GET_ALERT_CONF, {})
+}
+
+async function getAlertParams (ctx) {
+  return await ctx.dataProxy.requestDataMap(RPC_METHODS.GET_ALERT_PARAMS, {})
+}
+
+async function setAlertParams (ctx, req) {
+  return await ctx.dataProxy.requestDataMap(RPC_METHODS.SET_ALERT_PARAMS, req.body.data)
+}
+
 async function getAlertsHistory (ctx, req) {
   const start = Number(req.query.start)
   const end = Number(req.query.end)
@@ -244,6 +256,9 @@ async function getAlertsHistory (ctx, req) {
 module.exports = {
   getSiteAlerts,
   getAlertsHistory,
+  getAlertConf,
+  getAlertParams,
+  setAlertParams,
   extractAlertsFromThings,
   matchesSearch,
   applySort,

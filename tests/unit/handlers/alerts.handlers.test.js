@@ -4,6 +4,9 @@ const test = require('brittle')
 const {
   getSiteAlerts,
   getAlertsHistory,
+  getAlertConf,
+  getAlertParams,
+  setAlertParams,
   extractAlertsFromThings,
   matchesSearch,
   applySort,
@@ -17,6 +20,65 @@ const {
   ALERTS_FILTER_OPERATORS
 } = require('../../../workers/lib/constants')
 const { createMockCtxWithOrks } = require('../helpers/mockHelpers')
+
+// ==================== Alert config/params Tests ====================
+
+test('getAlertConf - fans out to every ork with no params', async (t) => {
+  const captured = []
+  const mockCtx = createMockCtxWithOrks(
+    [{ rpcPublicKey: 'key1' }, { rpcPublicKey: 'key2' }],
+    async (pk, method, params) => {
+      captured.push({ pk, method, params })
+      return { 'rack-1': { fanFailure: { configSchema: {} } } }
+    }
+  )
+
+  const result = await getAlertConf(mockCtx)
+
+  t.is(captured.length, 2, 'should call every ork')
+  t.ok(captured.every(c => c.method === 'getAlertConf'), 'should call getAlertConf')
+  t.ok(captured.every(c => Object.keys(c.params).length === 0), 'should call with no params')
+  t.ok(Array.isArray(result), 'should return one entry per ork')
+  t.alike(result[0], { 'rack-1': { fanFailure: { configSchema: {} } } })
+})
+
+test('getAlertParams - reads params from every ork', async (t) => {
+  const mockCtx = createMockCtxWithOrks(
+    [{ rpcPublicKey: 'key1' }],
+    async (pk, method) => {
+      t.is(method, 'getAlertParams', 'should call getAlertParams')
+      return { byRack: { 'rack-1': { fanFailure: { threshold: 80 } } } }
+    }
+  )
+
+  const result = await getAlertParams(mockCtx)
+  t.ok(Array.isArray(result), 'should return array')
+  t.alike(result[0], { byRack: { 'rack-1': { fanFailure: { threshold: 80 } } } })
+})
+
+test('setAlertParams - writes byRack payload to every ork', async (t) => {
+  const captured = []
+  const mockCtx = createMockCtxWithOrks(
+    [{ rpcPublicKey: 'key1' }, { rpcPublicKey: 'key2' }],
+    async (pk, method, params) => {
+      captured.push({ method, params })
+      return { byRack: params.byRack, updatedAt: 1 }
+    }
+  )
+
+  const mockReq = {
+    body: {
+      data: { byRack: { 'rack-1': { fanFailure: { threshold: 90 } } } }
+    }
+  }
+
+  const result = await setAlertParams(mockCtx, mockReq)
+
+  t.is(captured.length, 2, 'should call every ork')
+  t.ok(captured.every(c => c.method === 'setAlertParams'), 'should call setAlertParams')
+  t.alike(captured[0].params, { byRack: { 'rack-1': { fanFailure: { threshold: 90 } } } })
+  t.ok(Array.isArray(result), 'should return one entry per ork')
+})
 
 // ==================== extractAlertsFromThings Tests ====================
 
