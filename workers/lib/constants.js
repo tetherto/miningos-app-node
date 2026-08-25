@@ -45,7 +45,8 @@ const AUTH_PERMISSIONS = {
   POOL_CONFIG: 'pool_config',
   POOL_CONFIG_APPROVE: 'pool_config_approve',
   WORK_ORDER: 'work_order',
-  ALERT_CONFIG: 'alert_config'
+  ALERT_CONFIG: 'alert_config',
+  ALERT_CONFIG_SENSITIVE: 'alert_config_sensitive'
 }
 
 const WORK_ORDER_THING_TYPE = 'inventory-work_order'

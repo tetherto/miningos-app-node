@@ -7,6 +7,7 @@ const {
   getAlertConf,
   getAlertParams,
   setAlertParams,
+  restrictToNotesOnly,
   extractAlertsFromThings,
   matchesSearch,
   applySort,
@@ -60,6 +61,7 @@ test('setAlertParams - persists to globalDataLib and notifies orks grouped by ra
         return { ok: true }
       }
     },
+    authLib: { tokenHasPerms: async () => true },
     globalDataLib: {
       setGlobalData: async (data, type) => {
         t.is(type, GLOBAL_DATA_TYPES.ALERT_PARAMETERS, 'should save under the alertParameters type')
@@ -69,6 +71,7 @@ test('setAlertParams - persists to globalDataLib and notifies orks grouped by ra
   })
 
   const mockReq = {
+    _info: { authToken: 'token' },
     body: {
       data: {
         'custom.low_hashrate.warning': { enabled: true, minHashRateMhs: 50 },
@@ -104,12 +107,14 @@ test('setAlertParams - skips unknown alert keys when grouping by rack type', asy
         return { ok: true }
       }
     },
+    authLib: { tokenHasPerms: async () => true },
     globalDataLib: {
       setGlobalData: async (data, type) => ({ data, type })
     }
   })
 
   const mockReq = {
+    _info: { authToken: 'token' },
     body: {
       data: { 'custom.unknown_alert': { enabled: true } }
     }
@@ -131,6 +136,7 @@ test('setAlertParams - fans a single alert key out to all of its rack types', as
         return { ok: true }
       }
     },
+    authLib: { tokenHasPerms: async () => true },
     globalDataLib: {
       setGlobalData: async (data, type) => ({ data, type })
     }
@@ -138,6 +144,7 @@ test('setAlertParams - fans a single alert key out to all of its rack types', as
 
   // tower_vibration is a dcs-only alert; confirm it still lands under dcs and nowhere else
   const mockReq = {
+    _info: { authToken: 'token' },
     body: {
       data: { 'custom.tower_vibration.critical': { enabled: true, onError: true } }
     }
@@ -151,6 +158,77 @@ test('setAlertParams - fans a single alert key out to all of its rack types', as
       dcs: { 'custom.tower_vibration.critical': { enabled: true, onError: true } }
     }
   })
+})
+
+test('setAlertParams - restricts users without alert_config_sensitive:w to updating notes only', async (t) => {
+  const captured = []
+  let capturedPerms
+  const mockCtx = withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: {
+      jRequest: async (pk, method, params) => {
+        captured.push(params)
+        return { ok: true }
+      }
+    },
+    authLib: {
+      tokenHasPerms: async (token, write, perms) => {
+        capturedPerms = { token, write, perms }
+        return false
+      }
+    },
+    globalDataLib: {
+      getGlobalData: async () => ([{
+        'custom.low_hashrate.warning': { enabled: true, minHashRateMhs: 50, notes: 'old notes' },
+        'custom.high_supply_temp.critical': { enabled: false, maxTempC: 80, notes: 'other' }
+      }]),
+      setGlobalData: async (data, type) => ({ data, type })
+    }
+  })
+
+  const mockReq = {
+    _info: { authToken: 'token' },
+    body: {
+      data: {
+        'custom.low_hashrate.warning': { enabled: false, minHashRateMhs: 999, notes: 'new notes' }
+      }
+    }
+  }
+
+  const result = await setAlertParams(mockCtx, mockReq)
+
+  t.is(capturedPerms.token, 'token', 'should check perms using the request auth token')
+  t.alike(capturedPerms.perms, ['alert_config_sensitive:w'], 'should check the sensitive alert config permission')
+
+  t.alike(result.data, {
+    'custom.low_hashrate.warning': { enabled: true, minHashRateMhs: 50, notes: 'new notes' }
+  }, 'should keep existing fields and only apply the submitted notes')
+
+  await new Promise((resolve) => setImmediate(resolve))
+
+  t.alike(captured[0], {
+    byRackType: {
+      miner: { 'custom.low_hashrate.warning': { enabled: true, minHashRateMhs: 50, notes: 'new notes' } }
+    }
+  }, 'should notify orks with the notes-only merged config')
+})
+
+test('restrictToNotesOnly - drops every submitted field except notes', (t) => {
+  const submittedData = {
+    'custom.low_hashrate.warning': { enabled: false, minHashRateMhs: 999, notes: 'new notes' },
+    // no matching entry in existingConfig for this key
+    'custom.unknown_alert': { enabled: true, threshold: 123, notes: 'unknown notes' }
+  }
+  const existingConfig = {
+    'custom.low_hashrate.warning': { enabled: true, minHashRateMhs: 50, notes: 'old notes' }
+  }
+
+  const result = restrictToNotesOnly(submittedData, existingConfig)
+
+  t.alike(result, {
+    'custom.low_hashrate.warning': { enabled: true, minHashRateMhs: 50, notes: 'new notes' },
+    'custom.unknown_alert': { notes: 'unknown notes' }
+  }, 'submitted enabled/threshold values are ignored; only notes carries through, existing fields win everywhere else')
 })
 
 // ==================== extractAlertsFromThings Tests ====================

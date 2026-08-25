@@ -16,7 +16,9 @@ const {
   HISTORY_ALERTS_QUERY_MAP,
   ALERT_EXT_DATA_WORKER_TYPES,
   GLOBAL_DATA_TYPES,
-  CUSTOM_ALERT_CONFIG
+  CUSTOM_ALERT_CONFIG,
+  AUTH_PERMISSIONS,
+  AUTH_LEVELS
 } = require('../../constants')
 const { parseJsonQueryParam, validateFilter, applyMongoFilter, combineAnd, deduplicateAlerts } = require('../../utils')
 
@@ -207,9 +209,30 @@ async function getAlertParams (ctx) {
   })
 }
 
+// Users without the sensitive permission may only change `notes`; every other
+// field is taken from the existing stored config, ignoring what was submitted.
+function restrictToNotesOnly (submittedData, existingConfig) {
+  const notesOnlyData = {}
+  for (const alertKey in submittedData) {
+    notesOnlyData[alertKey] = {
+      ...(existingConfig?.[alertKey] ?? {}),
+      notes: submittedData[alertKey]?.notes
+    }
+  }
+  return notesOnlyData
+}
+
 async function setAlertParams (ctx, req) {
-  const data = req.body.data
   const type = GLOBAL_DATA_TYPES.ALERT_PARAMETERS
+
+  const sensitivePerm = `${AUTH_PERMISSIONS.ALERT_CONFIG_SENSITIVE}:${AUTH_LEVELS.WRITE}`
+  const hasSensitivePerm = await ctx.authLib.tokenHasPerms(req._info.authToken, false, [sensitivePerm])
+
+  let data = req.body.data
+  if (!hasSensitivePerm) {
+    const [existingConfig] = await ctx.globalDataLib.getGlobalData({ type })
+    data = restrictToNotesOnly(data, existingConfig)
+  }
 
   const byRackType = {}
   for (const alertKey in data) {
@@ -288,6 +311,7 @@ module.exports = {
   getAlertConf,
   getAlertParams,
   setAlertParams,
+  restrictToNotesOnly,
   extractAlertsFromThings,
   matchesSearch,
   applySort,
