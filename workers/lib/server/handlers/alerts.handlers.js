@@ -14,7 +14,8 @@ const {
   ALERTS_FILTER_OPERATORS,
   MINER_TYPE_REGEX,
   HISTORY_ALERTS_QUERY_MAP,
-  ALERT_EXT_DATA_WORKER_TYPES
+  ALERT_EXT_DATA_WORKER_TYPES,
+  GLOBAL_DATA_TYPES
 } = require('../../constants')
 const { parseJsonQueryParam, validateFilter, applyMongoFilter, combineAnd, deduplicateAlerts } = require('../../utils')
 
@@ -195,16 +196,45 @@ async function getSiteAlerts (ctx, req) {
   return { alerts, summary, total }
 }
 
+
 async function getAlertConf (ctx) {
-  return await ctx.dataProxy.requestDataMap(RPC_METHODS.GET_ALERT_CONF, {})
+  return CUSTOM_ALERT_CONFIG
 }
 
 async function getAlertParams (ctx) {
-  return await ctx.dataProxy.requestDataMap(RPC_METHODS.GET_ALERT_PARAMS, {})
+  return await ctx.globalDataLib.getGlobalData({
+    type: GLOBAL_DATA_TYPES.ALERT_PARAMETERS
+  })
 }
 
 async function setAlertParams (ctx, req) {
-  return await ctx.dataProxy.requestDataMap(RPC_METHODS.SET_ALERT_PARAMS, req.body.data)
+  const data = req.body.data
+  const type = GLOBAL_DATA_TYPES.ALERT_PARAMETERS
+
+  const byRackType = {}
+  for (const alertKey in data) {
+    const params = data[alertKey]
+    
+    const { rackTypes } = alertConf[alertKey] ?? {}
+    if (!rackTypes) {
+      continue
+    }
+
+    for (const rackType of rackTypes) {
+      if (!byRackType[rackType]) {
+        byRackType[rackType] = {}
+      }
+
+      byRackType[rackType][alertKey] = params
+    }
+  }
+
+  const res = await ctx.globalDataLib.setGlobalData(data, type)
+  ctx.dataProxy.requestDataMap(RPC_METHODS.SET_ALERT_PARAMS, { byRackType: byRackType }).catch((error) => {
+    console.log("setAlertParams failed")
+    console.error(error)
+  })
+  return res
 }
 
 async function getAlertsHistory (ctx, req) {

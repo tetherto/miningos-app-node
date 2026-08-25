@@ -48,10 +48,6 @@ const schemas = {
       properties: {
         data: {
           type: 'object',
-          properties: {
-            byRack: { type: 'object' }
-          },
-          required: ['byRack']
         }
       },
       required: ['data']
