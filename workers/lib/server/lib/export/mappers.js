@@ -84,20 +84,26 @@ const TEMPERATURE_COLUMNS = [
   'temperatureAvgC'
 ]
 
+// Exactly 0 is the whatsminer worker's "no reading" sentinel, not a
+// measurement: `getMinerStatus` does `!isNaN(liquidTemp) ? liquidTemp : 0`, so
+// absent and zero are already indistinguishable by the time the value reaches
+// this repo. Nothing is lost by dropping it — the information was never sent.
+//
+// Only exactly 0 is treated this way. Negative readings pass through, as does
+// any other value, so a genuinely cold loop is still reported.
+function isLiquidReading (value) {
+  return Number.isFinite(value) && value !== 0
+}
+
 // `undefined`, not 0, when a miner reports no liquid loop: JSON then omits the
 // key and CSV renders an empty cell, so air-cooled reads as "no sensor"
 // rather than "0 degrees".
-//
-// The zero has to be filtered here because the whatsminer worker cannot express
-// "absent": `getMinerStatus` falls back to `liquid_temp: 0` when the `status`
-// command carries no reading, so every air-cooled miner arrives as a literal 0.
-// A real loop never sits at 0 °C, so there is no valid reading to lose.
 function mapTemperatureColumns (stats) {
   const temperatureC = stats?.temperature_c
-  const minerSpecific = stats?.miner_specific
+  const liquidInlet = stats?.miner_specific?.liquid_temp
   return {
     temperatureAmbientC: temperatureC?.ambient,
-    temperatureLiquidInletC: minerSpecific?.liquid_temp || undefined,
+    temperatureLiquidInletC: isLiquidReading(liquidInlet) ? liquidInlet : undefined,
     temperatureMaxC: temperatureC?.max,
     temperatureAvgC: temperatureC?.avg
   }

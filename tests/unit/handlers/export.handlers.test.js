@@ -281,6 +281,20 @@ test('an air-cooled miner omits the liquid inlet rather than reporting 0', async
   t.is(csvCells(lines[1])[at], '', 'CSV leaves the cell blank, not "0"')
 })
 
+test('only an exact 0 is dropped — a cold loop still reports', async (t) => {
+  const miner = makeMiner('3')
+  miner.last.snap.stats.miner_specific.liquid_temp = -4.5
+
+  const reply = makeMockReply()
+  await exportRoute(
+    makeMockCtx(async () => [[miner]]),
+    makeMockReq({ type: 'miner-stats', format: 'json' }),
+    reply
+  )
+  const parsed = JSON.parse(await drain(reply.body))
+  t.is(parsed.miners[0].temperatureLiquidInletC, -4.5, 'a sub-zero reading survives')
+})
+
 // ─────────────────────────────────────────────────────────────────────────────
 // container-miner-stats
 // ─────────────────────────────────────────────────────────────────────────────
