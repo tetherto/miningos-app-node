@@ -256,7 +256,10 @@ test('miner-stats JSON carries the liquid inlet both flat and nested', async (t)
 test('an air-cooled miner omits the liquid inlet rather than reporting 0', async (t) => {
   const miner = makeMiner('2')
   delete miner.last.snap.stats.temperature_c.liquid_inlet
-  delete miner.last.snap.stats.miner_specific.liquid_temp
+  // The whatsminer worker cannot express "absent": `getMinerStatus` emits a
+  // literal 0 when the `status` command carries no liquid reading, and that is
+  // the shape every air-cooled miner actually arrives in.
+  miner.last.snap.stats.miner_specific.liquid_temp = 0
 
   const jsonReply = makeMockReply()
   await exportRoute(

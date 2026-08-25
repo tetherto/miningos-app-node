@@ -87,12 +87,17 @@ const TEMPERATURE_COLUMNS = [
 // `undefined`, not 0, when a miner reports no liquid loop: JSON then omits the
 // key and CSV renders an empty cell, so air-cooled reads as "no sensor"
 // rather than "0 degrees".
+//
+// The zero has to be filtered here because the whatsminer worker cannot express
+// "absent": `getMinerStatus` falls back to `liquid_temp: 0` when the `status`
+// command carries no reading, so every air-cooled miner arrives as a literal 0.
+// A real loop never sits at 0 °C, so there is no valid reading to lose.
 function mapTemperatureColumns (stats) {
   const temperatureC = stats?.temperature_c
   const minerSpecific = stats?.miner_specific
   return {
     temperatureAmbientC: temperatureC?.ambient,
-    temperatureLiquidInletC: minerSpecific?.liquid_temp,
+    temperatureLiquidInletC: minerSpecific?.liquid_temp || undefined,
     temperatureMaxC: temperatureC?.max,
     temperatureAvgC: temperatureC?.avg
   }
