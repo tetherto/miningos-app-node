@@ -15,7 +15,8 @@ const {
   MINER_TYPE_REGEX,
   HISTORY_ALERTS_QUERY_MAP,
   ALERT_EXT_DATA_WORKER_TYPES,
-  GLOBAL_DATA_TYPES
+  GLOBAL_DATA_TYPES,
+  CUSTOM_ALERT_CONFIG
 } = require('../../constants')
 const { parseJsonQueryParam, validateFilter, applyMongoFilter, combineAnd, deduplicateAlerts } = require('../../utils')
 
@@ -196,7 +197,6 @@ async function getSiteAlerts (ctx, req) {
   return { alerts, summary, total }
 }
 
-
 async function getAlertConf (ctx) {
   return CUSTOM_ALERT_CONFIG
 }
@@ -214,8 +214,8 @@ async function setAlertParams (ctx, req) {
   const byRackType = {}
   for (const alertKey in data) {
     const params = data[alertKey]
-    
-    const { rackTypes } = alertConf[alertKey] ?? {}
+
+    const { rackTypes } = CUSTOM_ALERT_CONFIG[alertKey] ?? {}
     if (!rackTypes) {
       continue
     }
@@ -230,9 +230,8 @@ async function setAlertParams (ctx, req) {
   }
 
   const res = await ctx.globalDataLib.setGlobalData(data, type)
-  ctx.dataProxy.requestDataMap(RPC_METHODS.SET_ALERT_PARAMS, { byRackType: byRackType }).catch((error) => {
-    console.log("setAlertParams failed")
-    console.error(error)
+  ctx.dataProxy.requestDataMap(RPC_METHODS.SET_ALERT_PARAMS, { byRackType }).catch((error) => {
+    console.error('setAlertParams failed.', error)
   })
   return res
 }

@@ -17,67 +17,140 @@ const {
 const { validateFilter, applyMongoFilter, combineAnd, deduplicateAlerts } = require('../../../workers/lib/utils')
 const {
   SITE_ALERTS_FILTER_FIELDS,
-  ALERTS_FILTER_OPERATORS
+  ALERTS_FILTER_OPERATORS,
+  GLOBAL_DATA_TYPES,
+  CUSTOM_ALERT_CONFIG
 } = require('../../../workers/lib/constants')
-const { createMockCtxWithOrks } = require('../helpers/mockHelpers')
+const { createMockCtxWithOrks, withDataProxy } = require('../helpers/mockHelpers')
 
 // ==================== Alert config/params Tests ====================
 
-test('getAlertConf - fans out to every ork with no params', async (t) => {
-  const captured = []
-  const mockCtx = createMockCtxWithOrks(
-    [{ rpcPublicKey: 'key1' }, { rpcPublicKey: 'key2' }],
-    async (pk, method, params) => {
-      captured.push({ pk, method, params })
-      return { 'rack-1': { fanFailure: { configSchema: {} } } }
-    }
-  )
+test('getAlertConf - returns the static custom alert config', async (t) => {
+  const result = await getAlertConf({})
 
-  const result = await getAlertConf(mockCtx)
-
-  t.is(captured.length, 2, 'should call every ork')
-  t.ok(captured.every(c => c.method === 'getAlertConf'), 'should call getAlertConf')
-  t.ok(captured.every(c => Object.keys(c.params).length === 0), 'should call with no params')
-  t.ok(Array.isArray(result), 'should return one entry per ork')
-  t.alike(result[0], { 'rack-1': { fanFailure: { configSchema: {} } } })
+  t.is(result, CUSTOM_ALERT_CONFIG, 'should return the shared config constant')
+  t.ok(result['custom.low_hashrate.warning'], 'should include a known alert key')
+  t.alike(result['custom.low_hashrate.warning'].rackTypes, ['miner'], 'should expose rackTypes for the alert')
 })
 
-test('getAlertParams - reads params from every ork', async (t) => {
-  const mockCtx = createMockCtxWithOrks(
-    [{ rpcPublicKey: 'key1' }],
-    async (pk, method) => {
-      t.is(method, 'getAlertParams', 'should call getAlertParams')
-      return { byRack: { 'rack-1': { fanFailure: { threshold: 80 } } } }
+test('getAlertParams - reads params from globalDataLib by type', async (t) => {
+  let capturedReq
+  const mockCtx = {
+    globalDataLib: {
+      getGlobalData: async (req) => {
+        capturedReq = req
+        return { 'custom.low_hashrate.warning': { enabled: true, minHashRateMhs: 50 } }
+      }
     }
-  )
+  }
 
   const result = await getAlertParams(mockCtx)
-  t.ok(Array.isArray(result), 'should return array')
-  t.alike(result[0], { byRack: { 'rack-1': { fanFailure: { threshold: 80 } } } })
+
+  t.is(capturedReq.type, GLOBAL_DATA_TYPES.ALERT_PARAMETERS, 'should query the alertParameters global data type')
+  t.alike(result, { 'custom.low_hashrate.warning': { enabled: true, minHashRateMhs: 50 } })
 })
 
-test('setAlertParams - writes byRack payload to every ork', async (t) => {
+test('setAlertParams - persists to globalDataLib and notifies orks grouped by rack type', async (t) => {
   const captured = []
-  const mockCtx = createMockCtxWithOrks(
-    [{ rpcPublicKey: 'key1' }, { rpcPublicKey: 'key2' }],
-    async (pk, method, params) => {
-      captured.push({ method, params })
-      return { byRack: params.byRack, updatedAt: 1 }
+  const mockCtx = withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: {
+      jRequest: async (pk, method, params) => {
+        captured.push({ method, params })
+        return { ok: true }
+      }
+    },
+    globalDataLib: {
+      setGlobalData: async (data, type) => {
+        t.is(type, GLOBAL_DATA_TYPES.ALERT_PARAMETERS, 'should save under the alertParameters type')
+        return { data, updatedAt: 1 }
+      }
     }
-  )
+  })
 
   const mockReq = {
     body: {
-      data: { byRack: { 'rack-1': { fanFailure: { threshold: 90 } } } }
+      data: {
+        'custom.low_hashrate.warning': { enabled: true, minHashRateMhs: 50 },
+        'custom.high_supply_temp.critical': { enabled: true, maxTempC: 90 }
+      }
     }
   }
 
   const result = await setAlertParams(mockCtx, mockReq)
 
-  t.is(captured.length, 2, 'should call every ork')
-  t.ok(captured.every(c => c.method === 'setAlertParams'), 'should call setAlertParams')
-  t.alike(captured[0].params, { byRack: { 'rack-1': { fanFailure: { threshold: 90 } } } })
-  t.ok(Array.isArray(result), 'should return one entry per ork')
+  t.alike(result, { data: mockReq.body.data, updatedAt: 1 }, 'should return the globalDataLib result')
+
+  // the ork notification is fire-and-forget; give its microtask a tick to run
+  await new Promise((resolve) => setImmediate(resolve))
+
+  t.is(captured.length, 1, 'should notify the ork once')
+  t.is(captured[0].method, 'setAlertParams', 'should call setAlertParams on the ork')
+  t.alike(captured[0].params, {
+    byRackType: {
+      miner: { 'custom.low_hashrate.warning': { enabled: true, minHashRateMhs: 50 } },
+      dcs: { 'custom.high_supply_temp.critical': { enabled: true, maxTempC: 90 } }
+    }
+  }, 'should group params by each alert key\'s rackTypes')
+})
+
+test('setAlertParams - skips unknown alert keys when grouping by rack type', async (t) => {
+  const captured = []
+  const mockCtx = withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: {
+      jRequest: async (pk, method, params) => {
+        captured.push({ method, params })
+        return { ok: true }
+      }
+    },
+    globalDataLib: {
+      setGlobalData: async (data, type) => ({ data, type })
+    }
+  })
+
+  const mockReq = {
+    body: {
+      data: { 'custom.unknown_alert': { enabled: true } }
+    }
+  }
+
+  await setAlertParams(mockCtx, mockReq)
+  await new Promise((resolve) => setImmediate(resolve))
+
+  t.alike(captured[0].params, { byRackType: {} }, 'unknown alert key contributes nothing to byRackType')
+})
+
+test('setAlertParams - fans a single alert key out to all of its rack types', async (t) => {
+  const captured = []
+  const mockCtx = withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: {
+      jRequest: async (pk, method, params) => {
+        captured.push(params)
+        return { ok: true }
+      }
+    },
+    globalDataLib: {
+      setGlobalData: async (data, type) => ({ data, type })
+    }
+  })
+
+  // tower_vibration is a dcs-only alert; confirm it still lands under dcs and nowhere else
+  const mockReq = {
+    body: {
+      data: { 'custom.tower_vibration.critical': { enabled: true, onError: true } }
+    }
+  }
+
+  await setAlertParams(mockCtx, mockReq)
+  await new Promise((resolve) => setImmediate(resolve))
+
+  t.alike(captured[0], {
+    byRackType: {
+      dcs: { 'custom.tower_vibration.critical': { enabled: true, onError: true } }
+    }
+  })
 })
 
 // ==================== extractAlertsFromThings Tests ====================

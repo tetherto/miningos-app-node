@@ -6,7 +6,7 @@ const GLOBAL_DATA_TYPES = {
   FEATURES: 'features',
   SITE_ENERGY: 'siteEnergy',
   CONTAINER_SETTINGS: 'containerSettings',
-  ALERT_PARAMETERS: 'alertParameters',
+  ALERT_PARAMETERS: 'alertParameters'
 }
 
 const LCOE_SOURCES = ['current', 'custom']
@@ -997,32 +997,32 @@ const MICROSOFT_AUTH_SCOPE = ['openid', 'profile', 'email', 'User.Read']
 
 const CUSTOM_ALERT_CONFIG = {
   'custom.low_hashrate.warning': {
-    'configSchema': {
+    configSchema: {
       enabled: {
-        type: 'boolean',
+        type: 'boolean'
       },
       notes: {
-        type: 'string',
+        type: 'string'
       },
       minHashRateMhs: {
-        type: 'number',
+        type: 'number'
       }
     },
-    rackTypes: ['miner'],
+    rackTypes: ['miner']
   },
   'custom.low_hashrate.critical': {
-    'configSchema': {
+    configSchema: {
       enabled: {
-        type: 'boolean',
+        type: 'boolean'
       },
       notes: {
-        type: 'string',
+        type: 'string'
       },
       minHashRateMhs: {
-        type: 'number',
+        type: 'number'
       }
     },
-    rackTypes: ['miner'],
+    rackTypes: ['miner']
   },
   'custom.high_board_temp.warning': {
     configSchema: {
@@ -1036,7 +1036,7 @@ const CUSTOM_ALERT_CONFIG = {
         type: 'number'
       }
     },
-    rackTypes: ['miner'],
+    rackTypes: ['miner']
   },
   'custom.high_board_temp.critical': {
     configSchema: {
@@ -1050,7 +1050,7 @@ const CUSTOM_ALERT_CONFIG = {
         type: 'number'
       }
     },
-    rackTypes: ['miner'],
+    rackTypes: ['miner']
   },
   'custom.high_supply_temp.warning': {
     configSchema: {
@@ -1064,7 +1064,7 @@ const CUSTOM_ALERT_CONFIG = {
         type: 'number'
       }
     },
-    rackTypes: ['dcs'],
+    rackTypes: ['dcs']
   },
   'custom.high_supply_temp.critical': {
     configSchema: {
@@ -1078,7 +1078,7 @@ const CUSTOM_ALERT_CONFIG = {
         type: 'number'
       }
     },
-    rackTypes: ['dcs'],
+    rackTypes: ['dcs']
   },
   'custom.high_differential_pressure.warning': {
     configSchema: {
@@ -1092,7 +1092,7 @@ const CUSTOM_ALERT_CONFIG = {
         type: 'number'
       }
     },
-    rackTypes: ['dcs'],
+    rackTypes: ['dcs']
   },
   'custom.high_differential_pressure.critical': {
     configSchema: {
@@ -1106,7 +1106,7 @@ const CUSTOM_ALERT_CONFIG = {
         type: 'number'
       }
     },
-    rackTypes: ['dcs'],
+    rackTypes: ['dcs']
   },
   'custom.low_tank_level.warning': {
     configSchema: {
@@ -1120,7 +1120,7 @@ const CUSTOM_ALERT_CONFIG = {
         type: 'number'
       }
     },
-    rackTypes: ['dcs'],
+    rackTypes: ['dcs']
   },
   'custom.low_tank_level.critical': {
     configSchema: {
@@ -1134,7 +1134,7 @@ const CUSTOM_ALERT_CONFIG = {
         type: 'number'
       }
     },
-    rackTypes: ['dcs'],
+    rackTypes: ['dcs']
   },
   'custom.high_site_power.warning': {
     configSchema: {
@@ -1148,7 +1148,7 @@ const CUSTOM_ALERT_CONFIG = {
         type: 'number'
       }
     },
-    rackTypes: ['dcs'],
+    rackTypes: ['dcs']
   },
   'custom.high_site_power.critical': {
     configSchema: {
@@ -1162,7 +1162,7 @@ const CUSTOM_ALERT_CONFIG = {
         type: 'number'
       }
     },
-    rackTypes: ['dcs'],
+    rackTypes: ['dcs']
   },
   'custom.tower_vibration.critical': {
     configSchema: {
@@ -1176,8 +1176,8 @@ const CUSTOM_ALERT_CONFIG = {
         type: 'boolean'
       }
     },
-    rackTypes: ['dcs'],
-  },
+    rackTypes: ['dcs']
+  }
 }
 
 module.exports = {

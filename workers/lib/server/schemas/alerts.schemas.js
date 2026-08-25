@@ -47,7 +47,7 @@ const schemas = {
       type: 'object',
       properties: {
         data: {
-          type: 'object',
+          type: 'object'
         }
       },
       required: ['data']
