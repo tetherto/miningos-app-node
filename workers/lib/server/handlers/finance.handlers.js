@@ -1273,7 +1273,7 @@ function processDailyRevenueBtc (results, start, end) {
     if (!Array.isArray(data)) continue
     for (const entry of data) {
       if (!entry || !entry.ts || !Array.isArray(entry.transactions)) continue
-      const dayTs = getStartOfDay(normalizeTimestampMs(Number(entry.ts)))
+      const dayTs = getStartOfDay(normalizeTimestampMs(entry.ts))
       if (!dayTs || dayTs < startDay || dayTs > endDay) continue
       let revenueBTC = 0
       for (const tx of entry.transactions) {
