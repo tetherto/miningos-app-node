@@ -7,7 +7,7 @@ const {
   MINERPOOL_EXT_DATA_KEYS,
   RANGE_BUCKETS,
   MINER_FIELD_MAP,
-  APPROVED_POOL_CONFIGS
+  APPROVED_POOL_URLS
 } = require('../../constants')
 const {
   parseJsonQueryParam,
@@ -231,7 +231,7 @@ const getPoolStatsContainers = async (ctx, req) => {
 }
 
 async function getApprovedPoolUrls () {
-  return APPROVED_POOL_CONFIGS
+  return APPROVED_POOL_URLS
 }
 
 module.exports = {

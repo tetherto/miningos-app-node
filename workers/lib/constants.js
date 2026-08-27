@@ -874,7 +874,7 @@ const CONFIG_TYPES = {
   POOL: 'pool'
 }
 
-// Pool configs that are pre-approved for use, served read-only via ENDPOINTS.POOLS_APPROVED_CONFIGS
+// Pool configs that are pre-approved for use
 const APPROVED_POOL_URLS = [
   { id: 'f2pool-btc-1', name: 'F2Pool', host: 'btc.f2pool.com', port: 1314 },
   { id: 'ocean-btc-2', name: 'Ocean', host: 'mine.ocean.xyz', port: 3334 },
@@ -1234,7 +1234,7 @@ module.exports = {
   BTC_SATS,
   RANGE_BUCKETS,
   CONFIG_TYPES,
-  APPROVED_POOL_CONFIGS: APPROVED_POOL_URLS,
+  APPROVED_POOL_URLS,
   METRICS_TIME,
   METRICS_DEFAULTS,
   MINER_CATEGORIES,

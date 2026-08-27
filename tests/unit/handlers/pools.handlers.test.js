@@ -1,7 +1,7 @@
 'use strict'
 
 const test = require('brittle')
-const { RPC_METHODS, WORKER_TYPES, MINER_CATEGORIES, APPROVED_POOL_CONFIGS } = require('../../../workers/lib/constants')
+const { RPC_METHODS, WORKER_TYPES, MINER_CATEGORIES, APPROVED_POOL_URLS } = require('../../../workers/lib/constants')
 const {
   getPools,
   flattenPoolStats,
@@ -554,7 +554,7 @@ test('getPoolStatsContainers - handles empty containers from RPC', async (t) => 
 test('getApprovedPoolUrls - returns the approved pool configs constant', async (t) => {
   const result = await getApprovedPoolUrls()
 
-  t.is(result, APPROVED_POOL_CONFIGS, 'should return the APPROVED_POOL_CONFIGS constant')
+  t.is(result, APPROVED_POOL_URLS, 'should return the APPROVED_POOL_URLS constant')
   t.ok(Array.isArray(result), 'should return an array')
   result.forEach((config) => {
     t.ok(typeof config.id === 'string', 'each config should have an id')

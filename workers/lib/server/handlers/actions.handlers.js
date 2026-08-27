@@ -1,7 +1,7 @@
 'use strict'
 
 const { parseJsonQueryParam } = require('../../utils')
-const { ACTIONS_MAX_QUERIES, APPROVED_POOL_CONFIGS } = require('../../constants')
+const { ACTIONS_MAX_QUERIES, APPROVED_POOL_URLS } = require('../../constants')
 
 async function queryActionsBatch (ctx, req) {
   const payload = {
@@ -79,12 +79,18 @@ async function pushActionsBatch (ctx, req, rep) {
 
 const transformPushActionPayload = (payload) => {
   switch (payload.action) {
-    case 'REGISTER_CONFIG': {
+    case 'registerConfig':
+    case 'updateConfig': {
+      if (!payload || !Array.isArray(payload.params)) {
+        throw new Error('ERR_INVALID_PAYLOAD')
+      }
+
       const [poolConfig] = payload.params
       if (!poolConfig) return payload
 
-      const { poolUrls } = poolConfig
+      const { poolUrls } = poolConfig.data ?? {}
       if (!poolUrls || !Array.isArray(poolUrls)) throw new Error('ERR_INVALID_POOL_URLS')
+      delete poolConfig.data.poolUrls
 
       const result = []
       for (const poolUrlSetting of poolUrls) {
@@ -96,13 +102,14 @@ const transformPushActionPayload = (payload) => {
           throw new Error('ERR_INVALID_POOL_URL_ID_MISSING')
         }
 
-        const poolUrl = APPROVED_POOL_CONFIGS.find(config => config.id === poolUrlId)
+        const poolUrl = APPROVED_POOL_URLS.find(config => config.id === poolUrlId)
         if (!poolUrl) {
           throw new Error('ERR_INVALID_POOL_URL_ID_INVALID')
         }
 
         const { host, port, name } = poolUrl
         result.push({
+          poolUrlId,
           url: `stratum+tcp://${host}:${port}`,
           workerName,
           workerPassword,
@@ -110,7 +117,7 @@ const transformPushActionPayload = (payload) => {
         })
       }
 
-      poolConfig.poolUrls = result
+      poolConfig.data.poolUrls = result
       return payload
     }
 

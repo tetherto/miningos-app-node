@@ -11,7 +11,7 @@ const {
   voteAction,
   cancelActionsBatch
 } = require('../../../workers/lib/server/handlers/actions.handlers')
-const { APPROVED_POOL_CONFIGS } = require('../../../workers/lib/constants')
+const { APPROVED_POOL_URLS } = require('../../../workers/lib/constants')
 const { createMockCtxWithOrks, createMockReq, withDataProxy } = require('../helpers/mockHelpers')
 
 test('queryActionsBatch - basic functionality', async (t) => {
@@ -258,238 +258,277 @@ test('pushAction - with valid permissions', async (t) => {
   t.pass()
 })
 
-test('pushAction - REGISTER_CONFIG resolves poolUrls to approved pool url/worker settings', async (t) => {
-  let capturedPayload = null
-  const mockCtx = withDataProxy({
-    conf: {
-      orks: [
-        { rpcPublicKey: 'key1' }
-      ]
-    },
-    authLib: {
-      getTokenPerms: async () => ({
-        write: true,
-        permissions: ['actions:write']
-      })
-    },
-    net_r0: {
-      jRequest: async (key, method, payload, opts) => {
-        capturedPayload = payload
-        return { id: 'new-action', success: true }
+for (const action of ['registerConfig', 'updateConfig']) {
+  test(`pushAction - ${action} resolves poolUrls to approved pool url/worker settings`, async (t) => {
+    let capturedPayload = null
+    const mockCtx = withDataProxy({
+      conf: {
+        orks: [
+          { rpcPublicKey: 'key1' }
+        ]
+      },
+      authLib: {
+        getTokenPerms: async () => ({
+          write: true,
+          permissions: ['actions:write']
+        })
+      },
+      net_r0: {
+        jRequest: async (key, method, payload, opts) => {
+          capturedPayload = payload
+          return { id: 'new-action', success: true }
+        }
       }
-    }
-  })
+    })
 
-  const mockReq = {
-    _info: {
-      authToken: 'token123',
-      user: { metadata: { email: 'test@example.com' } }
-    },
-    body: {
-      action: 'REGISTER_CONFIG',
-      params: [{
-        name: 'my-config',
-        poolUrls: APPROVED_POOL_CONFIGS.map((config) => ({
-          poolUrlId: config.id,
-          workerName: `${config.id}-worker`,
-          workerPassword: 'x'
-        }))
-      }]
-    }
-  }
-
-  const result = await pushAction(mockCtx, mockReq)
-
-  t.ok(Array.isArray(result), 'should return array')
-  t.ok(result[0].id === 'new-action', 'should return new action id')
-
-  const [poolConfig] = capturedPayload.params
-  t.is(poolConfig.poolUrls.length, APPROVED_POOL_CONFIGS.length, 'should resolve one entry per approved pool')
-  poolConfig.poolUrls.forEach((resolved, i) => {
-    const approved = APPROVED_POOL_CONFIGS[i]
-    t.is(resolved.url, `stratum+tcp://${approved.host}:${approved.port}`, 'url should be built from host and port')
-    t.is(resolved.pool, approved.name, 'pool should be the approved config name')
-    t.is(resolved.workerName, `${approved.id}-worker`, 'workerName should pass through from the request')
-    t.is(resolved.workerPassword, 'x', 'workerPassword should pass through from the request')
-  })
-
-  t.pass()
-})
-
-test('pushAction - REGISTER_CONFIG disregards a url sent from the client', async (t) => {
-  let capturedPayload = null
-  const mockCtx = withDataProxy({
-    conf: { orks: [{ rpcPublicKey: 'key1' }] },
-    authLib: {
-      getTokenPerms: async () => ({ write: true, permissions: ['actions:write'] })
-    },
-    net_r0: {
-      jRequest: async (key, method, payload, opts) => {
-        capturedPayload = payload
-        return { id: 'new-action', success: true }
-      }
-    }
-  })
-
-  const approved = APPROVED_POOL_CONFIGS[0]
-  const mockReq = {
-    _info: {
-      authToken: 'token123',
-      user: { metadata: { email: 'test@example.com' } }
-    },
-    body: {
-      action: 'REGISTER_CONFIG',
-      params: [{
-        name: 'my-config',
-        poolUrls: [{
-          poolUrlId: approved.id,
-          url: 'stratum+tcp://attacker-controlled.example.com:9999',
-          workerName: 'worker1',
-          workerPassword: 'secret'
+    const mockReq = {
+      _info: {
+        authToken: 'token123',
+        user: { metadata: { email: 'test@example.com' } }
+      },
+      body: {
+        action,
+        params: [{
+          name: 'my-config',
+          data: {
+            poolUrls: APPROVED_POOL_URLS.map((config) => ({
+              poolUrlId: config.id,
+              workerName: `${config.id}-worker`,
+              workerPassword: 'x'
+            }))
+          }
         }]
-      }]
-    }
-  }
-
-  await pushAction(mockCtx, mockReq)
-
-  const [poolConfig] = capturedPayload.params
-  const [resolved] = poolConfig.poolUrls
-  t.is(resolved.url, `stratum+tcp://${approved.host}:${approved.port}`, 'url should be rebuilt from the approved pool config, not the client-supplied url')
-  t.not(resolved.url, 'stratum+tcp://attacker-controlled.example.com:9999', 'client-supplied url should never reach the payload')
-
-  t.pass()
-})
-
-test('pushAction - REGISTER_CONFIG throws for missing/invalid poolUrls', async (t) => {
-  const mockCtx = withDataProxy({
-    conf: { orks: [{ rpcPublicKey: 'key1' }] },
-    authLib: {
-      getTokenPerms: async () => ({ write: true, permissions: [] })
-    },
-    net_r0: {
-      jRequest: async () => ({ id: 'new-action', success: true })
-    }
-  })
-
-  const mockReq = {
-    _info: {
-      authToken: 'token123',
-      user: { metadata: { email: 'test@example.com' } }
-    },
-    body: {
-      action: 'REGISTER_CONFIG',
-      params: [{ name: 'my-config' }]
-    }
-  }
-
-  try {
-    await pushAction(mockCtx, mockReq)
-    t.fail('should throw error for missing poolUrls')
-  } catch (err) {
-    t.is(err.message, 'ERR_INVALID_POOL_URLS', 'should throw ERR_INVALID_POOL_URLS')
-  }
-
-  t.pass()
-})
-
-test('pushAction - REGISTER_CONFIG throws when a poolUrl entry is missing poolUrlId', async (t) => {
-  const mockCtx = withDataProxy({
-    conf: { orks: [{ rpcPublicKey: 'key1' }] },
-    authLib: {
-      getTokenPerms: async () => ({ write: true, permissions: [] })
-    },
-    net_r0: {
-      jRequest: async () => ({ id: 'new-action', success: true })
-    }
-  })
-
-  const mockReq = {
-    _info: {
-      authToken: 'token123',
-      user: { metadata: { email: 'test@example.com' } }
-    },
-    body: {
-      action: 'REGISTER_CONFIG',
-      params: [{ name: 'my-config', poolUrls: [{ workerName: 'worker1' }] }]
-    }
-  }
-
-  try {
-    await pushAction(mockCtx, mockReq)
-    t.fail('should throw error for missing poolUrlId')
-  } catch (err) {
-    t.is(err.message, 'ERR_INVALID_POOL_URL_ID_MISSING', 'should throw ERR_INVALID_POOL_URL_ID_MISSING')
-  }
-
-  t.pass()
-})
-
-test('pushAction - REGISTER_CONFIG throws for unknown poolUrlId', async (t) => {
-  const mockCtx = withDataProxy({
-    conf: { orks: [{ rpcPublicKey: 'key1' }] },
-    authLib: {
-      getTokenPerms: async () => ({ write: true, permissions: [] })
-    },
-    net_r0: {
-      jRequest: async () => ({ id: 'new-action', success: true })
-    }
-  })
-
-  const mockReq = {
-    _info: {
-      authToken: 'token123',
-      user: { metadata: { email: 'test@example.com' } }
-    },
-    body: {
-      action: 'REGISTER_CONFIG',
-      params: [{ name: 'my-config', poolUrls: [{ poolUrlId: 'does-not-exist' }] }]
-    }
-  }
-
-  try {
-    await pushAction(mockCtx, mockReq)
-    t.fail('should throw error for unknown poolUrlId')
-  } catch (err) {
-    t.is(err.message, 'ERR_INVALID_POOL_URL_ID_INVALID', 'should throw ERR_INVALID_POOL_URL_ID_INVALID')
-  }
-
-  t.pass()
-})
-
-test('pushAction - REGISTER_CONFIG with no pool config passes params through unchanged', async (t) => {
-  let capturedPayload = null
-  const mockCtx = withDataProxy({
-    conf: { orks: [{ rpcPublicKey: 'key1' }] },
-    authLib: {
-      getTokenPerms: async () => ({ write: true, permissions: [] })
-    },
-    net_r0: {
-      jRequest: async (key, method, payload, opts) => {
-        capturedPayload = payload
-        return { id: 'new-action', success: true }
       }
     }
+
+    const result = await pushAction(mockCtx, mockReq)
+
+    t.ok(Array.isArray(result), 'should return array')
+    t.ok(result[0].id === 'new-action', 'should return new action id')
+
+    const [poolConfig] = capturedPayload.params
+    t.is(poolConfig.data.poolUrls.length, APPROVED_POOL_URLS.length, 'should resolve one entry per approved pool')
+    poolConfig.data.poolUrls.forEach((resolved, i) => {
+      const approved = APPROVED_POOL_URLS[i]
+      t.is(resolved.poolUrlId, approved.id, 'poolUrlId should be preserved on the resolved entry')
+      t.is(resolved.url, `stratum+tcp://${approved.host}:${approved.port}`, 'url should be built from host and port')
+      t.is(resolved.pool, approved.name, 'pool should be the approved config name')
+      t.is(resolved.workerName, `${approved.id}-worker`, 'workerName should pass through from the request')
+      t.is(resolved.workerPassword, 'x', 'workerPassword should pass through from the request')
+    })
+
+    t.pass()
   })
 
-  const mockReq = {
-    _info: {
-      authToken: 'token123',
-      user: { metadata: { email: 'test@example.com' } }
-    },
-    body: {
-      action: 'REGISTER_CONFIG',
-      params: []
+  test(`pushAction - ${action} disregards a url sent from the client`, async (t) => {
+    let capturedPayload = null
+    const mockCtx = withDataProxy({
+      conf: { orks: [{ rpcPublicKey: 'key1' }] },
+      authLib: {
+        getTokenPerms: async () => ({ write: true, permissions: ['actions:write'] })
+      },
+      net_r0: {
+        jRequest: async (key, method, payload, opts) => {
+          capturedPayload = payload
+          return { id: 'new-action', success: true }
+        }
+      }
+    })
+
+    const approved = APPROVED_POOL_URLS[0]
+    const mockReq = {
+      _info: {
+        authToken: 'token123',
+        user: { metadata: { email: 'test@example.com' } }
+      },
+      body: {
+        action,
+        params: [{
+          name: 'my-config',
+          data: {
+            poolUrls: [{
+              poolUrlId: approved.id,
+              url: 'stratum+tcp://attacker-controlled.example.com:9999',
+              workerName: 'worker1',
+              workerPassword: 'secret'
+            }]
+          }
+        }]
+      }
     }
-  }
 
-  const result = await pushAction(mockCtx, mockReq)
+    await pushAction(mockCtx, mockReq)
 
-  t.ok(Array.isArray(result), 'should return array')
-  t.alike(capturedPayload.params, [], 'params should pass through unchanged when no pool config present')
+    const [poolConfig] = capturedPayload.params
+    const [resolved] = poolConfig.data.poolUrls
+    t.is(resolved.url, `stratum+tcp://${approved.host}:${approved.port}`, 'url should be rebuilt from the approved pool config, not the client-supplied url')
+    t.not(resolved.url, 'stratum+tcp://attacker-controlled.example.com:9999', 'client-supplied url should never reach the payload')
 
-  t.pass()
-})
+    t.pass()
+  })
+
+  test(`pushAction - ${action} throws for missing/invalid poolUrls`, async (t) => {
+    const mockCtx = withDataProxy({
+      conf: { orks: [{ rpcPublicKey: 'key1' }] },
+      authLib: {
+        getTokenPerms: async () => ({ write: true, permissions: [] })
+      },
+      net_r0: {
+        jRequest: async () => ({ id: 'new-action', success: true })
+      }
+    })
+
+    const mockReq = {
+      _info: {
+        authToken: 'token123',
+        user: { metadata: { email: 'test@example.com' } }
+      },
+      body: {
+        action,
+        params: [{ name: 'my-config', data: {} }]
+      }
+    }
+
+    try {
+      await pushAction(mockCtx, mockReq)
+      t.fail('should throw error for missing poolUrls')
+    } catch (err) {
+      t.is(err.message, 'ERR_INVALID_POOL_URLS', 'should throw ERR_INVALID_POOL_URLS')
+    }
+
+    t.pass()
+  })
+
+  test(`pushAction - ${action} throws when a poolUrl entry is missing poolUrlId`, async (t) => {
+    const mockCtx = withDataProxy({
+      conf: { orks: [{ rpcPublicKey: 'key1' }] },
+      authLib: {
+        getTokenPerms: async () => ({ write: true, permissions: [] })
+      },
+      net_r0: {
+        jRequest: async () => ({ id: 'new-action', success: true })
+      }
+    })
+
+    const mockReq = {
+      _info: {
+        authToken: 'token123',
+        user: { metadata: { email: 'test@example.com' } }
+      },
+      body: {
+        action,
+        params: [{ name: 'my-config', data: { poolUrls: [{ workerName: 'worker1' }] } }]
+      }
+    }
+
+    try {
+      await pushAction(mockCtx, mockReq)
+      t.fail('should throw error for missing poolUrlId')
+    } catch (err) {
+      t.is(err.message, 'ERR_INVALID_POOL_URL_ID_MISSING', 'should throw ERR_INVALID_POOL_URL_ID_MISSING')
+    }
+
+    t.pass()
+  })
+
+  test(`pushAction - ${action} throws for unknown poolUrlId`, async (t) => {
+    const mockCtx = withDataProxy({
+      conf: { orks: [{ rpcPublicKey: 'key1' }] },
+      authLib: {
+        getTokenPerms: async () => ({ write: true, permissions: [] })
+      },
+      net_r0: {
+        jRequest: async () => ({ id: 'new-action', success: true })
+      }
+    })
+
+    const mockReq = {
+      _info: {
+        authToken: 'token123',
+        user: { metadata: { email: 'test@example.com' } }
+      },
+      body: {
+        action,
+        params: [{ name: 'my-config', data: { poolUrls: [{ poolUrlId: 'does-not-exist' }] } }]
+      }
+    }
+
+    try {
+      await pushAction(mockCtx, mockReq)
+      t.fail('should throw error for unknown poolUrlId')
+    } catch (err) {
+      t.is(err.message, 'ERR_INVALID_POOL_URL_ID_INVALID', 'should throw ERR_INVALID_POOL_URL_ID_INVALID')
+    }
+
+    t.pass()
+  })
+
+  test(`pushAction - ${action} with no pool config passes params through unchanged`, async (t) => {
+    let capturedPayload = null
+    const mockCtx = withDataProxy({
+      conf: { orks: [{ rpcPublicKey: 'key1' }] },
+      authLib: {
+        getTokenPerms: async () => ({ write: true, permissions: [] })
+      },
+      net_r0: {
+        jRequest: async (key, method, payload, opts) => {
+          capturedPayload = payload
+          return { id: 'new-action', success: true }
+        }
+      }
+    })
+
+    const mockReq = {
+      _info: {
+        authToken: 'token123',
+        user: { metadata: { email: 'test@example.com' } }
+      },
+      body: {
+        action,
+        params: []
+      }
+    }
+
+    const result = await pushAction(mockCtx, mockReq)
+
+    t.ok(Array.isArray(result), 'should return array')
+    t.alike(capturedPayload.params, [], 'params should pass through unchanged when no pool config present')
+
+    t.pass()
+  })
+
+  test(`pushAction - ${action} throws ERR_INVALID_PAYLOAD when params is not an array`, async (t) => {
+    const mockCtx = withDataProxy({
+      conf: { orks: [{ rpcPublicKey: 'key1' }] },
+      authLib: {
+        getTokenPerms: async () => ({ write: true, permissions: [] })
+      },
+      net_r0: {
+        jRequest: async () => ({ id: 'new-action', success: true })
+      }
+    })
+
+    const mockReq = {
+      _info: {
+        authToken: 'token123',
+        user: { metadata: { email: 'test@example.com' } }
+      },
+      body: {
+        action,
+        params: { name: 'my-config' }
+      }
+    }
+
+    try {
+      await pushAction(mockCtx, mockReq)
+      t.fail('should throw error for non-array params')
+    } catch (err) {
+      t.is(err.message, 'ERR_INVALID_PAYLOAD', 'should throw ERR_INVALID_PAYLOAD')
+    }
+
+    t.pass()
+  })
+}
 
 test('pushActionsBatch - requires write permission', async (t) => {
   const mockCtx = {
