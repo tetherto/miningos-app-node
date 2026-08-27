@@ -83,21 +83,34 @@ const transformPushActionPayload = (payload) => {
       const [poolConfig] = payload.params
       if (!poolConfig) return payload
 
-      const poolUrls = []
-      const { poolUrlIds } = poolConfig
-      if (!poolUrlIds || !Array.isArray(poolUrlIds)) throw new Error('ERR_INVALID_POOL_URL_IDS')
+      const { poolUrls } = poolConfig
+      if (!poolUrls || !Array.isArray(poolUrls)) throw new Error('ERR_INVALID_POOL_URLS')
 
-      for (const poolUrlId of poolUrlIds) {
-        const poolUrl = APPROVED_POOL_CONFIGS.find(config => config.id === poolUrlId)
-        if (!poolUrl) {
-          throw new Error('ERR_INVALID_POOL_URL')
+      const result = []
+      for (const poolUrlSetting of poolUrls) {
+        const {
+          poolUrlId, workerName, workerPassword
+        } = poolUrlSetting
+
+        if (!poolUrlId) {
+          throw new Error('ERR_INVALID_POOL_URL_ID_MISSING')
         }
 
-        poolUrls.push(poolUrl)
+        const poolUrl = APPROVED_POOL_CONFIGS.find(config => config.id === poolUrlId)
+        if (!poolUrl) {
+          throw new Error('ERR_INVALID_POOL_URL_ID_INVALID')
+        }
+
+        const { host, port, name } = poolUrl
+        result.push({
+          url: `stratum+tcp://${host}:${port}`,
+          workerName,
+          workerPassword,
+          pool: name
+        })
       }
 
-      delete poolConfig.poolUrlIds
-      poolConfig.poolUrls = poolUrls
+      poolConfig.poolUrls = result
       return payload
     }
 
