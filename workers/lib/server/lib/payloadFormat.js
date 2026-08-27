@@ -1,7 +1,7 @@
 'use strict'
 
 const zlib = require('zlib')
-const { PassThrough } = require('streamx')
+const { PassThrough } = require('stream')
 
 // The miner decides what a log download actually contains: some models stream a single
 // plain-text log, Whatsminers stream a gzipped tar of their log directory. The action result
@@ -9,6 +9,10 @@ const { PassThrough } = require('streamx')
 
 const GZIP_MAGIC = [0x1f, 0x8b]
 const ZIP_MAGIC = [0x50, 0x4b, 0x03, 0x04]
+
+// `head` is device-supplied and deflate expands up to ~1000x, so only a bounded slice of it is
+// ever inflated — detection needs 512 output bytes, not the whole chunk.
+const GZIP_INFLATE_INPUT_LIMIT = 4096
 
 // A POSIX tar header is 512 bytes and carries "ustar" at offset 257.
 const TAR_HEADER_LENGTH = 512
@@ -24,11 +28,15 @@ function hasMagic (head, magic) {
   return head.length >= magic.length && magic.every((byte, index) => head[index] === byte)
 }
 
-// Inflates whatever of `head` zlib can manage — the input is a stream prefix, so the deflate
-// block is expected to be truncated. Returns null when it cannot be inflated at all.
+// Inflates whatever zlib can manage of the first GZIP_INFLATE_INPUT_LIMIT bytes — the input is a
+// stream prefix, so the deflate block is expected to be truncated. Returns null when it cannot be
+// inflated at all. `maxOutputLength` is deliberately not used: it throws, which would demote a
+// real .tar.gz to .gz.
 function inflateHead (head) {
   try {
-    return zlib.gunzipSync(head, { finishFlush: zlib.constants.Z_SYNC_FLUSH })
+    return zlib.gunzipSync(head.subarray(0, GZIP_INFLATE_INPUT_LIMIT), {
+      finishFlush: zlib.constants.Z_SYNC_FLUSH
+    })
   } catch {
     return null
   }
@@ -108,22 +116,47 @@ function peekFirstChunk (stream) {
  * Re-emits a peeked chunk ahead of the rest of the source, so the consumer sees the payload
  * byte-for-byte. Honours the consumer's backpressure — nothing beyond one chunk is buffered.
  *
- * @param {import('streamx').Readable} source  Stream already advanced past `head`
+ * The two streams share a lifecycle: if the consumer goes away (fastify destroys the response
+ * stream when a client aborts mid-download) the source is destroyed too, so the P2P transfer from
+ * the miner is not left open with the pump parked on a drain that will never fire. `source.pipe()`
+ * would tie them for free but cannot be used here — the peek may already have consumed the
+ * source's last chunk, and piping an ended stream never ends the destination.
+ *
+ * @param {import('stream').Readable} source  Stream already advanced past `head`
  * @param {Buffer|null} head
- * @returns {import('streamx').Readable}
+ * @returns {import('stream').Readable}
  */
 function prependChunk (source, head) {
   const out = new PassThrough()
 
+  out.on('close', () => source.destroy())
+
+  // Resolves false once the consumer is gone, which stops the pump instead of hanging it.
   const write = async (chunk) => {
-    if (out.write(chunk) === false) {
-      await new Promise((resolve) => out.once('drain', resolve))
-    }
+    if (out.destroyed) return false
+    if (out.write(chunk) !== false) return true
+
+    return new Promise((resolve) => {
+      const settle = (delivered) => {
+        out.off('drain', onDrain)
+        out.off('close', onClose)
+        resolve(delivered)
+      }
+      const onDrain = () => settle(true)
+      const onClose = () => settle(false)
+
+      out.on('drain', onDrain)
+      out.on('close', onClose)
+    })
   }
 
   const pump = async () => {
-    if (head) await write(head)
-    for await (const chunk of source) await write(chunk)
+    if (head && !(await write(head))) return
+
+    for await (const chunk of source) {
+      if (!(await write(chunk))) return
+    }
+
     out.end()
   }
 
@@ -133,6 +166,7 @@ function prependChunk (source, head) {
 }
 
 module.exports = {
+  inflateHead,
   detectPayloadFormat,
   peekFirstChunk,
   prependChunk

@@ -5,6 +5,7 @@ const { Readable } = require('streamx')
 const test = require('brittle')
 
 const {
+  inflateHead,
   detectPayloadFormat,
   peekFirstChunk,
   prependChunk
@@ -169,4 +170,50 @@ test('peekFirstChunk - rejects when the source fails before the first chunk arri
   })
 
   await t.exception(peekFirstChunk(stream), /ERR_LOG_INCOMPLETE/, 'should reject')
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// inflateHead — bounded work on device-supplied bytes
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('inflateHead - inflates only a bounded slice of a highly compressible chunk', (t) => {
+  // `head` comes from the miner and deflate expands up to ~1000x: inflating a whole 64 KB chunk
+  // of this shape would allocate ~67 MB synchronously per request.
+  const bomb = zlib.gzipSync(Buffer.alloc(64 * 1024 * 1024))
+  const inflated = inflateHead(bomb)
+
+  t.ok(inflated.length >= 512, 'should still yield enough output to read a tar header')
+  t.ok(
+    inflated.length < 8 * 1024 * 1024,
+    `should not inflate the whole payload (got ${inflated.length} bytes)`
+  )
+  t.is(detectPayloadFormat(bomb).extension, 'gz', 'should still classify the payload')
+})
+
+test('inflateHead - still sees the tar header of a real archive', (t) => {
+  t.is(detectPayloadFormat(zlib.gzipSync(tarBytes())).extension, 'tar.gz', 'should detect tar')
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// prependChunk — lifecycle
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('prependChunk - destroys the source when the consumer goes away', async (t) => {
+  // Fastify destroys the response stream when a client aborts mid-download. Nothing else would
+  // close the P2P transfer from the miner, and the pump would park on a drain that never fires.
+  const source = makeStream(Array.from({ length: 64 }, () => Buffer.alloc(64 * 1024, 7)))
+  const head = await peekFirstChunk(source)
+  const body = prependChunk(source, head)
+
+  await new Promise((resolve) => body.once('readable', resolve))
+  body.destroy()
+
+  await t.execution(
+    Promise.race([
+      new Promise((resolve) => source.once('close', resolve)),
+      new Promise((resolve, reject) => setTimeout(() => reject(new Error('source never closed')), 2000))
+    ]),
+    'should destroy the source rather than leave the transfer open'
+  )
+  t.ok(source.destroyed, 'source should be destroyed')
 })
