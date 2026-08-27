@@ -11,6 +11,7 @@ const {
   voteAction,
   cancelActionsBatch
 } = require('../../../workers/lib/server/handlers/actions.handlers')
+const { APPROVED_POOL_CONFIGS } = require('../../../workers/lib/constants')
 const { createMockCtxWithOrks, createMockReq, withDataProxy } = require('../helpers/mockHelpers')
 
 test('queryActionsBatch - basic functionality', async (t) => {
@@ -253,6 +254,150 @@ test('pushAction - with valid permissions', async (t) => {
 
   t.ok(Array.isArray(result), 'should return array')
   t.ok(result[0].id === 'new-action', 'should return new action id')
+
+  t.pass()
+})
+
+test('pushAction - REGISTER_CONFIG resolves poolUrlIds to approved pool urls', async (t) => {
+  let capturedPayload = null
+  const mockCtx = withDataProxy({
+    conf: {
+      orks: [
+        { rpcPublicKey: 'key1' }
+      ]
+    },
+    authLib: {
+      getTokenPerms: async () => ({
+        write: true,
+        permissions: ['actions:write']
+      })
+    },
+    net_r0: {
+      jRequest: async (key, method, payload, opts) => {
+        capturedPayload = payload
+        return { id: 'new-action', success: true }
+      }
+    }
+  })
+
+  const approvedIds = APPROVED_POOL_CONFIGS.map((config) => config.id)
+  const mockReq = {
+    _info: {
+      authToken: 'token123',
+      user: { metadata: { email: 'test@example.com' } }
+    },
+    body: {
+      action: 'REGISTER_CONFIG',
+      params: [{ name: 'my-config', poolUrlIds: approvedIds }]
+    }
+  }
+
+  const result = await pushAction(mockCtx, mockReq)
+
+  t.ok(Array.isArray(result), 'should return array')
+  t.ok(result[0].id === 'new-action', 'should return new action id')
+
+  const [poolConfig] = capturedPayload.params
+  t.absent(poolConfig.poolUrlIds, 'poolUrlIds should be removed from the pool config')
+  t.alike(poolConfig.poolUrls, APPROVED_POOL_CONFIGS, 'poolUrls should be resolved from APPROVED_POOL_CONFIGS')
+
+  t.pass()
+})
+
+test('pushAction - REGISTER_CONFIG throws for missing/invalid poolUrlIds', async (t) => {
+  const mockCtx = withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    authLib: {
+      getTokenPerms: async () => ({ write: true, permissions: [] })
+    },
+    net_r0: {
+      jRequest: async () => ({ id: 'new-action', success: true })
+    }
+  })
+
+  const mockReq = {
+    _info: {
+      authToken: 'token123',
+      user: { metadata: { email: 'test@example.com' } }
+    },
+    body: {
+      action: 'REGISTER_CONFIG',
+      params: [{ name: 'my-config' }]
+    }
+  }
+
+  try {
+    await pushAction(mockCtx, mockReq)
+    t.fail('should throw error for missing poolUrlIds')
+  } catch (err) {
+    t.is(err.message, 'ERR_INVALID_POOL_URL_IDS', 'should throw ERR_INVALID_POOL_URL_IDS')
+  }
+
+  t.pass()
+})
+
+test('pushAction - REGISTER_CONFIG throws for unknown poolUrlId', async (t) => {
+  const mockCtx = withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    authLib: {
+      getTokenPerms: async () => ({ write: true, permissions: [] })
+    },
+    net_r0: {
+      jRequest: async () => ({ id: 'new-action', success: true })
+    }
+  })
+
+  const mockReq = {
+    _info: {
+      authToken: 'token123',
+      user: { metadata: { email: 'test@example.com' } }
+    },
+    body: {
+      action: 'REGISTER_CONFIG',
+      params: [{ name: 'my-config', poolUrlIds: ['does-not-exist'] }]
+    }
+  }
+
+  try {
+    await pushAction(mockCtx, mockReq)
+    t.fail('should throw error for unknown poolUrlId')
+  } catch (err) {
+    t.is(err.message, 'ERR_INVALID_POOL_URL', 'should throw ERR_INVALID_POOL_URL')
+  }
+
+  t.pass()
+})
+
+test('pushAction - REGISTER_CONFIG with no pool config passes params through unchanged', async (t) => {
+  let capturedPayload = null
+  const mockCtx = withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    authLib: {
+      getTokenPerms: async () => ({ write: true, permissions: [] })
+    },
+    net_r0: {
+      jRequest: async (key, method, payload, opts) => {
+        capturedPayload = payload
+        return { id: 'new-action', success: true }
+      }
+    }
+  })
+
+  const mockReq = {
+    _info: {
+      authToken: 'token123',
+      user: { metadata: { email: 'test@example.com' } }
+    },
+    body: {
+      action: 'REGISTER_CONFIG',
+      params: []
+    }
+  }
+
+  const result = await pushAction(mockCtx, mockReq)
+
+  t.ok(Array.isArray(result), 'should return array')
+  t.alike(capturedPayload.params, [], 'params should pass through unchanged when no pool config present')
 
   t.pass()
 })

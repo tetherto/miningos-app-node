@@ -1,7 +1,7 @@
 'use strict'
 
 const { parseJsonQueryParam } = require('../../utils')
-const { ACTIONS_MAX_QUERIES } = require('../../constants')
+const { ACTIONS_MAX_QUERIES, APPROVED_POOL_CONFIGS } = require('../../constants')
 
 async function queryActionsBatch (ctx, req) {
   const payload = {
@@ -77,6 +77,35 @@ async function pushActionsBatch (ctx, req, rep) {
   })
 }
 
+const transformPushActionPayload = (payload) => {
+  switch (payload.action) {
+    case 'REGISTER_CONFIG': {
+      const [poolConfig] = payload.params
+      if (!poolConfig) return payload
+
+      const poolUrls = []
+      const { poolUrlIds } = poolConfig
+      if (!poolUrlIds || !Array.isArray(poolUrlIds)) throw new Error('ERR_INVALID_POOL_URL_IDS')
+
+      for (const poolUrlId of poolUrlIds) {
+        const poolUrl = APPROVED_POOL_CONFIGS.find(config => config.id === poolUrlId)
+        if (!poolUrl) {
+          throw new Error('ERR_INVALID_POOL_URL')
+        }
+
+        poolUrls.push(poolUrl)
+      }
+
+      delete poolConfig.poolUrlIds
+      poolConfig.poolUrls = poolUrls
+      return payload
+    }
+
+    default:
+      return payload
+  }
+}
+
 async function pushAction (ctx, req) {
   const { write, permissions } = await ctx.authLib.getTokenPerms(req._info.authToken)
   if (!write) {
@@ -91,7 +120,9 @@ async function pushAction (ctx, req) {
     authPerms: permissions
   }
 
-  return await ctx.dataProxy.requestData('pushAction', payload, (res, resultsArray) => {
+  const transformedPayload = transformPushActionPayload(structuredClone(payload))
+
+  return await ctx.dataProxy.requestData('pushAction', transformedPayload, (res, resultsArray) => {
     if (res.error) {
       resultsArray.push({ id: null, errors: [res.error] })
     } else {
