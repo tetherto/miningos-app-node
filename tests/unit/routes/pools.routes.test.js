@@ -20,7 +20,6 @@ test('pools routes - route definitions', (t) => {
   t.ok(routeUrls.includes('/auth/pools/:pool/balance-history'), 'should have balance-history route')
   t.ok(routeUrls.includes('/auth/pools/config/:id'), 'should have pools thing config route')
   t.ok(routeUrls.includes('/auth/pools/stats/containers'), 'should have pools stats containers route')
-  t.absent(routeUrls.includes('/auth/pools/approved-urls'), 'should not have the removed pools approved-urls route')
   t.pass()
 })
 

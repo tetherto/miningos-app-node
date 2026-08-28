@@ -873,13 +873,6 @@ const CONFIG_TYPES = {
   POOL: 'pool'
 }
 
-// Pool configs that are pre-approved for use
-const APPROVED_POOL_URLS = [
-  { id: 'f2pool-btc-1', name: 'F2Pool', host: 'btc.f2pool.com', port: 1314 },
-  { id: 'ocean-btc-2', name: 'Ocean', host: 'mine.ocean.xyz', port: 3334 },
-  { id: 'antpool-btc-3', name: 'Antpool', host: 'ss.antpool.com', port: 3333 }
-]
-
 const MINER_FIELD_MAP = {
   status: 'last.snap.stats.status',
   hashrate: 'last.snap.stats.hashrate_mhs',
@@ -1233,7 +1226,6 @@ module.exports = {
   BTC_SATS,
   RANGE_BUCKETS,
   CONFIG_TYPES,
-  APPROVED_POOL_URLS,
   METRICS_TIME,
   METRICS_DEFAULTS,
   MINER_CATEGORIES,
