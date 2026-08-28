@@ -1,7 +1,7 @@
 'use strict'
 
 const { parseJsonQueryParam } = require('../../utils')
-const { ACTIONS_MAX_QUERIES, APPROVED_POOL_URLS } = require('../../constants')
+const { ACTIONS_MAX_QUERIES } = require('../../constants')
 const { detectPayloadFormat, peekFirstChunk, prependChunk } = require('../lib/payloadFormat')
 
 async function queryActionsBatch (ctx, req) {
@@ -78,7 +78,7 @@ async function pushActionsBatch (ctx, req, rep) {
   })
 }
 
-const transformPushActionPayload = (payload) => {
+const transformPushActionPayload = async (ctx, payload) => {
   switch (payload.action) {
     case 'registerConfig':
     case 'updateConfig': {
@@ -103,7 +103,16 @@ const transformPushActionPayload = (payload) => {
           throw new Error('ERR_INVALID_POOL_URL_ID_MISSING')
         }
 
-        const poolUrl = APPROVED_POOL_URLS.find(config => config.id === poolUrlId)
+        let approvedPoolUrls = []
+        const orkGlobalConfigResults = await ctx.dataProxy.requestDataMap('getGlobalConfig', {})
+        for (const orkResult of orkGlobalConfigResults) {
+          if (!orkResult || typeof orkResult !== 'object') continue
+          if (orkResult.approvedPoolUrls) {
+            approvedPoolUrls = orkResult.approvedPoolUrls
+          }
+        }
+
+        const poolUrl = approvedPoolUrls.find(config => config.id === poolUrlId)
         if (!poolUrl) {
           throw new Error('ERR_INVALID_POOL_URL_ID_INVALID')
         }
@@ -141,7 +150,7 @@ async function pushAction (ctx, req) {
     authPerms: permissions
   }
 
-  const transformedPayload = transformPushActionPayload(structuredClone(payload))
+  const transformedPayload = await transformPushActionPayload(ctx, structuredClone(payload))
 
   return await ctx.dataProxy.requestData('pushAction', transformedPayload, (res, resultsArray) => {
     if (res.error) {

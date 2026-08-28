@@ -166,7 +166,6 @@ const ENDPOINTS = {
   POOLS_BALANCE_HISTORY: '/auth/pools/:pool/balance-history',
   POOLS_THING_CONFIG: '/auth/pools/config/:id',
   POOLS_CONTAINERS_STATS: '/auth/pools/stats/containers',
-  POOLS_APPROVED_URLS: '/auth/pools/approved-urls',
 
   SITE_STATUS_LIVE: '/auth/site/status/live',
   SITE_POWER_CONSUMPTION: '/auth/site/power-consumption',

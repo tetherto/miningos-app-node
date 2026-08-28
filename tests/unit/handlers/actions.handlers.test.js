@@ -275,6 +275,9 @@ for (const action of ['registerConfig', 'updateConfig']) {
       },
       net_r0: {
         jRequest: async (key, method, payload, opts) => {
+          if (method === 'getGlobalConfig') {
+            return { approvedPoolUrls: APPROVED_POOL_URLS }
+          }
           capturedPayload = payload
           return { id: 'new-action', success: true }
         }
@@ -329,6 +332,9 @@ for (const action of ['registerConfig', 'updateConfig']) {
       },
       net_r0: {
         jRequest: async (key, method, payload, opts) => {
+          if (method === 'getGlobalConfig') {
+            return { approvedPoolUrls: APPROVED_POOL_URLS }
+          }
           capturedPayload = payload
           return { id: 'new-action', success: true }
         }
@@ -363,6 +369,134 @@ for (const action of ['registerConfig', 'updateConfig']) {
     const [resolved] = poolConfig.data.poolUrls
     t.is(resolved.url, `stratum+tcp://${approved.host}:${approved.port}`, 'url should be rebuilt from the approved pool config, not the client-supplied url')
     t.not(resolved.url, 'stratum+tcp://attacker-controlled.example.com:9999', 'client-supplied url should never reach the payload')
+
+    t.pass()
+  })
+
+  test(`pushAction - ${action} fetches approved pool urls from ork global config`, async (t) => {
+    let getGlobalConfigCalls = 0
+    const mockCtx = withDataProxy({
+      conf: { orks: [{ rpcPublicKey: 'key1' }] },
+      authLib: {
+        getTokenPerms: async () => ({ write: true, permissions: ['actions:write'] })
+      },
+      net_r0: {
+        jRequest: async (key, method, payload, opts) => {
+          if (method === 'getGlobalConfig') {
+            getGlobalConfigCalls++
+            return { approvedPoolUrls: APPROVED_POOL_URLS }
+          }
+          return { id: 'new-action', success: true }
+        }
+      }
+    })
+
+    const approved = APPROVED_POOL_URLS[0]
+    const mockReq = {
+      _info: {
+        authToken: 'token123',
+        user: { metadata: { email: 'test@example.com' } }
+      },
+      body: {
+        action,
+        params: [{
+          name: 'my-config',
+          data: { poolUrls: [{ poolUrlId: approved.id, workerName: 'worker1', workerPassword: 'x' }] }
+        }]
+      }
+    }
+
+    await pushAction(mockCtx, mockReq)
+
+    t.ok(getGlobalConfigCalls > 0, 'should fetch global config from the orks instead of a static constant')
+
+    t.pass()
+  })
+
+  test(`pushAction - ${action} throws for unknown poolUrlId when no ork reports approvedPoolUrls`, async (t) => {
+    const mockCtx = withDataProxy({
+      conf: { orks: [{ rpcPublicKey: 'key1' }] },
+      authLib: {
+        getTokenPerms: async () => ({ write: true, permissions: ['actions:write'] })
+      },
+      net_r0: {
+        jRequest: async (key, method, payload, opts) => {
+          if (method === 'getGlobalConfig') {
+            return {}
+          }
+          return { id: 'new-action', success: true }
+        }
+      }
+    })
+
+    const approved = APPROVED_POOL_URLS[0]
+    const mockReq = {
+      _info: {
+        authToken: 'token123',
+        user: { metadata: { email: 'test@example.com' } }
+      },
+      body: {
+        action,
+        params: [{
+          name: 'my-config',
+          data: { poolUrls: [{ poolUrlId: approved.id, workerName: 'worker1', workerPassword: 'x' }] }
+        }]
+      }
+    }
+
+    try {
+      await pushAction(mockCtx, mockReq)
+      t.fail('should throw error when no ork reports approved pool urls')
+    } catch (err) {
+      t.is(err.message, 'ERR_INVALID_POOL_URL_ID_INVALID', 'should throw ERR_INVALID_POOL_URL_ID_INVALID')
+    }
+
+    t.pass()
+  })
+
+  test(`pushAction - ${action} resolves poolUrls when only one ork reports approvedPoolUrls`, async (t) => {
+    let capturedPayload = null
+    const mockCtx = withDataProxy({
+      conf: {
+        orks: [
+          { rpcPublicKey: 'key1' },
+          { rpcPublicKey: 'key2' }
+        ]
+      },
+      authLib: {
+        getTokenPerms: async () => ({ write: true, permissions: ['actions:write'] })
+      },
+      net_r0: {
+        jRequest: async (key, method, payload, opts) => {
+          if (method === 'getGlobalConfig') {
+            return key === 'key1' ? { approvedPoolUrls: APPROVED_POOL_URLS } : {}
+          }
+          capturedPayload = payload
+          return { id: 'new-action', success: true }
+        }
+      }
+    })
+
+    const approved = APPROVED_POOL_URLS[0]
+    const mockReq = {
+      _info: {
+        authToken: 'token123',
+        user: { metadata: { email: 'test@example.com' } }
+      },
+      body: {
+        action,
+        params: [{
+          name: 'my-config',
+          data: { poolUrls: [{ poolUrlId: approved.id, workerName: 'worker1', workerPassword: 'x' }] }
+        }]
+      }
+    }
+
+    await pushAction(mockCtx, mockReq)
+
+    const [poolConfig] = capturedPayload.params
+    const [resolved] = poolConfig.data.poolUrls
+    t.is(resolved.url, `stratum+tcp://${approved.host}:${approved.port}`, 'should resolve using the ork that reported approvedPoolUrls')
 
     t.pass()
   })

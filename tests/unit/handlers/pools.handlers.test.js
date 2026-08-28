@@ -1,7 +1,7 @@
 'use strict'
 
 const test = require('brittle')
-const { RPC_METHODS, WORKER_TYPES, MINER_CATEGORIES, APPROVED_POOL_URLS } = require('../../../workers/lib/constants')
+const { RPC_METHODS, WORKER_TYPES, MINER_CATEGORIES } = require('../../../workers/lib/constants')
 const {
   getPools,
   flattenPoolStats,
@@ -10,8 +10,7 @@ const {
   flattenTransactionResults,
   groupByBucket,
   getPoolThingConfig,
-  getPoolStatsContainers,
-  getApprovedPoolUrls
+  getPoolStatsContainers
 } = require('../../../workers/lib/server/handlers/pools.handlers')
 const { withDataProxy } = require('../helpers/mockHelpers')
 
@@ -548,19 +547,5 @@ test('getPoolStatsContainers - handles empty containers from RPC', async (t) => 
 
   t.ok(Array.isArray(result), 'should return array')
   t.is(result.length, 0, 'should be empty when no containers')
-  t.pass()
-})
-
-test('getApprovedPoolUrls - returns the approved pool configs constant', async (t) => {
-  const result = await getApprovedPoolUrls()
-
-  t.is(result, APPROVED_POOL_URLS, 'should return the APPROVED_POOL_URLS constant')
-  t.ok(Array.isArray(result), 'should return an array')
-  result.forEach((config) => {
-    t.ok(typeof config.id === 'string', 'each config should have an id')
-    t.ok(typeof config.name === 'string', 'each config should have a name')
-    t.ok(typeof config.host === 'string', 'each config should have a host')
-    t.ok(typeof config.port === 'number', 'each config should have a port')
-  })
   t.pass()
 })

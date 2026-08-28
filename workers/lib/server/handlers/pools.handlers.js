@@ -6,8 +6,7 @@ const {
   WORKER_TYPES,
   MINERPOOL_EXT_DATA_KEYS,
   RANGE_BUCKETS,
-  MINER_FIELD_MAP,
-  APPROVED_POOL_URLS
+  MINER_FIELD_MAP
 } = require('../../constants')
 const {
   parseJsonQueryParam,
@@ -230,10 +229,6 @@ const getPoolStatsContainers = async (ctx, req) => {
   })
 }
 
-async function getApprovedPoolUrls () {
-  return APPROVED_POOL_URLS
-}
-
 module.exports = {
   getPools,
   flattenPoolStats,
@@ -242,6 +237,5 @@ module.exports = {
   flattenTransactionResults,
   groupByBucket,
   getPoolThingConfig,
-  getPoolStatsContainers,
-  getApprovedPoolUrls
+  getPoolStatsContainers
 }

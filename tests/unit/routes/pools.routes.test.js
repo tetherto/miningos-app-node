@@ -7,7 +7,6 @@ const { createRoutesForTest } = require('../helpers/mockHelpers')
 const ROUTES_PATH = '../../../workers/lib/server/routes/pools.routes.js'
 const POOLS_CONFIG_ROUTE_URL = '/auth/pools/config/:id'
 const POOLS_STATS_CONTAINERS_ROUTE_URL = '/auth/pools/stats/containers'
-const POOLS_APPROVED_CONFIGS_ROUTE_URL = '/auth/pools/approved-urls'
 
 test('pools routes - module structure', (t) => {
   testModuleStructure(t, ROUTES_PATH, 'pools')
@@ -21,7 +20,7 @@ test('pools routes - route definitions', (t) => {
   t.ok(routeUrls.includes('/auth/pools/:pool/balance-history'), 'should have balance-history route')
   t.ok(routeUrls.includes('/auth/pools/config/:id'), 'should have pools thing config route')
   t.ok(routeUrls.includes('/auth/pools/stats/containers'), 'should have pools stats containers route')
-  t.ok(routeUrls.includes('/auth/pools/approved-urls'), 'should have pools approved configs route')
+  t.absent(routeUrls.includes('/auth/pools/approved-urls'), 'should not have the removed pools approved-urls route')
   t.pass()
 })
 
@@ -62,15 +61,5 @@ test('pools routes - GET /auth/pools/stats/containers', (t) => {
   t.is(statsRoute.method, 'GET', 'pools stats containers route should be GET')
   t.ok(typeof statsRoute.handler === 'function', 'pools stats containers route should have handler')
   t.ok(typeof statsRoute.onRequest === 'function', 'pools stats containers route should have onRequest (auth)')
-  t.pass()
-})
-
-test('pools routes - GET /auth/pools/approved-configs', (t) => {
-  const routes = createRoutesForTest(ROUTES_PATH)
-  const approvedConfigsRoute = routes.find(r => r.url === POOLS_APPROVED_CONFIGS_ROUTE_URL)
-  t.ok(approvedConfigsRoute, 'should have pools approved configs route')
-  t.is(approvedConfigsRoute.method, 'GET', 'pools approved configs route should be GET')
-  t.ok(typeof approvedConfigsRoute.handler === 'function', 'pools approved configs route should have handler')
-  t.ok(typeof approvedConfigsRoute.onRequest === 'function', 'pools approved configs route should have onRequest (auth)')
   t.pass()
 })
