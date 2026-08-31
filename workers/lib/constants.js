@@ -1206,7 +1206,7 @@ const CUSTOM_ALERT_CONFIG = {
       }
     },
     rackTypes: []
-  },
+  }
 }
 
 module.exports = {

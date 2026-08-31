@@ -199,7 +199,7 @@ function buildSiteEfficiencyAlert (key, severity, efficiencyWPerTh, threshold) {
   return {
     name: key,
     code: key,
-    description: `High Site Efficiency detected`,
+    description: 'High Site Efficiency detected',
     severity,
     createdAt: Date.now(),
     id: null,
@@ -216,7 +216,7 @@ async function getSiteEfficiencyAlerts (ctx) {
   const activeTiers = SITE_EFFICIENCY_ALERT_TIERS
     .map(({ key, severity }) => ({ key, severity, conf: alertParams?.[key] }))
     .filter(({ conf }) => conf?.enabled && typeof conf.maxSiteEfficiencyWThs === 'number')
-  
+
   if (!activeTiers.length) return []
 
   const efficiencyWPerTh = await computeSiteEfficiencyWPerTh(ctx)

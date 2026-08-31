@@ -1288,7 +1288,9 @@ test('getSiteAlerts - miner alerts never counted under operational', async (t) =
 const tailLogOrkResult = (hashrateMhs) => [[{ hashrate_mhs_1m_sum_aggr: hashrateMhs }]]
 
 const siteEfficiencyCtx = ({ hashrateMhs, siteMeterPowerW, alertParams }) => {
+  const calledMethods = []
   const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async (_pk, method, params) => {
+    calledMethods.push(method)
     if (method === 'listThings') {
       if (params?.query?.['last.alerts']) return []
       return [{ tags: ['t-powermeter'], last: { snap: { stats: { power_w: siteMeterPowerW } } } }]
@@ -1296,7 +1298,7 @@ const siteEfficiencyCtx = ({ hashrateMhs, siteMeterPowerW, alertParams }) => {
     if (method === 'tailLogMulti') return tailLogOrkResult(hashrateMhs)
     return []
   })
-  return { ...mockCtx, globalDataLib: { getGlobalData: async () => [alertParams] } }
+  return { ...mockCtx, calledMethods, globalDataLib: { getGlobalData: async () => [alertParams] } }
 }
 
 test('getSiteAlerts - creates critical and warning alerts when site efficiency exceeds both thresholds', async (t) => {
@@ -1317,6 +1319,36 @@ test('getSiteAlerts - creates critical and warning alerts when site efficiency e
   t.ok(bySeverity.warning, 'warning tier fires')
   t.is(bySeverity.critical.code, 'custom.high_site_efficiency.critical', 'critical alert carries its config key')
   t.is(bySeverity.critical.type, 'site', 'site-level alert has no device type')
+  t.is(bySeverity.critical.description, 'High Site Efficiency detected', 'description is the short, fixed copy')
+  t.is(bySeverity.critical.message, 'Site efficiency 100000.00 W/TH/s (max 50000 W/TH/s)', 'message reports efficiency to 2 decimal places')
+})
+
+test('getSiteAlerts - formats a fractional efficiency to 2 decimal places in the message', async (t) => {
+  const mockCtx = siteEfficiencyCtx({
+    hashrateMhs: 3000000, // 3 TH/s
+    siteMeterPowerW: 100000, // -> 33333.33... W/TH/s
+    alertParams: {
+      'custom.high_site_efficiency.critical': { enabled: true, maxSiteEfficiencyWThs: 1000 }
+    }
+  })
+
+  const result = await getSiteAlerts(mockCtx, { query: {} })
+  t.is(result.alerts[0].message, 'Site efficiency 33333.33 W/TH/s (max 1000 W/TH/s)', 'fractional efficiency rounds to 2 decimals')
+})
+
+test('getSiteAlerts - skips computing efficiency entirely when no tier is active', async (t) => {
+  const mockCtx = siteEfficiencyCtx({
+    hashrateMhs: 5000000,
+    siteMeterPowerW: 500000,
+    alertParams: {
+      'custom.high_site_efficiency.critical': { enabled: false, maxSiteEfficiencyWThs: 50000 },
+      'custom.high_site_efficiency.warning': { enabled: true } // no threshold configured
+    }
+  })
+
+  const result = await getSiteAlerts(mockCtx, { query: {} })
+  t.is(result.total, 0, 'no alert when no tier is active')
+  t.absent(mockCtx.calledMethods.includes('tailLogMulti'), 'hashrate is never fetched when no tier is active')
 })
 
 test('getSiteAlerts - skips a tier whose threshold is not configured', async (t) => {
