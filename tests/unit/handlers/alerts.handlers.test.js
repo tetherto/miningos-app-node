@@ -1053,9 +1053,10 @@ test('getSiteAlerts - type combines with existing filter (AND)', async (t) => {
 test('getSiteAlerts - listThings always fetches the full alerted set (type applied post-merge)', async (t) => {
   let captured
   const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async (_pk, method, params) => {
-    // getSiteAlerts also reads worker ext data via getWrkExtData; only capture
-    // the listThings call this assertion is about.
-    if (method === 'listThings') captured = params
+    // getSiteAlerts also reads worker ext data via getWrkExtData, and the site
+    // efficiency check issues its own listThings/tailLogMulti calls; only capture
+    // the alerted-things listThings call this assertion is about.
+    if (method === 'listThings' && params?.query?.['last.alerts']) captured = params
     return typedThings()
   })
   const result = await getSiteAlerts(mockCtx, { query: { type: 'operational' } })
@@ -1280,6 +1281,82 @@ test('getSiteAlerts - miner alerts never counted under operational', async (t) =
 })
 
 // ==================== severity-rank sort ====================
+
+// ==================== site efficiency threshold alert ====================
+
+// Single-key tailLogMulti ork result (miner key only), matching computeSiteEfficiencyWPerTh's payload.
+const tailLogOrkResult = (hashrateMhs) => [[{ hashrate_mhs_1m_sum_aggr: hashrateMhs }]]
+
+const siteEfficiencyCtx = ({ hashrateMhs, siteMeterPowerW, alertParams }) => {
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async (_pk, method, params) => {
+    if (method === 'listThings') {
+      if (params?.query?.['last.alerts']) return []
+      return [{ tags: ['t-powermeter'], last: { snap: { stats: { power_w: siteMeterPowerW } } } }]
+    }
+    if (method === 'tailLogMulti') return tailLogOrkResult(hashrateMhs)
+    return []
+  })
+  return { ...mockCtx, globalDataLib: { getGlobalData: async () => [alertParams] } }
+}
+
+test('getSiteAlerts - creates critical and warning alerts when site efficiency exceeds both thresholds', async (t) => {
+  const mockCtx = siteEfficiencyCtx({
+    hashrateMhs: 5000000, // 5 TH/s
+    siteMeterPowerW: 500000, // -> 100000 W/TH/s
+    alertParams: {
+      'custom.high_site_efficiency.critical': { enabled: true, maxSiteEfficiencyWThs: 50000 },
+      'custom.high_site_efficiency.warning': { enabled: true, maxSiteEfficiencyWThs: 80000 }
+    }
+  })
+
+  const result = await getSiteAlerts(mockCtx, { query: {} })
+
+  const bySeverity = Object.fromEntries(result.alerts.map(a => [a.severity, a]))
+  t.is(result.total, 2, 'both tiers alert')
+  t.ok(bySeverity.critical, 'critical tier fires')
+  t.ok(bySeverity.warning, 'warning tier fires')
+  t.is(bySeverity.critical.code, 'custom.high_site_efficiency.critical', 'critical alert carries its config key')
+  t.is(bySeverity.critical.type, 'site', 'site-level alert has no device type')
+})
+
+test('getSiteAlerts - skips a tier whose threshold is not configured', async (t) => {
+  const mockCtx = siteEfficiencyCtx({
+    hashrateMhs: 5000000,
+    siteMeterPowerW: 500000,
+    alertParams: {
+      'custom.high_site_efficiency.critical': { enabled: true } // no maxSiteEfficiencyWThs
+    }
+  })
+
+  const result = await getSiteAlerts(mockCtx, { query: {} })
+  t.is(result.total, 0, 'no alert without a configured threshold')
+})
+
+test('getSiteAlerts - skips a tier that is not enabled', async (t) => {
+  const mockCtx = siteEfficiencyCtx({
+    hashrateMhs: 5000000,
+    siteMeterPowerW: 500000,
+    alertParams: {
+      'custom.high_site_efficiency.critical': { enabled: false, maxSiteEfficiencyWThs: 50000 }
+    }
+  })
+
+  const result = await getSiteAlerts(mockCtx, { query: {} })
+  t.is(result.total, 0, 'no alert when the tier is disabled')
+})
+
+test('getSiteAlerts - does not alert when efficiency stays within the threshold', async (t) => {
+  const mockCtx = siteEfficiencyCtx({
+    hashrateMhs: 5000000,
+    siteMeterPowerW: 500000, // 100000 W/TH/s
+    alertParams: {
+      'custom.high_site_efficiency.critical': { enabled: true, maxSiteEfficiencyWThs: 200000 }
+    }
+  })
+
+  const result = await getSiteAlerts(mockCtx, { query: {} })
+  t.is(result.total, 0, 'no alert when efficiency is below threshold')
+})
 
 test('applySort - severity sorts by rank, not alphabetically', (t) => {
   const items = [{ severity: 'medium' }, { severity: 'critical' }, { severity: 'low' }, { severity: 'high' }]
