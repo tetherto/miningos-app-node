@@ -199,12 +199,12 @@ function buildSiteEfficiencyAlert (key, severity, efficiencyWPerTh, threshold) {
   return {
     name: key,
     code: key,
-    description: `Site efficiency of ${efficiencyWPerTh} W/TH/s exceeds the configured maximum of ${threshold} W/TH/s`,
+    description: `High Site Efficiency detected`,
     severity,
     createdAt: Date.now(),
     id: null,
     uuid: randomUUID(),
-    message: `Site efficiency ${efficiencyWPerTh} W/TH/s (max ${threshold} W/TH/s)`,
+    message: `Site efficiency ${efficiencyWPerTh.toFixed(2)} W/TH/s (max ${threshold} W/TH/s)`,
     deviceId: null,
     type: 'site'
   }
