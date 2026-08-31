@@ -169,7 +169,7 @@ function alertTypeCondition (type) {
 async function computeSiteEfficiencyWPerTh (ctx) {
   const dcsEnabled = isCentralDCSEnabled(ctx)
 
-  const [tailLogResults, dcsThing, consumption] = await Promise.all([
+  const [tailLogResults, powerSource] = await Promise.all([
     ctx.dataProxy.requestDataMap(RPC_METHODS.TAIL_LOG_MULTI, {
       keys: [{ key: LOG_KEYS.STAT_RTD, type: WORKER_TYPES.MINER, tag: WORKER_TAGS.MINER }],
       limit: 1,
@@ -178,12 +178,11 @@ async function computeSiteEfficiencyWPerTh (ctx) {
     }),
     dcsEnabled
       ? fetchDcsThing(ctx, { id: 1, code: 1, type: 1, tags: 1, ...DCS_POWER_METER_FIELDS })
-      : Promise.resolve(null),
-    dcsEnabled ? Promise.resolve(null) : getSiteConsumption(ctx)
+      : getSiteConsumption(ctx)
   ])
 
   const { hashrate } = aggregateMinerStats(tailLogResults)
-  const consumptionW = dcsEnabled ? extractSiteMainMeterPowerW(dcsThing) : (consumption?.powerW || 0)
+  const consumptionW = dcsEnabled ? extractSiteMainMeterPowerW(powerSource) : (powerSource?.powerW || 0)
   return calculateSiteEfficiency(hashrate, consumptionW)
 }
 
@@ -212,16 +211,19 @@ function buildSiteEfficiencyAlert (key, severity, efficiencyWPerTh, threshold) {
 }
 
 async function getSiteEfficiencyAlerts (ctx) {
-  const [[alertParams], efficiencyWPerTh] = await Promise.all([
-    ctx.globalDataLib.getGlobalData({ type: GLOBAL_DATA_TYPES.ALERT_PARAMETERS }),
-    computeSiteEfficiencyWPerTh(ctx)
-  ])
+  const [alertParams] = await ctx.globalDataLib.getGlobalData({ type: GLOBAL_DATA_TYPES.ALERT_PARAMETERS })
+
+  const activeTiers = SITE_EFFICIENCY_ALERT_TIERS
+    .map(({ key, severity }) => ({ key, severity, conf: alertParams?.[key] }))
+    .filter(({ conf }) => conf?.enabled && typeof conf.maxSiteEfficiencyWThs === 'number')
+  
+  if (!activeTiers.length) return []
+
+  const efficiencyWPerTh = await computeSiteEfficiencyWPerTh(ctx)
 
   const alerts = []
-  for (const { key, severity } of SITE_EFFICIENCY_ALERT_TIERS) {
-    const conf = alertParams?.[key]
-    const threshold = conf?.maxSiteEfficiencyWThs
-    if (!conf?.enabled || typeof threshold !== 'number') continue
+  for (const { key, severity, conf } of activeTiers) {
+    const threshold = conf.maxSiteEfficiencyWThs
     if (efficiencyWPerTh > threshold) {
       alerts.push(buildSiteEfficiencyAlert(key, severity, efficiencyWPerTh, threshold))
     }
