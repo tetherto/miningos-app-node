@@ -454,7 +454,8 @@ const LOG_KEYS = {
   STAT_3H: 'stat-3h',
   STAT_5M: 'stat-5m',
   STAT_30M: 'stat-30m',
-  STAT_1D: 'stat-1D'
+  STAT_1D: 'stat-1D',
+  STAT_TEMPERATURE_1D: 'stat-temperature-1D'
 }
 
 const WORKER_TAGS = {
@@ -859,7 +860,8 @@ const TAIL_LOG_BUCKET_MS = {
   'stat-5m': 5 * 60 * 1000,
   'stat-30m': 30 * 60 * 1000,
   'stat-3h': 3 * 60 * 60 * 1000,
-  'stat-1D': 24 * 60 * 60 * 1000
+  'stat-1D': 24 * 60 * 60 * 1000,
+  'stat-temperature-1D': 24 * 60 * 60 * 1000
 }
 
 // The one stat key with no fixed bucket width: stat-rtd holds the latest sample

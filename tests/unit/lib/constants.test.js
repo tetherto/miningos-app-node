@@ -295,3 +295,12 @@ test('constants - COMMENT_ACTION values are strings', (t) => {
 
   t.pass()
 })
+
+test('every fixed-width stat key has a bucket width for the range guard', (t) => {
+  const { LOG_KEYS, TAIL_LOG_BUCKET_MS, TAIL_LOG_UNBUCKETED_KEYS } = require('../../../workers/lib/constants')
+
+  for (const key of Object.values(LOG_KEYS)) {
+    t.ok(TAIL_LOG_BUCKET_MS[key] || TAIL_LOG_UNBUCKETED_KEYS.has(key), `${key} is range checkable`)
+  }
+  t.is(TAIL_LOG_BUCKET_MS[LOG_KEYS.STAT_TEMPERATURE_1D], 24 * 60 * 60 * 1000)
+})
