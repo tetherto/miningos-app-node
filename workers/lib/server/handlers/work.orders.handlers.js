@@ -501,8 +501,22 @@ function _buildWorkOrderQuery (qs) {
   return query
 }
 
+async function _serialNumClause (ctx, serialNum) {
+  const part = await _resolvePartByIdentifier(ctx, serialNum)
+  return {
+    $or: [
+      { 'info.deviceIdentifier': { $in: [...new Set([serialNum, part?.id, part?.code, part?.info?.serialNum, part?.info?.macAddress].filter(Boolean))] } },
+      ...(part ? [{ 'info.partsMoves.partId': part.id }] : [])
+    ]
+  }
+}
+
 async function listWorkOrders (ctx, req) {
-  return listThingsWithCount(ctx, _buildWorkOrderQuery(req.query), {
+  const query = _buildWorkOrderQuery(req.query)
+  if (req.query.serialNum) {
+    query.$and = [...(query.$and ?? []), await _serialNumClause(ctx, req.query.serialNum)]
+  }
+  return listThingsWithCount(ctx, query, {
     offset: req.query.offset ?? 0,
     limit: req.query.limit ?? 100,
     sort: req.query.sort && parseJsonQueryParam(req.query.sort, 'ERR_SORT_INVALID_JSON'),

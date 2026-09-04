@@ -55,6 +55,7 @@ module.exports = (ctx) => [
         req.query.assignee,
         req.query.creator,
         req.query.partId,
+        req.query.serialNum,
         req.query.status,
         req.query.type,
         req.query.from,

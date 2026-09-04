@@ -1054,6 +1054,35 @@ test('handlers: listWorkOrders shortcuts map to mingo paths', async (t) => {
   t.alike(flow.lastList.query['info.createdAt'], { $gte: 1700000000000, $lte: 1700864000000 })
 })
 
+test('handlers: listWorkOrders ?serialNum matches the resolved part by id and parts moves', async (t) => {
+  const part = { id: 'part-1', code: 'PSU-WM-01', type: 'inventory-miner_part-psu', info: { serialNum: 'SN-1', macAddress: 'aa:bb:cc:00:11:22' } }
+  let lastList
+  const handler = async (_key, method, params) => {
+    if (method === 'getThingsCount') return 0
+    if (method !== 'listThings') return null
+    if (params.query?.$or?.some(c => c.id)) return params.query.$or[0].id === 'SN-1' ? [part] : []
+    lastList = params
+    return []
+  }
+  const ctx = createMockCtxWithOrks([{ rpcPublicKey: 'k' }], handler)
+
+  await handlers.listWorkOrders(ctx, { query: { serialNum: 'SN-1', query: '{"$and":[{"info.status":{"$in":["open"]}}]}' } })
+  t.alike(lastList.query.$and, [
+    { 'info.status': { $in: ['open'] } },
+    {
+      $or: [
+        { 'info.deviceIdentifier': { $in: ['SN-1', 'part-1', 'PSU-WM-01', 'aa:bb:cc:00:11:22'] } },
+        { 'info.partsMoves.partId': 'part-1' }
+      ]
+    }
+  ], 'serial filter is ANDed onto the existing filter query')
+
+  await handlers.listWorkOrders(ctx, { query: { serialNum: 'SN-404' } })
+  t.alike(lastList.query.$and, [
+    { $or: [{ 'info.deviceIdentifier': { $in: ['SN-404'] } }] }
+  ], 'unknown serial still matches work orders that recorded it')
+})
+
 test('handlers: listWorkOrders ?from alone produces a $gte-only range', async (t) => {
   const flow = listFlow()
   await handlers.listWorkOrders(flow.ctx, { query: { from: 100 } })
