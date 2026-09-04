@@ -4,6 +4,10 @@ const test = require('brittle')
 const {
   getSiteAlerts,
   getAlertsHistory,
+  getAlertConf,
+  getAlertParams,
+  setAlertParams,
+  restrictToNotesOnly,
   extractAlertsFromThings,
   matchesSearch,
   applySort,
@@ -14,9 +18,218 @@ const {
 const { validateFilter, applyMongoFilter, combineAnd, deduplicateAlerts } = require('../../../workers/lib/utils')
 const {
   SITE_ALERTS_FILTER_FIELDS,
-  ALERTS_FILTER_OPERATORS
+  ALERTS_FILTER_OPERATORS,
+  GLOBAL_DATA_TYPES,
+  CUSTOM_ALERT_CONFIG
 } = require('../../../workers/lib/constants')
-const { createMockCtxWithOrks } = require('../helpers/mockHelpers')
+const { createMockCtxWithOrks, withDataProxy } = require('../helpers/mockHelpers')
+
+// ==================== Alert config/params Tests ====================
+
+test('getAlertConf - returns the static custom alert config', async (t) => {
+  const result = await getAlertConf({})
+
+  t.is(result, CUSTOM_ALERT_CONFIG, 'should return the shared config constant')
+  t.ok(result['custom.low_hashrate.warning'], 'should include a known alert key')
+  t.alike(result['custom.low_hashrate.warning'].rackTypes, ['miner'], 'should expose rackTypes for the alert')
+})
+
+test('getAlertParams - reads params from globalDataLib by type', async (t) => {
+  let capturedReq
+  const mockCtx = {
+    globalDataLib: {
+      getGlobalData: async (req) => {
+        capturedReq = req
+        return { 'custom.low_hashrate.warning': { enabled: true, minHashRateMhs: 50 } }
+      }
+    }
+  }
+
+  const result = await getAlertParams(mockCtx)
+
+  t.is(capturedReq.type, GLOBAL_DATA_TYPES.ALERT_PARAMETERS, 'should query the alertParameters global data type')
+  t.alike(result, { 'custom.low_hashrate.warning': { enabled: true, minHashRateMhs: 50 } })
+})
+
+test('setAlertParams - persists to globalDataLib and notifies orks grouped by rack type', async (t) => {
+  const captured = []
+  const mockCtx = withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: {
+      jRequest: async (pk, method, params) => {
+        captured.push({ method, params })
+        return { ok: true }
+      }
+    },
+    authLib: { tokenHasPerms: async () => true },
+    globalDataLib: {
+      setGlobalData: async (data, type) => {
+        t.is(type, GLOBAL_DATA_TYPES.ALERT_PARAMETERS, 'should save under the alertParameters type')
+        return { data, updatedAt: 1 }
+      }
+    }
+  })
+
+  const mockReq = {
+    _info: { authToken: 'token' },
+    body: {
+      data: {
+        'custom.low_hashrate.warning': { enabled: true, minHashRateMhs: 50 },
+        'custom.high_supply_temp.critical': { enabled: true, maxTempC: 90 }
+      }
+    }
+  }
+
+  const result = await setAlertParams(mockCtx, mockReq)
+
+  t.alike(result, { data: mockReq.body.data, updatedAt: 1 }, 'should return the globalDataLib result')
+
+  // the ork notification is fire-and-forget; give its microtask a tick to run
+  await new Promise((resolve) => setImmediate(resolve))
+
+  t.is(captured.length, 1, 'should notify the ork once')
+  t.is(captured[0].method, 'setAlertParams', 'should call setAlertParams on the ork')
+  t.alike(captured[0].params, {
+    byRackType: {
+      miner: { 'custom.low_hashrate.warning': { enabled: true, minHashRateMhs: 50 } },
+      dcs: { 'custom.high_supply_temp.critical': { enabled: true, maxTempC: 90 } }
+    }
+  }, 'should group params by each alert key\'s rackTypes')
+})
+
+test('setAlertParams - skips unknown alert keys when grouping by rack type', async (t) => {
+  const captured = []
+  const mockCtx = withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: {
+      jRequest: async (pk, method, params) => {
+        captured.push({ method, params })
+        return { ok: true }
+      }
+    },
+    authLib: { tokenHasPerms: async () => true },
+    globalDataLib: {
+      setGlobalData: async (data, type) => ({ data, type })
+    }
+  })
+
+  const mockReq = {
+    _info: { authToken: 'token' },
+    body: {
+      data: { 'custom.unknown_alert': { enabled: true } }
+    }
+  }
+
+  await setAlertParams(mockCtx, mockReq)
+  await new Promise((resolve) => setImmediate(resolve))
+
+  t.alike(captured[0].params, { byRackType: {} }, 'unknown alert key contributes nothing to byRackType')
+})
+
+test('setAlertParams - fans a single alert key out to all of its rack types', async (t) => {
+  const captured = []
+  const mockCtx = withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: {
+      jRequest: async (pk, method, params) => {
+        captured.push(params)
+        return { ok: true }
+      }
+    },
+    authLib: { tokenHasPerms: async () => true },
+    globalDataLib: {
+      setGlobalData: async (data, type) => ({ data, type })
+    }
+  })
+
+  // tower_vibration is a dcs-only alert; confirm it still lands under dcs and nowhere else
+  const mockReq = {
+    _info: { authToken: 'token' },
+    body: {
+      data: { 'custom.tower_vibration.critical': { enabled: true, onError: true } }
+    }
+  }
+
+  await setAlertParams(mockCtx, mockReq)
+  await new Promise((resolve) => setImmediate(resolve))
+
+  t.alike(captured[0], {
+    byRackType: {
+      dcs: { 'custom.tower_vibration.critical': { enabled: true, onError: true } }
+    }
+  })
+})
+
+test('setAlertParams - restricts users without alert_config_sensitive:w to updating notes only', async (t) => {
+  const captured = []
+  let capturedPerms
+  const mockCtx = withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: {
+      jRequest: async (pk, method, params) => {
+        captured.push(params)
+        return { ok: true }
+      }
+    },
+    authLib: {
+      tokenHasPerms: async (token, write, perms) => {
+        capturedPerms = { token, write, perms }
+        return false
+      }
+    },
+    globalDataLib: {
+      getGlobalData: async () => ([{
+        'custom.low_hashrate.warning': { enabled: true, minHashRateMhs: 50, notes: 'old notes' },
+        'custom.high_supply_temp.critical': { enabled: false, maxTempC: 80, notes: 'other' }
+      }]),
+      setGlobalData: async (data, type) => ({ data, type })
+    }
+  })
+
+  const mockReq = {
+    _info: { authToken: 'token' },
+    body: {
+      data: {
+        'custom.low_hashrate.warning': { enabled: false, minHashRateMhs: 999, notes: 'new notes' }
+      }
+    }
+  }
+
+  const result = await setAlertParams(mockCtx, mockReq)
+
+  t.is(capturedPerms.token, 'token', 'should check perms using the request auth token')
+  t.alike(capturedPerms.perms, ['alert_config_sensitive:w'], 'should check the sensitive alert config permission')
+
+  t.alike(result.data, {
+    'custom.low_hashrate.warning': { enabled: true, minHashRateMhs: 50, notes: 'new notes' }
+  }, 'should keep existing fields and only apply the submitted notes')
+
+  await new Promise((resolve) => setImmediate(resolve))
+
+  t.alike(captured[0], {
+    byRackType: {
+      miner: { 'custom.low_hashrate.warning': { enabled: true, minHashRateMhs: 50, notes: 'new notes' } }
+    }
+  }, 'should notify orks with the notes-only merged config')
+})
+
+test('restrictToNotesOnly - drops every submitted field except notes', (t) => {
+  const submittedData = {
+    'custom.low_hashrate.warning': { enabled: false, minHashRateMhs: 999, notes: 'new notes' },
+    // no matching entry in existingConfig for this key
+    'custom.unknown_alert': { enabled: true, threshold: 123, notes: 'unknown notes' }
+  }
+  const existingConfig = {
+    'custom.low_hashrate.warning': { enabled: true, minHashRateMhs: 50, notes: 'old notes' }
+  }
+
+  const result = restrictToNotesOnly(submittedData, existingConfig)
+
+  t.alike(result, {
+    'custom.low_hashrate.warning': { enabled: true, minHashRateMhs: 50, notes: 'new notes' },
+    'custom.unknown_alert': { notes: 'unknown notes' }
+  }, 'submitted enabled/threshold values are ignored; only notes carries through, existing fields win everywhere else')
+})
 
 // ==================== extractAlertsFromThings Tests ====================
 
@@ -840,9 +1053,10 @@ test('getSiteAlerts - type combines with existing filter (AND)', async (t) => {
 test('getSiteAlerts - listThings always fetches the full alerted set (type applied post-merge)', async (t) => {
   let captured
   const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async (_pk, method, params) => {
-    // getSiteAlerts also reads worker ext data via getWrkExtData; only capture
-    // the listThings call this assertion is about.
-    if (method === 'listThings') captured = params
+    // getSiteAlerts also reads worker ext data via getWrkExtData, and the site
+    // efficiency check issues its own listThings/tailLogMulti calls; only capture
+    // the alerted-things listThings call this assertion is about.
+    if (method === 'listThings' && params?.query?.['last.alerts']) captured = params
     return typedThings()
   })
   const result = await getSiteAlerts(mockCtx, { query: { type: 'operational' } })
@@ -1067,6 +1281,114 @@ test('getSiteAlerts - miner alerts never counted under operational', async (t) =
 })
 
 // ==================== severity-rank sort ====================
+
+// ==================== site efficiency threshold alert ====================
+
+// Single-key tailLogMulti ork result (miner key only), matching computeSiteEfficiencyWPerTh's payload.
+const tailLogOrkResult = (hashrateMhs) => [[{ hashrate_mhs_1m_sum_aggr: hashrateMhs }]]
+
+const siteEfficiencyCtx = ({ hashrateMhs, siteMeterPowerW, alertParams }) => {
+  const calledMethods = []
+  const mockCtx = createMockCtxWithOrks([{ rpcPublicKey: 'key1' }], async (_pk, method, params) => {
+    calledMethods.push(method)
+    if (method === 'listThings') {
+      if (params?.query?.['last.alerts']) return []
+      return [{ tags: ['t-powermeter'], last: { snap: { stats: { power_w: siteMeterPowerW } } } }]
+    }
+    if (method === 'tailLogMulti') return tailLogOrkResult(hashrateMhs)
+    return []
+  })
+  return { ...mockCtx, calledMethods, globalDataLib: { getGlobalData: async () => [alertParams] } }
+}
+
+test('getSiteAlerts - creates critical and warning alerts when site efficiency exceeds both thresholds', async (t) => {
+  const mockCtx = siteEfficiencyCtx({
+    hashrateMhs: 5000000, // 5 TH/s
+    siteMeterPowerW: 500000, // -> 100000 W/TH/s
+    alertParams: {
+      'custom.high_site_efficiency.critical': { enabled: true, maxSiteEfficiencyWThs: 50000 },
+      'custom.high_site_efficiency.warning': { enabled: true, maxSiteEfficiencyWThs: 80000 }
+    }
+  })
+
+  const result = await getSiteAlerts(mockCtx, { query: {} })
+
+  const bySeverity = Object.fromEntries(result.alerts.map(a => [a.severity, a]))
+  t.is(result.total, 2, 'both tiers alert')
+  t.ok(bySeverity.critical, 'critical tier fires')
+  t.ok(bySeverity.warning, 'warning tier fires')
+  t.is(bySeverity.critical.code, 'custom.high_site_efficiency.critical', 'critical alert carries its config key')
+  t.is(bySeverity.critical.type, 'site', 'site-level alert has no device type')
+  t.is(bySeverity.critical.description, 'High Site Efficiency detected', 'description is the short, fixed copy')
+  t.is(bySeverity.critical.message, 'Site efficiency 100000.00 W/TH/s (max 50000 W/TH/s)', 'message reports efficiency to 2 decimal places')
+})
+
+test('getSiteAlerts - formats a fractional efficiency to 2 decimal places in the message', async (t) => {
+  const mockCtx = siteEfficiencyCtx({
+    hashrateMhs: 3000000, // 3 TH/s
+    siteMeterPowerW: 100000, // -> 33333.33... W/TH/s
+    alertParams: {
+      'custom.high_site_efficiency.critical': { enabled: true, maxSiteEfficiencyWThs: 1000 }
+    }
+  })
+
+  const result = await getSiteAlerts(mockCtx, { query: {} })
+  t.is(result.alerts[0].message, 'Site efficiency 33333.33 W/TH/s (max 1000 W/TH/s)', 'fractional efficiency rounds to 2 decimals')
+})
+
+test('getSiteAlerts - skips computing efficiency entirely when no tier is active', async (t) => {
+  const mockCtx = siteEfficiencyCtx({
+    hashrateMhs: 5000000,
+    siteMeterPowerW: 500000,
+    alertParams: {
+      'custom.high_site_efficiency.critical': { enabled: false, maxSiteEfficiencyWThs: 50000 },
+      'custom.high_site_efficiency.warning': { enabled: true } // no threshold configured
+    }
+  })
+
+  const result = await getSiteAlerts(mockCtx, { query: {} })
+  t.is(result.total, 0, 'no alert when no tier is active')
+  t.absent(mockCtx.calledMethods.includes('tailLogMulti'), 'hashrate is never fetched when no tier is active')
+})
+
+test('getSiteAlerts - skips a tier whose threshold is not configured', async (t) => {
+  const mockCtx = siteEfficiencyCtx({
+    hashrateMhs: 5000000,
+    siteMeterPowerW: 500000,
+    alertParams: {
+      'custom.high_site_efficiency.critical': { enabled: true } // no maxSiteEfficiencyWThs
+    }
+  })
+
+  const result = await getSiteAlerts(mockCtx, { query: {} })
+  t.is(result.total, 0, 'no alert without a configured threshold')
+})
+
+test('getSiteAlerts - skips a tier that is not enabled', async (t) => {
+  const mockCtx = siteEfficiencyCtx({
+    hashrateMhs: 5000000,
+    siteMeterPowerW: 500000,
+    alertParams: {
+      'custom.high_site_efficiency.critical': { enabled: false, maxSiteEfficiencyWThs: 50000 }
+    }
+  })
+
+  const result = await getSiteAlerts(mockCtx, { query: {} })
+  t.is(result.total, 0, 'no alert when the tier is disabled')
+})
+
+test('getSiteAlerts - does not alert when efficiency stays within the threshold', async (t) => {
+  const mockCtx = siteEfficiencyCtx({
+    hashrateMhs: 5000000,
+    siteMeterPowerW: 500000, // 100000 W/TH/s
+    alertParams: {
+      'custom.high_site_efficiency.critical': { enabled: true, maxSiteEfficiencyWThs: 200000 }
+    }
+  })
+
+  const result = await getSiteAlerts(mockCtx, { query: {} })
+  t.is(result.total, 0, 'no alert when efficiency is below threshold')
+})
 
 test('applySort - severity sorts by rank, not alphabetically', (t) => {
   const items = [{ severity: 'medium' }, { severity: 'critical' }, { severity: 'low' }, { severity: 'high' }]

@@ -38,10 +38,10 @@ function describeWorkerError (errorCode) {
 async function startMinerLogDownload (ctx, req, reply) {
   const { minerId } = req.params
 
-  const { write, permissions } = await ctx.authLib.getTokenPerms(req._info.authToken)
-  if (!write) {
-    return reply.code(403).send({ error: 'ERR_WRITE_PERM_REQUIRED' })
-  }
+  // No global-write check here: `getTokenPerms().write` is just `actions:w`, and
+  // requesting a log archive is a read. The route enforces `miner:r`, and the status
+  // and file legs additionally enforce submitter ownership via votesPos[0].
+  const { permissions } = await ctx.authLib.getTokenPerms(req._info.authToken)
 
   const payload = {
     query: { id: minerId },
@@ -93,9 +93,11 @@ async function startMinerLogDownload (ctx, req, reply) {
  *   failed   — action completed but the miner returned an error
  *   expired  — log was ready but the Hypercore TTL has passed
  */
+// The ork action record has no `voter` field — the submitter is the first
+// (initiating) vote in `votesPos` (see svc-facs-action-approver pushAction)
 function assertJobOwner (action, req) {
   const email = req._info?.user?.metadata?.email
-  return !!(email && action.voter && action.voter === email)
+  return !!(email && action.votesPos?.[0] === email)
 }
 
 async function getMinerLogDownloadStatus (ctx, req, reply) {

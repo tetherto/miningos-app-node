@@ -11,6 +11,8 @@ const {
   getMinerStatus,
   getMinersByContainer,
   getInventorySummary,
+  getMinersByType,
+  getInventoryMinerDistribution,
   getPowerMode,
   getPowerModeTimeline,
   getTemperature,
@@ -42,7 +44,12 @@ module.exports = (ctx) => {
           req.query.groupBy,
           req.query.container,
           req.query.current,
-          req.query.racks
+          req.query.nominal,
+          req.query.pool,
+          req.query.racks,
+          req.query.offset,
+          req.query.limit,
+          req.query.reverse
         ],
         ENDPOINTS.METRICS_HASHRATE,
         getHashrate
@@ -62,6 +69,7 @@ module.exports = (ctx) => {
           req.query.end,
           req.query.interval,
           req.query.groupBy,
+          req.query.byMeter,
           req.query.racks
         ],
         ENDPOINTS.METRICS_CONSUMPTION,
@@ -147,6 +155,32 @@ module.exports = (ctx) => {
     },
     {
       method: HTTP_METHODS.GET,
+      url: ENDPOINTS.METRICS_MINERS_BY_TYPE,
+      schema: {
+        querystring: schemas.query.minersByType
+      },
+      ...createCachedAuthRoute(
+        ctx,
+        () => ['metrics/miners/by-type'],
+        ENDPOINTS.METRICS_MINERS_BY_TYPE,
+        getMinersByType
+      )
+    },
+    {
+      method: HTTP_METHODS.GET,
+      url: ENDPOINTS.METRICS_INVENTORY_MINER_DISTRIBUTION,
+      schema: {
+        querystring: schemas.query.inventoryMinerDistribution
+      },
+      ...createCachedAuthRoute(
+        ctx,
+        () => ['metrics/inventory/miner-distribution'],
+        ENDPOINTS.METRICS_INVENTORY_MINER_DISTRIBUTION,
+        getInventoryMinerDistribution
+      )
+    },
+    {
+      method: HTTP_METHODS.GET,
       url: ENDPOINTS.METRICS_REVENUE_HOURLY,
       schema: {
         querystring: schemas.query.revenueHourly
@@ -188,6 +222,7 @@ module.exports = (ctx) => {
           'metrics/power-mode/timeline',
           req.query.start,
           req.query.end,
+          req.query.interval,
           req.query.container
         ],
         ENDPOINTS.METRICS_POWER_MODE_TIMELINE,

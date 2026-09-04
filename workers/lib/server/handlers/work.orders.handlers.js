@@ -9,10 +9,11 @@ const {
   WORK_ORDER_VALID_DEVICE_TYPES,
   SPARE_PART_INITIAL_LOCATION,
   MINER_ROOM_LOCATION,
-  MAINTENANCE_CONTAINER
+  MAINTENANCE_CONTAINER,
+  IN_OPERATION_STATUS
 } = require('../../constants')
-const { renderWorkOrderCsv, renderRmaCsv } = require('../lib/work.order.export')
-const { submitWorkOrderAction, getWorkOrderRackId, assertActionApplied } = require('../lib/work.orders')
+const { renderWorkOrderCsv, renderWorkOrdersBulkCsv, renderRmaCsv } = require('../lib/work.order.export')
+const { submitWorkOrderAction, getWorkOrderRackId, assertActionApplied, assertActionsExecuted } = require('../lib/work.orders')
 
 async function _resolvePartByIdentifier (ctx, identifier) {
   const results = await ctx.dataProxy.requestData('listThings', {
@@ -26,6 +27,22 @@ async function _resolvePartByIdentifier (ctx, identifier) {
     }
   })
   return flattenRpcResults(results).find(t => t?.type !== WORK_ORDER_THING_TYPE) || null
+}
+
+function _badRequest (code) {
+  const err = new Error(code)
+  err.statusCode = 400
+  return err
+}
+
+function _isMiner (thing) {
+  const type = String(thing?.type || '')
+  return type === 'miner' || type.startsWith('miner-')
+}
+
+function _occupiesSocket (thing) {
+  const { container, pos } = thing?.info || {}
+  return Boolean(container && container !== MAINTENANCE_CONTAINER && pos)
 }
 
 // A miner leaving the miner room gives up its socket: pos is cleared and the
@@ -43,6 +60,97 @@ function _minerPlacementInfo (deviceType, toLocation, placement = {}) {
     return { pos, container, ...(subnet ? { subnet } : {}) }
   }
   return { pos: '', container: MAINTENANCE_CONTAINER }
+}
+
+async function _resolveReplacement (ctx, { type, deviceType, part, toLocation, identifier, movingIds, usedIds }) {
+  if (type !== WORK_ORDER_TYPES.MOVE) throw _badRequest('ERR_WO_REPLACEMENT_NOT_ALLOWED')
+  if (deviceType !== 'miner') throw _badRequest('ERR_WO_REPLACEMENT_DEVICE_TYPE_INVALID')
+  if (!toLocation || toLocation === MINER_ROOM_LOCATION) throw _badRequest('ERR_WO_REPLACEMENT_NOT_LEAVING_MINER_ROOM')
+
+  const fromLocation = part.info?.location ?? null
+  if (fromLocation !== null && fromLocation !== MINER_ROOM_LOCATION) {
+    throw _badRequest('ERR_WO_REPLACEMENT_NOT_LEAVING_MINER_ROOM')
+  }
+  if (!_occupiesSocket(part)) throw _badRequest('ERR_WO_REPLACEMENT_POSITION_UNKNOWN')
+
+  const replacement = await _resolvePartByIdentifier(ctx, identifier)
+  if (!replacement) throw _badRequest('ERR_WO_REPLACEMENT_NOT_FOUND')
+  if (!_isMiner(replacement)) throw _badRequest('ERR_WO_REPLACEMENT_DEVICE_TYPE_INVALID')
+  if (movingIds.has(replacement.id)) throw _badRequest('ERR_WO_REPLACEMENT_IS_MOVING')
+  if (usedIds.has(replacement.id)) throw _badRequest('ERR_WO_REPLACEMENT_DUPLICATE')
+  if (replacement.info?.location === MINER_ROOM_LOCATION || _occupiesSocket(replacement)) {
+    throw _badRequest('ERR_WO_REPLACEMENT_NOT_AVAILABLE')
+  }
+  usedIds.add(replacement.id)
+
+  const { container, pos, subnet } = part.info || {}
+  return { thing: replacement, identifier, vacated: { container, pos, subnet: subnet ?? null } }
+}
+
+function _replacementInfo (replacement, woId) {
+  const { container, pos, subnet } = replacement.vacated
+  return {
+    location: MINER_ROOM_LOCATION,
+    status: IN_OPERATION_STATUS,
+    container,
+    pos,
+    ...(subnet ? { subnet } : {}),
+    workOrderId: woId
+  }
+}
+
+async function _moveAttachedParts (ctx, req, { miner, deviceType, toLocation, woId, voter, ts }) {
+  if (deviceType !== 'miner' || toLocation == null) return []
+
+  const results = await ctx.dataProxy.requestData('listThings', {
+    query: { 'info.parentDeviceId': miner.id }
+  })
+  const parts = flattenRpcResults(results).filter(t => t?.type !== WORK_ORDER_THING_TYPE)
+
+  const moves = []
+  for (const part of parts) {
+    const partResults = await submitWorkOrderAction(ctx, req, 'updateThing', {
+      id: part.id,
+      info: { location: toLocation, workOrderId: woId }
+    }, part.rack)
+    assertActionApplied(partResults, `ERR_ATTACHED_PART_MOVE_PUSH_FAILED:${part.id}`)
+    moves.push({
+      partId: part.id,
+      partCode: part.code,
+      parentDeviceId: miner.id,
+      parentDeviceCode: miner.code,
+      role: 'attached',
+      fromLocation: part.info?.location ?? null,
+      toLocation,
+      ts,
+      user: voter
+    })
+  }
+  return moves
+}
+
+function _buildReplacementMove (replacement, part, voter, ts) {
+  const { thing, vacated } = replacement
+  return {
+    partId: thing.id,
+    partCode: thing.code,
+    deviceType: 'miner',
+    deviceModel: thing.type ?? null,
+    deviceIdentifier: replacement.identifier,
+    role: 'replacement',
+    replacesPartId: part.id,
+    replacesPartCode: part.code,
+    fromLocation: thing.info?.location ?? null,
+    toLocation: MINER_ROOM_LOCATION,
+    fromStatus: thing.info?.status ?? null,
+    toStatus: IN_OPERATION_STATUS,
+    fromContainer: thing.info?.container ?? null,
+    fromPos: thing.info?.pos ?? null,
+    toContainer: vacated.container,
+    toPos: vacated.pos,
+    ts,
+    user: voter
+  }
 }
 
 async function createWorkOrder (ctx, req) {
@@ -104,6 +212,18 @@ async function createWorkOrder (ctx, req) {
       throw err
     }
     const placement = info.location != null ? _minerPlacementInfo(deviceType, info.location, info) : {}
+    const replacement = info.replacementIdentifier
+      ? await _resolveReplacement(ctx, {
+        type,
+        deviceType,
+        part,
+        toLocation: info.location,
+        identifier: info.replacementIdentifier,
+        movingIds: new Set([part.id]),
+        usedIds: new Set()
+      })
+      : null
+    const ts = Date.now()
     info.partsMoves = [{
       partId: part.id,
       partCode: part.code,
@@ -120,7 +240,7 @@ async function createWorkOrder (ctx, req) {
           }
         : {}),
       role: 'move',
-      ts: Date.now(),
+      ts,
       user: voter
     }]
     // Move WOs auto-close, so the relocation has to happen here or it never will.
@@ -136,8 +256,21 @@ async function createWorkOrder (ctx, req) {
         }
       }, part.rack)
       assertActionApplied(partResults, 'ERR_PART_MOVE_PUSH_FAILED')
+      info.partsMoves.push(...await _moveAttachedParts(ctx, req, {
+        miner: part, deviceType, toLocation: info.location, woId, voter, ts
+      }))
+    }
+    if (replacement) {
+      info.partsMoves.push(_buildReplacementMove(replacement, part, voter, ts))
+      const replacementResults = await submitWorkOrderAction(ctx, req, 'updateThing', {
+        id: replacement.thing.id,
+        info: _replacementInfo(replacement, woId)
+      }, replacement.thing.rack)
+      assertActionApplied(replacementResults, 'ERR_WO_REPLACEMENT_PUSH_FAILED')
     }
   }
+
+  await assertActionsExecuted(ctx, req, 'ERR_WO_DEVICE_UPDATE_FAILED')
 
   return submitWorkOrderAction(ctx, req, 'registerThing', { id: woId, info })
 }
@@ -194,9 +327,28 @@ async function createWorkOrdersBatch (ctx, req) {
   const voter = req._info.user.metadata.email
   const woId = randomUUID()
   const ts = Date.now()
-  const [summary] = devices
 
-  // First device is the summary used by the thing-side validator, RMA export, and single-device views.
+  // A MicroBT repair is about the miner, and `devices` carries the spare parts
+  // swapped into it — so devices[0] is a part, not the subject. The rack still
+  // demands root device* fields, so they come from info.minerIdentifier here and
+  // the parts stay confined to partsMoves.
+  const isMinerRepair = type === WORK_ORDER_TYPES.MICROBT_MINER
+  const hasRepairMinerIdentifier = isMinerRepair && Boolean(extraInfo?.minerIdentifier)
+  const minerToRepair = hasRepairMinerIdentifier
+    ? await _resolvePartByIdentifier(ctx, extraInfo.minerIdentifier)
+    : null
+  if (hasRepairMinerIdentifier && !minerToRepair) throw _badRequest('ERR_PART_NOT_FOUND')
+
+  // Everywhere else a batch is homogeneous, so the first device is the summary
+  // used by the thing-side validator, RMA export, and single-device views.
+  const summary = minerToRepair
+    ? {
+        deviceType: 'miner',
+        deviceModel: minerToRepair.type ?? devices[0].deviceModel,
+        deviceIdentifier: minerToRepair.info?.serialNum ?? minerToRepair.code ?? extraInfo.minerIdentifier
+      }
+    : devices[0]
+
   const info = {
     type,
     ...rest,
@@ -209,7 +361,7 @@ async function createWorkOrdersBatch (ctx, req) {
     createdAt: ts
   }
 
-  const partsMoves = []
+  const resolved = []
   for (const device of devices) {
     const part = await _resolvePartByIdentifier(ctx, device.deviceIdentifier)
     if (!part) {
@@ -217,6 +369,26 @@ async function createWorkOrdersBatch (ctx, req) {
       err.statusCode = 400
       throw err
     }
+    resolved.push({ device, part })
+  }
+
+  const movingIds = new Set(resolved.map(r => r.part.id))
+  const usedIds = new Set()
+  for (const entry of resolved) {
+    if (!entry.device.replacementIdentifier) continue
+    entry.replacement = await _resolveReplacement(ctx, {
+      type,
+      deviceType: entry.device.deviceType,
+      part: entry.part,
+      toLocation: info.location,
+      identifier: entry.device.replacementIdentifier,
+      movingIds,
+      usedIds
+    })
+  }
+
+  const partsMoves = []
+  for (const { device, part, replacement } of resolved) {
     const placement = type === WORK_ORDER_TYPES.MOVE && info.location != null
       ? _minerPlacementInfo(device.deviceType, info.location, device)
       : {}
@@ -235,32 +407,39 @@ async function createWorkOrdersBatch (ctx, req) {
         }
       }, part.rack)
       assertActionApplied(partResults, 'ERR_PART_MOVE_PUSH_FAILED')
+      partsMoves.push(...await _moveAttachedParts(ctx, req, {
+        miner: part, deviceType: device.deviceType, toLocation: info.location, woId, voter, ts
+      }))
+    }
+    if (replacement) {
+      partsMoves.push(_buildReplacementMove(replacement, part, voter, ts))
+      const replacementResults = await submitWorkOrderAction(ctx, req, 'updateThing', {
+        id: replacement.thing.id,
+        info: _replacementInfo(replacement, woId)
+      }, replacement.thing.rack)
+      assertActionApplied(replacementResults, 'ERR_WO_REPLACEMENT_PUSH_FAILED')
     }
   }
 
   // MicroBT repair WOs list only the repaired parts as devices; the miner
   // itself rides in info.minerIdentifier, so its status change lands here.
-  if (type === WORK_ORDER_TYPES.MICROBT_MINER && info.deviceStatus && info.minerIdentifier) {
-    const miner = await _resolvePartByIdentifier(ctx, info.minerIdentifier)
-    if (!miner) {
-      const err = new Error('ERR_PART_NOT_FOUND')
-      err.statusCode = 400
-      throw err
-    }
+  if (minerToRepair && info.deviceStatus) {
     partsMoves.push({
-      partId: miner.id,
-      partCode: miner.code,
+      partId: minerToRepair.id,
+      partCode: minerToRepair.code,
       role: 'status_change',
-      fromStatus: miner.info?.status ?? null,
+      fromStatus: minerToRepair.info?.status ?? null,
       toStatus: info.deviceStatus,
       ts,
       user: voter
     })
-    const minerResults = await submitWorkOrderAction(ctx, req, 'updateThing', { id: miner.id, info: { status: info.deviceStatus, workOrderId: woId } }, miner.rack)
+    const minerResults = await submitWorkOrderAction(ctx, req, 'updateThing', { id: minerToRepair.id, info: { status: info.deviceStatus, workOrderId: woId } }, minerToRepair.rack)
     assertActionApplied(minerResults, 'ERR_PART_MOVE_PUSH_FAILED')
   }
 
   info.partsMoves = partsMoves
+
+  await assertActionsExecuted(ctx, req, 'ERR_WO_DEVICE_UPDATE_FAILED')
 
   return submitWorkOrderAction(ctx, req, 'registerThing', { id: woId, info })
 }
@@ -314,7 +493,9 @@ function _buildWorkOrderQuery (qs) {
     const escaped = escapeRegex(qs.q)
     query.$or = [
       { code: { $regex: escaped } },
-      { 'info.issue': { $regex: escaped, $options: 'i' } }
+      { 'info.issue': { $regex: escaped, $options: 'i' } },
+      { 'info.createdBy': { $regex: escaped, $options: 'i' } },
+      { 'info.assignedTo': { $regex: escaped, $options: 'i' } }
     ]
   }
   return query
@@ -404,8 +585,8 @@ async function exportWorkOrder (ctx, req, rep) {
   return rep.send(renderWorkOrderCsv(wo))
 }
 
-async function exportWorkOrdersRma (ctx, req, rep) {
-  const ids = req.query.ids.split(',').map(s => s.trim()).filter(Boolean)
+async function _loadWorkOrdersByIdsOrCodes (ctx, idsParam) {
+  const ids = idsParam.split(',').map(s => s.trim()).filter(Boolean)
   const params = {
     query: {
       type: WORK_ORDER_THING_TYPE,
@@ -413,11 +594,31 @@ async function exportWorkOrdersRma (ctx, req, rep) {
     }
   }
   const results = await ctx.dataProxy.requestData('listThings', params)
-  const wos = flattenRpcResults(results).filter(wo => wo?.info?.type === WORK_ORDER_TYPES.MICROBT_MINER)
+  return flattenRpcResults(results)
+}
+
+async function exportWorkOrdersRma (ctx, req, rep) {
+  const wos = (await _loadWorkOrdersByIdsOrCodes(ctx, req.query.ids))
+    .filter(wo => wo?.info?.type === WORK_ORDER_TYPES.MICROBT_MINER)
 
   rep.header('content-type', 'text/csv; charset=utf-8')
   rep.header('content-disposition', 'attachment; filename="rma.csv"')
   return rep.send(renderRmaCsv(wos))
+}
+
+// Bulk sibling of exportWorkOrder: N ids, one combined CSV, so a large list-page
+// selection downloads as a single file instead of one browser download per WO.
+async function exportWorkOrdersBulk (ctx, req, rep) {
+  const wos = await _loadWorkOrdersByIdsOrCodes(ctx, req.query.ids)
+  if (!wos.length) {
+    const err = new Error('ERR_WORK_ORDERS_NOT_FOUND')
+    err.statusCode = 404
+    throw err
+  }
+
+  rep.header('content-type', 'text/csv; charset=utf-8')
+  rep.header('content-disposition', 'attachment; filename="work-orders.csv"')
+  return rep.send(renderWorkOrdersBulkCsv(wos))
 }
 
 async function getWorkOrderAudit (ctx, req) {
@@ -446,5 +647,6 @@ module.exports = {
   appendWorkLogEntry,
   getWorkOrderAudit,
   exportWorkOrder,
-  exportWorkOrdersRma
+  exportWorkOrdersRma,
+  exportWorkOrdersBulk
 }

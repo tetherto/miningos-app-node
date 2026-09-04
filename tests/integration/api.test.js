@@ -2,6 +2,7 @@
 
 const test = require('brittle')
 const fs = require('fs')
+const path = require('path')
 const { createWorker } = require('@tetherto/tether-svc-test-helper').worker
 const { setTimeout: sleep } = require('timers/promises')
 const HttpFacility = require('@bitfinex/bfx-facs-http')
@@ -49,14 +50,16 @@ test('Api', { timeout: 90000 }, async (main) => {
     }
     if (!fs.existsSync(`./${baseDir}/db`)) fs.mkdirSync(`./${baseDir}/db`)
 
-    const commonConf = { dir_log: 'logs', debug: 0, orks: { 'cluster-1': { rpcPublicKey: '' } }, cacheTiming: {}, featureConfig: {} }
+    const commonConf = { dir_log: 'logs', debug: 0, orks: { 'cluster-1': { rpcPublicKey: '' } }, cacheTiming: { '/auth/list-things': '8s' }, featureConfig: {} }
     const netConf = { r0: {} }
     const httpdConf = { h0: {} }
     const httpdOauthConf = {
       h0: { method: 'google', credentials: { client: { id: 'i', secret: 's' } }, users: [{ email: readonlyUser }, { email: tokenExpiredUser }, { email: siteOperatorUser, write: true }] },
       h1: { method: 'microsoft', credentials: { client: { id: 'i', secret: 's' }, tenant: 'test-tenant' }, users: [] }
     }
-    const authConf = require('../../config/facs/auth.config.json')
+    const authConf = JSON.parse(
+      fs.readFileSync(path.join(__dirname, '../../config/facs/auth.config.json.example'), 'utf8')
+    )
     superadminUser = authConf.a0.superAdmin
 
     fs.writeFileSync(`./${baseDir}/config/common.json`, JSON.stringify(commonConf))
@@ -939,6 +942,64 @@ test('Api', { timeout: 90000 }, async (main) => {
         t.pass('response structure is valid')
       } catch (e) {
         t.fail(`Request failed: ${e.message || e}`)
+      }
+    })
+  })
+
+  await main.test('Api: get metrics/hashrate - pool opt-in', async (n) => {
+    const start = 1700000000000
+    const end = 1700100000000
+    const bucketTs = 1700006400000
+    const api = `${appNodeBaseUrl}${ENDPOINTS.METRICS_HASHRATE}?start=${start}&end=${end}&overwriteCache=true`
+
+    const withHashrateMocks = () => {
+      const originalJRequest = worker.worker.net_r0.jRequest
+      worker.worker.net_r0.jRequest = (publicKey, method) => {
+        if (method === 'tailLog') {
+          return Promise.resolve([{ ts: bucketTs, hashrate_mhs_5m_sum_aggr: 100000 }])
+        }
+        if (method === 'getWrkExtData') {
+          return Promise.resolve([
+            { ts: bucketTs + 60000, stats: [{ poolType: 'f2pool', username: 'a', hashrate: 100e6 }] }
+          ])
+        }
+        if (method === 'listThings') return Promise.resolve(mockMiners)
+        if (method === 'getThingsCount') return Promise.resolve(mockMiners.length)
+        return Promise.resolve({})
+      }
+      return () => { worker.worker.net_r0.jRequest = originalJRequest }
+    }
+
+    await n.test('pool=true attaches poolHashrateMhs per bucket and avgPoolHashrateMhs', async (t) => {
+      const restore = withHashrateMocks()
+      try {
+        const headers = await createAuthHeaders(readonlyUser)
+        const { body: data } = await httpClient.get(`${api}&pool=true`, { headers, encoding })
+
+        t.is(data.log.length, 1, 'should return the miner bucket')
+        t.is(data.log[0].hashrateMhs, 100000, 'miner hashrate read from the tail logs')
+        t.is(data.log[0].poolHashrateMhs, 100, 'pool hashrate converted from H/s to MH/s')
+        t.is(data.summary.avgPoolHashrateMhs, 100, 'summary carries the pool average')
+      } catch (e) {
+        t.fail(`Request failed: ${e.message || e}`)
+      } finally {
+        restore()
+      }
+    })
+
+    await n.test('without pool the response is unchanged', async (t) => {
+      const restore = withHashrateMocks()
+      try {
+        const headers = await createAuthHeaders(readonlyUser)
+        const { body: data } = await httpClient.get(api, { headers, encoding })
+
+        t.is(data.log[0].hashrateMhs, 100000, 'miner hashrate read from the tail logs')
+        t.is(data.log[0].poolHashrateMhs, undefined, 'entries carry no pool field')
+        t.is(data.summary.avgPoolHashrateMhs, undefined, 'summary carries no pool field')
+      } catch (e) {
+        t.fail(`Request failed: ${e.message || e}`)
+      } finally {
+        restore()
       }
     })
   })

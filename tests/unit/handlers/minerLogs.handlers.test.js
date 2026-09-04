@@ -1,5 +1,7 @@
 'use strict'
 
+const zlib = require('zlib')
+const { Readable } = require('streamx')
 const test = require('brittle')
 const {
   startMinerLogDownload,
@@ -14,11 +16,17 @@ const {
 function makeMockReply () {
   let _code = 200
   let _body = null
+  const _headers = {}
   const reply = {
     get statusCode () { return _code },
     get body () { return _body },
+    get headers () { return _headers },
     code (statusCode) {
       _code = statusCode
+      return reply
+    },
+    header (name, value) {
+      _headers[name.toLowerCase()] = value
       return reply
     },
     send (body) {
@@ -61,9 +69,11 @@ function makeMockCtx ({ write = true, permissions = ['admin'], requestDataResult
   }
 }
 
+// Mirrors the real ork `getAction` record: the submitter is votesPos[0]
+// (svc-facs-action-approver pushAction) — there is no `voter` field.
 function makeActionResult (overrides = {}) {
   return {
-    voter: 'ops@example.com',
+    votesPos: ['ops@example.com'],
     targets: {
       'rack-001': {
         calls: [
@@ -106,15 +116,35 @@ test('startMinerLogDownload - returns 202 with jobId on success', async (t) => {
   t.pass()
 })
 
-test('startMinerLogDownload - returns 403 when token has no write permission', async (t) => {
-  const ctx = makeMockCtx({ write: false })
+test('startMinerLogDownload - accepts a read-only token', async (t) => {
+  // A log download is a read: `getTokenPerms().write` is just `actions:w`, so a
+  // read-only user must not be turned away here. The route enforces `miner:r`.
+  const ctx = makeMockCtx({
+    write: false,
+    permissions: ['miner:r'],
+    requestDataResult: { id: '12345' }
+  })
   const req = makeMockReq('miner-001')
   const reply = makeMockReply()
 
   await startMinerLogDownload(ctx, req, reply)
 
-  t.is(reply.statusCode, 403, 'should return 403 Forbidden')
-  t.is(reply.body.error, 'ERR_WRITE_PERM_REQUIRED', 'should return ERR_WRITE_PERM_REQUIRED')
+  t.is(reply.statusCode, 202, 'should return 202 Accepted for a read-only token')
+  t.is(reply.body.jobId, '12345', 'should include jobId')
+  t.pass()
+})
+
+test('startMinerLogDownload - forwards the caller permissions as authPerms', async (t) => {
+  let capturedPayload = null
+  const ctx = makeMockCtx({ write: false, permissions: ['miner:r'] })
+  ctx.dataProxy.requestData = async (method, payload) => {
+    capturedPayload = payload
+    return { id: '12345' }
+  }
+
+  await startMinerLogDownload(ctx, makeMockReq('miner-001'), makeMockReply())
+
+  t.alike(capturedPayload.authPerms, ['miner:r'], 'should forward the caller permissions')
   t.pass()
 })
 
@@ -224,7 +254,7 @@ test('getMinerLogDownloadStatus - returns ready with metadata when log is availa
 
 test('getMinerLogDownloadStatus - returns failed when no coreKey in targets', async (t) => {
   const action = {
-    voter: 'ops@example.com',
+    votesPos: ['ops@example.com'],
     targets: {
       'rack-001': {
         calls: [
@@ -250,7 +280,7 @@ test('getMinerLogDownloadStatus - returns failed when no coreKey in targets', as
 
 test('getMinerLogDownloadStatus - returns failed with generic error when no error_msg', async (t) => {
   const action = {
-    voter: 'ops@example.com',
+    votesPos: ['ops@example.com'],
     targets: {
       'rack-001': {
         calls: [{ result: { success: false } }]
@@ -318,7 +348,7 @@ test('getMinerLogDownloadStatus - failed status carries the worker error code an
 
   for (const errMsg of workerErrors) {
     const action = {
-      voter: 'ops@example.com',
+      votesPos: ['ops@example.com'],
       targets: {
         'rack-001': { calls: [{ result: { success: false, error_msg: errMsg } }] }
       }
@@ -341,11 +371,11 @@ test('getMinerLogDownloadStatus - failed status carries the worker error code an
   t.pass()
 })
 
-test('getMinerLogDownloadStatus - returns 403 when voter does not match caller', async (t) => {
+test('getMinerLogDownloadStatus - returns 403 when the submitter does not match caller', async (t) => {
   const ctx = {
     authLib: { getTokenPerms: async () => ({}) },
     dataProxy: {
-      requestData: async () => [makeActionResult({ voter: 'other@example.com' })]
+      requestData: async () => [makeActionResult({ votesPos: ['other@example.com'] })]
     }
   }
   const req = makeMockReq('miner-001', '42')
@@ -355,6 +385,24 @@ test('getMinerLogDownloadStatus - returns 403 when voter does not match caller',
 
   t.is(reply.statusCode, 403, 'should return 403')
   t.is(reply.body.error, 'ERR_AUTH_FAIL_NO_PERMS')
+  t.pass()
+})
+
+test('getMinerLogDownloadStatus - only the initiating vote counts as owner', async (t) => {
+  const ctx = {
+    authLib: { getTokenPerms: async () => ({}) },
+    dataProxy: {
+      requestData: async () => [
+        makeActionResult({ votesPos: ['other@example.com', 'ops@example.com'] })
+      ]
+    }
+  }
+  const req = makeMockReq('miner-001', '42')
+  const reply = makeMockReply()
+
+  await getMinerLogDownloadStatus(ctx, req, reply)
+
+  t.is(reply.statusCode, 403, 'a co-approver is not the job owner')
   t.pass()
 })
 
@@ -436,10 +484,109 @@ test('getMinerLogFile - returns 503 when the log peer is unreachable', async (t)
   t.pass()
 })
 
+// The miner decides the payload format and the action result does not say which, so the file
+// leg reads the leading bytes and declares what it actually found. See lib/payloadFormat.
+
+function makeLogStream (payload) {
+  let sent = false
+  return new Readable({
+    read (cb) {
+      if (!sent) {
+        sent = true
+        this.push(payload)
+      } else {
+        this.push(null)
+      }
+      cb(null)
+    }
+  })
+}
+
+function makeFileLegCtx (payload) {
+  return {
+    dataProxy: {
+      requestData: async () => [makeActionResult()]
+    },
+    logDownloader: {
+      stream: async () => makeLogStream(payload)
+    }
+  }
+}
+
+async function drain (stream) {
+  const chunks = []
+  for await (const chunk of stream) chunks.push(chunk)
+  return Buffer.concat(chunks)
+}
+
+test('getMinerLogFile - declares .tar.gz for a gzipped tar payload', async (t) => {
+  const tar = Buffer.alloc(1024)
+  tar.write('10.0.0.1.logs/', 0, 'latin1')
+  tar.write('ustar', 257, 'latin1')
+  const payload = zlib.gzipSync(tar)
+
+  const reply = makeMockReply()
+  await getMinerLogFile(makeFileLegCtx(payload), makeMockReq('miner-001', '42'), reply)
+
+  t.is(
+    reply.headers['content-disposition'],
+    'attachment; filename="miner-log-miner-001-42.tar.gz"',
+    'should name the archive .tar.gz'
+  )
+  t.is(reply.headers['content-type'], 'application/gzip', 'should declare gzip')
+  t.alike(await drain(reply.body), payload, 'should stream every byte, peek included')
+})
+
+test('getMinerLogFile - declares .log for a plain-text payload', async (t) => {
+  const payload = Buffer.from('[board0]\npass = 1\n')
+
+  const reply = makeMockReply()
+  await getMinerLogFile(makeFileLegCtx(payload), makeMockReq('miner-001', '42'), reply)
+
+  t.is(
+    reply.headers['content-disposition'],
+    'attachment; filename="miner-log-miner-001-42.log"',
+    'should name a text log .log'
+  )
+  t.is(reply.headers['content-type'], 'text/plain; charset=utf-8', 'should declare text')
+  t.alike(await drain(reply.body), payload, 'should stream every byte, peek included')
+})
+
+test('getMinerLogFile - keeps the byte length and no-store headers', async (t) => {
+  const reply = makeMockReply()
+  await getMinerLogFile(
+    makeFileLegCtx(Buffer.from('log line')),
+    makeMockReq('miner-001', '42'),
+    reply
+  )
+
+  t.is(reply.headers['content-length'], 1024, 'should send the length from the action meta')
+  t.is(reply.headers['cache-control'], 'no-store', 'should keep the log out of caches')
+})
+
+test('getMinerLogFile - returns 500 when the stream errors before the first byte', async (t) => {
+  const ctx = {
+    dataProxy: {
+      requestData: async () => [makeActionResult()]
+    },
+    logDownloader: {
+      stream: async () => new Readable({
+        read (cb) { cb(new Error('ERR_LOG_PEER_TIMEOUT')) }
+      })
+    }
+  }
+
+  const reply = makeMockReply()
+  await getMinerLogFile(ctx, makeMockReq('miner-001', '42'), reply)
+
+  t.is(reply.statusCode, 500, 'should return 500')
+  t.is(reply.body.error, 'ERR_LOG_PEER_TIMEOUT', 'should propagate the stream error as JSON')
+})
+
 test('getMinerLogDownloadStatus - finds successful result across multiple racks', async (t) => {
   const expiresAt = Date.now() + 3600000
   const action = {
-    voter: 'ops@example.com',
+    votesPos: ['ops@example.com'],
     targets: {
       'rack-001': {
         calls: [{ result: { success: false, error_msg: 'offline' } }]

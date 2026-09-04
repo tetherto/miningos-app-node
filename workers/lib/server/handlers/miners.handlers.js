@@ -1,13 +1,16 @@
 'use strict'
 
-const { parseJsonQueryParam } = require('../../utils')
+const { parseJsonQueryParam, flattenRpcResults } = require('../../utils')
 const {
   MINER_FIELD_MAP,
   MINER_PROJECTION_MAP,
   MINER_SEARCH_FIELDS,
   MINER_DEFAULT_FIELDS,
   MINER_MAX_LIMIT,
-  MINER_DEFAULT_LIMIT
+  MINER_DEFAULT_LIMIT,
+  MINER_CATEGORIES,
+  CONTAINER_MINER_FIELDS,
+  WORKER_TAGS
 } = require('../../constants')
 const {
   mapFilterFields,
@@ -56,7 +59,8 @@ function formatMiner (raw, poolWorkers, requestedFields) {
   if (include('type')) miner.type = raw.type
   if (include('model')) miner.model = snap.model || raw.type
   if (include('code')) miner.code = raw.code
-  if (include('ip')) miner.ip = raw.opts?.address
+  if (include('ip')) miner.ip = raw.address || config.network_config?.ip_address
+  if (include('subnet')) miner.subnet = raw.info?.subnet
   if (include('container')) miner.container = raw.info?.container
   if (include('rack')) miner.rack = raw.rack
   if (include('position')) miner.position = raw.info?.pos
@@ -64,12 +68,14 @@ function formatMiner (raw, poolWorkers, requestedFields) {
   if (include('hashrate')) miner.hashrate = stats.hashrate_mhs || 0
   if (include('power')) miner.power = stats.power_w || 0
   if (include('temperature')) miner.temperature = stats.temperature_c
+  if (include('frequency')) miner.frequency = stats.frequency_mhz
   if (include('efficiency')) miner.efficiency = stats.efficiency_w_ths || 0
-  if (include('uptime')) miner.uptime = raw.last?.uptime
+  if (include('uptime')) miner.uptime = stats.uptime_ms
   if (include('firmware')) miner.firmware = config.firmware_ver
   if (include('powerMode')) miner.powerMode = config.power_mode
   if (include('ledStatus')) miner.ledStatus = config.led_status
   if (include('poolConfig')) miner.poolConfig = config.pool_config
+  if (include('poolConfigId')) miner.poolConfigId = raw.info?.poolConfig
   if (include('alerts')) miner.alerts = raw.last?.alerts
   if (include('comments')) miner.comments = raw.comments
   if (include('serialNum')) miner.serialNum = raw.info?.serialNum
@@ -172,12 +178,64 @@ async function listMiners (ctx, req) {
   }
 }
 
+function sanitizeIncludeFields (fields) {
+  if (!fields || typeof fields !== 'object') return null
+  const clean = {}
+  for (const [key, value] of Object.entries(fields)) {
+    if (value === 1) clean[key] = 1
+  }
+  return Object.keys(clean).length ? clean : null
+}
+
+function summarizeMinerActivity (miners) {
+  const summary = { total: miners.length, offline: 0, powerModes: {} }
+  for (const miner of miners) {
+    const snap = miner.last?.snap || {}
+    if (snap.stats?.status === MINER_CATEGORIES.OFFLINE) {
+      summary.offline++
+      continue
+    }
+    const mode = snap.config?.power_mode || 'unknown'
+    summary.powerModes[mode] = (summary.powerModes[mode] || 0) + 1
+  }
+  return summary
+}
+
+async function listContainerMiners (ctx, req) {
+  const requested = req.query.fields
+    ? sanitizeIncludeFields(parseJsonQueryParam(req.query.fields, 'ERR_FIELDS_INVALID_JSON'))
+    : null
+  const fields = requested ? { id: 1, type: 1, ...requested } : CONTAINER_MINER_FIELDS
+
+  const results = await ctx.dataProxy.requestDataAllPages('listThings', {
+    query: {
+      $and: [
+        { tags: { $in: [`container-${req.params.id}`] } },
+        { tags: { $in: [WORKER_TAGS.MINER] } }
+      ]
+    },
+    fields,
+    status: 1
+  })
+
+  const miners = sortItems(flattenRpcResults(results), { id: 1 })
+
+  return {
+    miners,
+    total: miners.length,
+    summary: summarizeMinerActivity(miners)
+  }
+}
+
 async function listFirmwares (ctx, req) {
   return await ctx.dataProxy.requestDataMap('listFirmwares', {})
 }
 
 module.exports = {
   listMiners,
+  listContainerMiners,
+  summarizeMinerActivity,
+  sanitizeIncludeFields,
   formatMiner,
   extractPoolWorkers,
   buildOrkProjection,

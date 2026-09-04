@@ -6,6 +6,7 @@ const {
   RPC_METHODS,
   METRICS_TIME,
   METRICS_DEFAULTS,
+  RANGE_BUCKETS,
   MINER_CATEGORIES,
   LOG_KEYS,
   WORKER_TAGS,
@@ -18,7 +19,8 @@ const {
 } = require('../../constants')
 const {
   getStartOfDay,
-  safeDiv
+  safeDiv,
+  flattenRpcResults
 } = require('../../utils')
 const {
   isCentralDCSEnabled,
@@ -26,6 +28,7 @@ const {
 } = require('../../dcs.utils')
 const {
   parseEntryTs,
+  parseEntryTimeRange,
   validateStartEnd,
   iterateRpcEntries,
   sumObjectValues,
@@ -34,12 +37,29 @@ const {
   getIntervalConfig,
   mergeGroupedField,
   extractKeyEntry,
-  mhsToThs
+  mhsToThs,
+  rackFilterFor
 } = require('../../metrics.utils')
 const { parseRacks } = require('../lib/queryUtils')
+const { resolvePoolHashrateForBuckets } = require('./pools.handlers')
 
 function firstOrkEntries (res) {
   return Array.isArray(res?.[0]) ? res[0] : []
+}
+
+// `racks` without an explicit groupBy scopes the site-wide series to the selected racks,
+// collapsing the rack-grouped series back to a scalar so the response shape is unchanged.
+function rackGroupedReq (req) {
+  return { query: { ...req.query, groupBy: 'rack' } }
+}
+
+function hasRackFilter (req) {
+  return !req.query.groupBy && !!parseRacks(req)?.length
+}
+
+function avgObjectValues (obj) {
+  const values = Object.values(obj || {}).map(Number).filter(Boolean)
+  return safeDiv(values.reduce((sum, val) => sum + val, 0), values.length)
 }
 
 function readHashrate (val, container) {
@@ -63,15 +83,45 @@ async function getCurrentHashrate (ctx, aggrField, container) {
   return entry ? readHashrate(entry[aggrField], container) : null
 }
 
+function pageHashrate (req, { log, summary }) {
+  const offset = Number(req.query.offset) || 0
+  const limit = Number(req.query.limit) || undefined
+  const reverse = req.query.reverse === true || req.query.reverse === 'true'
+  const sorted = log.slice().sort((a, b) => reverse ? b.ts - a.ts : a.ts - b.ts)
+
+  return {
+    log: limit ? sorted.slice(offset, offset + limit) : sorted.slice(offset),
+    totalCount: log.length,
+    summary
+  }
+}
+
 async function getHashrate (ctx, req) {
+  return pageHashrate(req, await resolveHashrate(ctx, req))
+}
+
+async function resolveHashrate (ctx, req) {
   const { start, end } = validateStartEnd(req)
 
   if (req.query.groupBy) return getGoupedHashrate(ctx, req)
+
+  if (hasRackFilter(req)) {
+    const { log } = await getGoupedHashrate(ctx, rackGroupedReq(req))
+    const scoped = log.map(({ ts, hashrateMhs }) => ({ ts, hashrateMhs: sumObjectValues(hashrateMhs) }))
+    return { log: scoped, summary: calculateHashrateSummary(scoped) }
+  }
 
   const { key, groupRange } = getIntervalConfig(resolveInterval(start, end, req.query.interval))
   const container = req.query.container || null
   const field = container ? LOG_FIELDS.HASHRATE_SUM_CONTAINER_GROUP : LOG_FIELDS.HASHRATE_SUM
   const aggrField = container ? AGGR_FIELDS.HASHRATE_SUM_CONTAINER_GROUP_AGGR : AGGR_FIELDS.HASHRATE_SUM
+  // Invoicing needs delivered hashrate against the capacity installed at the time of each
+  // bucket, which only the per-bucket aggregate carries. Opt-in: the site nominal alone is
+  // served by /auth/site/status/live.
+  const withNominal = req.query.nominal === true || req.query.nominal === 'true'
+  // Opt-in pool-reported hashrate per bucket, so invoicing can compare the
+  // miner-telemetry series against what the pools credited.
+  const withPool = req.query.pool === true || req.query.pool === 'true'
 
   const res = await ctx.dataProxy.requestData(RPC_METHODS.TAIL_LOG, {
     type: WORKER_TYPES.MINER,
@@ -81,22 +131,69 @@ async function getHashrate (ctx, req) {
     shouldCalculateAvg: true,
     start,
     end,
-    fields: { [field]: 1 },
-    aggrFields: { [aggrField]: 1 }
+    fields: { [field]: 1, ...(withNominal && { [LOG_FIELDS.NOMINAL_HASHRATE_SUM]: 1 }) },
+    aggrFields: { [aggrField]: 1, ...(withNominal && { [AGGR_FIELDS.NOMINAL_HASHRATE_SUM]: 1 }) }
   })
 
-  const log = firstOrkEntries(res).map(val => ({
-    ts: parseEntryTs(val.ts),
-    hashrateMhs: readHashrate(val[aggrField], container)
-  }))
+  const log = firstOrkEntries(res).map(val => {
+    const timeRange = parseEntryTimeRange(val.ts)
+    const hashrateMhs = readHashrate(val[aggrField], container)
+    if (!withNominal) {
+      return {
+        ts: parseEntryTs(val.ts),
+        ...(timeRange && { timeRange }),
+        hashrateMhs
+      }
+    }
 
-  const summary = calculateHashrateSummary(log)
+    const nominalHashrateMhs = Number(val[AGGR_FIELDS.NOMINAL_HASHRATE_SUM]) || 0
+    return {
+      ts: parseEntryTs(val.ts),
+      ...(timeRange && { timeRange }),
+      hashrateMhs,
+      nominalHashrateMhs,
+      pctOfNominal: nominalHashrateMhs ? (hashrateMhs / nominalHashrateMhs) * 100 : null
+    }
+  })
+
+  if (withPool) await mergePoolHashrate(ctx, log, { start, end, groupRange })
+
+  const summary = calculateHashrateSummary(log, withNominal)
+
+  if (withPool) summary.avgPoolHashrateMhs = calculateAvgPoolHashrate(log)
 
   if (req.query.current) {
     summary.currentHashrateMhs = await getCurrentHashrate(ctx, aggrField, container)
   }
 
   return { log, summary }
+}
+
+// Attaches the pool-reported hashrate to each miner-telemetry bucket, using the
+// bucket's own time window so both series cover exactly the same period.
+async function mergePoolHashrate (ctx, log, { start, end, groupRange }) {
+  if (!log.length) return
+
+  const bucketMs = RANGE_BUCKETS[groupRange] || (60 * 60 * 1_000) // '1H'
+  const buckets = log.map((entry) => ({
+    ts: entry.ts,
+    startTs: entry.timeRange?.startTs ?? entry.ts,
+    endTs: entry.timeRange?.endTs ?? entry.ts + bucketMs - 1
+  }))
+
+  const poolByBucket = await resolvePoolHashrateForBuckets(ctx, { start, end, buckets })
+
+  for (const entry of log) {
+    entry.poolHashrateMhs = poolByBucket.get(entry.ts) ?? null
+  }
+}
+
+// Unlike the miner average, buckets without pool samples are excluded rather
+// than counted as 0: a gap in pool polling must not read as lost hashrate.
+function calculateAvgPoolHashrate (log) {
+  const values = log.map((entry) => entry.poolHashrateMhs).filter(Number.isFinite)
+  if (!values.length) return null
+  return safeDiv(values.reduce((sum, val) => sum + val, 0), values.length)
 }
 
 const HASHRATE_GROUP_FIELDS = {
@@ -120,13 +217,12 @@ async function getGoupedHashrate (ctx, req) {
     aggrFields: { [aggrField]: 1 }
   })
 
-  const racks = groupBy === 'rack' ? parseRacks(req) : null
-  const rackFilter = racks && racks.length ? new Set(racks) : null
+  const rackFilter = groupBy === 'rack' ? rackFilterFor(parseRacks(req)) : null
 
   const log = res[0].reduce((aggr, val) => {
     let hashrateMhs = val[aggrField]
     if (rackFilter && hashrateMhs && typeof hashrateMhs === 'object') {
-      hashrateMhs = Object.fromEntries(Object.entries(hashrateMhs).filter(([rack]) => rackFilter.has(rack)))
+      hashrateMhs = Object.fromEntries(Object.entries(hashrateMhs).filter(([rack]) => rackFilter(rack)))
     }
     aggr.push({ ts: parseEntryTs(val.ts), hashrateMhs })
     return aggr
@@ -137,12 +233,25 @@ async function getGoupedHashrate (ctx, req) {
   return { log, summary }
 }
 
-function calculateHashrateSummary (log) {
-  if (!log.length) return { avgHashrateMhs: null }
+function calculateHashrateSummary (log, withNominal = false) {
+  if (!log.length) {
+    return withNominal
+      ? { avgHashrateMhs: null, nominalHashrateMhs: null, avgPctOfNominal: null }
+      : { avgHashrateMhs: null }
+  }
 
   const total = log.reduce((sum, entry) => sum + (entry.hashrateMhs || 0), 0)
+  const summary = { avgHashrateMhs: safeDiv(total, log.length) }
 
-  return { avgHashrateMhs: safeDiv(total, log.length) }
+  if (!withNominal) return summary
+
+  const nominalTotal = log.reduce((sum, entry) => sum + (entry.nominalHashrateMhs || 0), 0)
+  const avgNominal = safeDiv(nominalTotal, log.length)
+
+  summary.nominalHashrateMhs = avgNominal
+  summary.avgPctOfNominal = avgNominal ? (summary.avgHashrateMhs / avgNominal) * 100 : null
+
+  return summary
 }
 
 function calculateGroupedHashrateSummary (log, groupBy) {
@@ -175,11 +284,52 @@ function calculateGroupedHashrateSummary (log, groupBy) {
   }
 }
 
-// getIntervalConfig always samples stat-3h, so an unbucketed entry spans 3 hours
+// getIntervalConfig always buckets samples into a fixed window, so translate
+// that window into the number of hours a single entry represents.
 function bucketHours (groupRange) {
-  if (groupRange === '1D') return 24
-  if (groupRange === '1W') return 168
-  return 3
+  const bucketMs = RANGE_BUCKETS[groupRange]
+
+  return bucketMs ? bucketMs / (60 * 60 * 1_000) : 1 // '1H'
+}
+
+function addBucketValues (acc, val) {
+  if (val && typeof val === 'object') {
+    const out = { ...(acc || {}) }
+    for (const [meter, v] of Object.entries(val)) out[meter] = (out[meter] || 0) + (Number(v) || 0)
+    return out
+  }
+  return (acc || 0) + (Number(val) || 0)
+}
+
+function scaleBucketValues (val, factor) {
+  if (val && typeof val === 'object') {
+    return Object.fromEntries(Object.entries(val).map(([meter, v]) => [meter, v * factor]))
+  }
+  return (Number(val) || 0) * factor
+}
+
+function rollupMonthly (log) {
+  const months = new Map()
+
+  for (const entry of log) {
+    const date = new Date(entry.ts)
+    const ts = Date.UTC(date.getUTCFullYear(), date.getUTCMonth())
+    const month = months.get(ts) || {
+      ts,
+      timeRange: { startTs: ts, endTs: Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1) - 1 },
+      days: 0,
+      powerW: null,
+      consumptionMWh: null
+    }
+    month.days++
+    month.powerW = addBucketValues(month.powerW, entry.powerW)
+    month.consumptionMWh = addBucketValues(month.consumptionMWh, entry.consumptionMWh)
+    months.set(ts, month)
+  }
+
+  return [...months.values()]
+    .sort((a, b) => a.ts - b.ts)
+    .map(({ days, ...month }) => ({ ...month, powerW: scaleBucketValues(month.powerW, 1 / days) }))
 }
 
 async function getConsumption (ctx, req) {
@@ -187,7 +337,23 @@ async function getConsumption (ctx, req) {
 
   if (req.query.groupBy) return getGroupedConsumption(ctx, req)
 
-  const { key, groupRange } = getIntervalConfig(resolveInterval(start, end, req.query.interval))
+  if (hasRackFilter(req)) {
+    const { log } = await getGroupedConsumption(ctx, rackGroupedReq(req))
+    const scoped = log.map(({ ts, powerW }) => {
+      const scopedPowerW = sumObjectValues(powerW)
+      return { ts, powerW: scopedPowerW, consumptionMWh: (scopedPowerW * 24) / 1000000 }
+    })
+    return { log: scoped, summary: calculateConsumptionSummary(scoped) }
+  }
+
+  // by_meter_power_w is a per-meter breakdown only produced by the DCS worker,
+  // so it gets its own DCS-only flow.
+  const byMeter = req.query.byMeter === true || req.query.byMeter === 'true'
+  if (byMeter) return getByMeterConsumption(ctx, req)
+
+  const interval = resolveInterval(start, end, req.query.interval)
+  const monthly = interval === '1M'
+  const { key, groupRange } = getIntervalConfig(monthly ? '1d' : interval)
 
   // Central-DCS sites report site power through the Siemens DCS worker's stat log
   // (site_power_w), not a powermeter worker
@@ -215,18 +381,122 @@ async function getConsumption (ctx, req) {
   })
 
   const hours = bucketHours(groupRange)
-  const log = firstOrkEntries(res).map(val => {
+  const buckets = firstOrkEntries(res).map(val => {
     const powerW = Number(val[AGGR_FIELDS.SITE_POWER]) || 0
+    const timeRange = parseEntryTimeRange(val.ts)
     return {
       ts: parseEntryTs(val.ts),
+      ...(timeRange && { timeRange }),
       powerW,
       consumptionMWh: (powerW * hours) / 1000000
     }
   })
 
+  const log = monthly ? rollupMonthly(buckets) : buckets
   const summary = calculateConsumptionSummary(log)
 
   return { log, summary }
+}
+
+// by_meter_power_w is only produced by the DCS worker, so the per-meter breakdown
+// is only meaningful when Central-DCS is enabled.
+async function getByMeterConsumption (ctx, req) {
+  const { start, end } = validateStartEnd(req)
+
+  if (!isCentralDCSEnabled(ctx)) {
+    throw new Error('ERR_BY_METER_REQUIRES_CENTRAL_DCS')
+  }
+
+  const interval = resolveInterval(start, end, req.query.interval)
+  const monthly = interval === '1M'
+  const { key, groupRange } = getIntervalConfig(monthly ? '1d' : interval)
+
+  const res = await ctx.dataProxy.requestData(RPC_METHODS.TAIL_LOG, {
+    type: WORKER_TYPES.DCS,
+    tag: getDCSTag(ctx),
+    key,
+    groupRange,
+    shouldCalculateAvg: true,
+    start,
+    end,
+    fields: { [LOG_FIELDS.BY_METER_POWER]: 1 },
+    aggrFields: { [AGGR_FIELDS.BY_METER_POWER]: 1 }
+  })
+
+  const hours = bucketHours(groupRange)
+
+  return buildByMeterConsumption(firstOrkEntries(res), AGGR_FIELDS.BY_METER_POWER, hours, monthly)
+}
+
+// by_meter_power_w arrives as a { meter: powerW } map per bucket. Mirror the
+// grouped-consumption shape so each entry carries per-meter power/consumption.
+function buildByMeterConsumption (entries, aggrField, hours, monthly = false) {
+  const buckets = entries.map(val => {
+    const raw = val[aggrField]
+    const powerW = raw && typeof raw === 'object' ? raw : {}
+    const timeRange = parseEntryTimeRange(val.ts)
+    return {
+      ts: parseEntryTs(val.ts),
+      ...(timeRange && { timeRange }),
+      powerW,
+      consumptionMWh: Object.fromEntries(
+        Object.entries(powerW).map(([meter, w]) => [meter, ((Number(w) || 0) * hours) / 1000000])
+      )
+    }
+  })
+
+  const log = monthly ? rollupMonthly(buckets) : buckets
+  const summary = calculateByMeterConsumptionSummary(log)
+
+  return { log, summary }
+}
+
+function calculateByMeterConsumptionSummary (log) {
+  if (!log.length) {
+    return {
+      avgPowerW: null,
+      totalConsumptionMWh: 0,
+      groupedBy: {}
+    }
+  }
+
+  const powerTotals = {}
+  const powerCounts = {}
+  const consumptionTotals = {}
+
+  for (const entry of log) {
+    const powerW = entry.powerW
+    if (typeof powerW === 'object' && powerW !== null) {
+      for (const [meter, val] of Object.entries(powerW)) {
+        powerTotals[meter] = (powerTotals[meter] || 0) + (Number(val) || 0)
+        powerCounts[meter] = (powerCounts[meter] || 0) + 1
+      }
+    }
+    const consumptionMWh = entry.consumptionMWh
+    if (typeof consumptionMWh === 'object' && consumptionMWh !== null) {
+      for (const [meter, val] of Object.entries(consumptionMWh)) {
+        consumptionTotals[meter] = (consumptionTotals[meter] || 0) + (Number(val) || 0)
+      }
+    }
+  }
+
+  const byGroup = {}
+  let sitePowerTotal = 0
+  let siteConsumptionTotal = 0
+  for (const [meter, total] of Object.entries(powerTotals)) {
+    byGroup[meter] = {
+      avgPowerW: safeDiv(total, powerCounts[meter]),
+      totalConsumptionMWh: consumptionTotals[meter] || 0
+    }
+    sitePowerTotal += total
+    siteConsumptionTotal += consumptionTotals[meter] || 0
+  }
+
+  return {
+    avgPowerW: safeDiv(sitePowerTotal, log.length),
+    totalConsumptionMWh: siteConsumptionTotal,
+    groupedBy: byGroup
+  }
 }
 
 function calculateConsumptionSummary (log) {
@@ -267,13 +537,12 @@ async function getGroupedConsumption (ctx, req) {
     aggrFields: { [aggrField]: 1 }
   })
 
-  const racks = groupBy === 'rack' ? parseRacks(req) : null
-  const rackFilter = racks && racks.length ? new Set(racks) : null
+  const rackFilter = groupBy === 'rack' ? rackFilterFor(parseRacks(req)) : null
 
   const log = res[0].reduce((aggr, val) => {
     let powerW = val[aggrField]
     if (rackFilter && powerW && typeof powerW === 'object') {
-      powerW = Object.fromEntries(Object.entries(powerW).filter(([rack]) => rackFilter.has(rack)))
+      powerW = Object.fromEntries(Object.entries(powerW).filter(([rack]) => rackFilter(rack)))
     }
     aggr.push({
       ts: parseEntryTs(val.ts),
@@ -337,6 +606,12 @@ async function getEfficiency (ctx, req) {
 
   if (req.query.groupBy) return getGroupedEfficiency(ctx, req)
 
+  if (hasRackFilter(req)) {
+    const { log } = await getGroupedEfficiency(ctx, rackGroupedReq(req))
+    const scoped = log.map(({ ts, efficiencyWThs }) => ({ ts, efficiencyWThs: avgObjectValues(efficiencyWThs) }))
+    return { log: scoped, summary: calculateEfficiencySummary(scoped) }
+  }
+
   const { key, groupRange } = getIntervalConfig(resolveInterval(start, end, req.query.interval))
 
   // Central-DCS sites have no miner-reported site efficiency stat; derive it from
@@ -357,10 +632,14 @@ async function getEfficiency (ctx, req) {
     aggrFields: { [AGGR_FIELDS.EFFICIENCY]: 1 }
   })
 
-  const log = firstOrkEntries(res).map(val => ({
-    ts: parseEntryTs(val.ts),
-    efficiencyWThs: Number(val[AGGR_FIELDS.EFFICIENCY]) || 0
-  }))
+  const log = firstOrkEntries(res).map(val => {
+    const timeRange = parseEntryTimeRange(val.ts)
+    return {
+      ts: parseEntryTs(val.ts),
+      ...(timeRange && { timeRange }),
+      efficiencyWThs: Number(val[AGGR_FIELDS.EFFICIENCY]) || 0
+    }
+  })
 
   const summary = calculateEfficiencySummary(log)
 
@@ -404,8 +683,10 @@ async function getDCSEfficiency (ctx, { key, groupRange, start, end }) {
   const log = firstOrkEntries(powerRes).map(val => {
     const powerW = Number(val[AGGR_FIELDS.SITE_POWER]) || 0
     const hashrateThs = mhsToThs(hashrateByTs.get(val.ts) || 0)
+    const timeRange = parseEntryTimeRange(val.ts)
     return {
-      ts: val.ts,
+      ts: parseEntryTs(val.ts),
+      ...(timeRange && { timeRange }),
       efficiencyWThs: hashrateThs > 0 ? powerW / hashrateThs : 0
     }
   })
@@ -450,13 +731,12 @@ async function getGroupedEfficiency (ctx, req) {
     aggrFields: { [aggrField]: 1 }
   })
 
-  const racks = groupBy === 'rack' ? parseRacks(req) : null
-  const rackFilter = racks && racks.length ? new Set(racks) : null
+  const rackFilter = groupBy === 'rack' ? rackFilterFor(parseRacks(req)) : null
 
   const log = firstOrkEntries(res).map((val) => {
     let efficiencyWThs = val[aggrField]
     if (rackFilter && efficiencyWThs && typeof efficiencyWThs === 'object') {
-      efficiencyWThs = Object.fromEntries(Object.entries(efficiencyWThs).filter(([rack]) => rackFilter.has(rack)))
+      efficiencyWThs = Object.fromEntries(Object.entries(efficiencyWThs).filter(([rack]) => rackFilter(rack)))
     }
     return { ts: parseEntryTs(val.ts), efficiencyWThs }
   })
@@ -523,8 +803,6 @@ async function getMinerStatus (ctx, req) {
       [AGGR_FIELDS.MAINTENANCE_CNT]: 1,
       [AGGR_FIELDS.ERROR_CNT]: 1
     },
-    groupRange: '1D',
-    shouldCalculateAvg: true,
     start,
     end
   })
@@ -540,6 +818,10 @@ async function getMinerStatus (ctx, req) {
   return { log, summary }
 }
 
+// Averages the day's stat snapshots app-side instead of via groupRange on the
+// worker: the worker-side average skips snapshots where a grouped-count key is
+// absent, so a status seen in a single snapshot was reported at its full count
+// for the whole day.
 function processMinerStatusData (results) {
   const daily = {}
   for (const entry of iterateRpcEntries(results)) {
@@ -547,25 +829,36 @@ function processMinerStatusData (results) {
     const ts = rawTs ? getStartOfDay(rawTs) : null
     if (!ts) continue
     if (!daily[ts]) {
-      daily[ts] = { online: 0, offline: 0, sleep: 0, maintenance: 0, error: 0 }
+      daily[ts] = { total: 0, offline: 0, sleep: 0, maintenance: 0, error: 0, snapshots: new Set() }
     }
 
-    const offlineCnt = sumObjectValues(entry[AGGR_FIELDS.OFFLINE_CNT] || entry.aggrFields?.[AGGR_FIELDS.OFFLINE_CNT])
-    const sleepCnt = sumObjectValues(entry[AGGR_FIELDS.SLEEP_CNT] || entry.aggrFields?.[AGGR_FIELDS.SLEEP_CNT])
-    const maintenanceCnt = sumObjectValues(entry[AGGR_FIELDS.MAINTENANCE_CNT] || entry.aggrFields?.[AGGR_FIELDS.MAINTENANCE_CNT])
-    const errorCnt = sumObjectValues(entry[AGGR_FIELDS.ERROR_CNT] || entry.aggrFields?.[AGGR_FIELDS.ERROR_CNT])
+    const bucket = daily[ts]
+    bucket.snapshots.add(rawTs)
+    bucket.offline += sumObjectValues(entry[AGGR_FIELDS.OFFLINE_CNT] || entry.aggrFields?.[AGGR_FIELDS.OFFLINE_CNT])
+    bucket.sleep += sumObjectValues(entry[AGGR_FIELDS.SLEEP_CNT] || entry.aggrFields?.[AGGR_FIELDS.SLEEP_CNT])
+    bucket.maintenance += sumObjectValues(entry[AGGR_FIELDS.MAINTENANCE_CNT] || entry.aggrFields?.[AGGR_FIELDS.MAINTENANCE_CNT])
+    bucket.error += sumObjectValues(entry[AGGR_FIELDS.ERROR_CNT] || entry.aggrFields?.[AGGR_FIELDS.ERROR_CNT])
+    bucket.total += sumObjectValues(entry[AGGR_FIELDS.TYPE_CNT]) || entry.total_cnt || entry.count || 0
+  }
 
-    daily[ts].offline += offlineCnt
-    daily[ts].sleep += sleepCnt
-    daily[ts].maintenance += maintenanceCnt
-    daily[ts].error += errorCnt
-
-    const totalCount = sumObjectValues(entry[AGGR_FIELDS.TYPE_CNT]) || entry.total_cnt || entry.count || 0
-    if (totalCount > 0) {
-      daily[ts].online += Math.max(0, totalCount - offlineCnt - sleepCnt - maintenanceCnt - errorCnt)
+  const averaged = {}
+  for (const [ts, bucket] of Object.entries(daily)) {
+    const snapshots = bucket.snapshots.size || 1
+    const offline = Math.round(bucket.offline / snapshots)
+    const sleep = Math.round(bucket.sleep / snapshots)
+    const maintenance = Math.round(bucket.maintenance / snapshots)
+    const error = Math.round(bucket.error / snapshots)
+    const total = Math.round(bucket.total / snapshots)
+    averaged[ts] = {
+      online: Math.max(0, total - offline - sleep - maintenance - error),
+      offline,
+      sleep,
+      maintenance,
+      error,
+      timeRange: { startTs: Number(ts), endTs: Number(ts) + METRICS_TIME.ONE_DAY_MS - 1 }
     }
   }
-  return daily
+  return averaged
 }
 
 function calculateMinerStatusSummary (log) {
@@ -616,8 +909,6 @@ async function getGroupedMinerStatus (ctx, req) {
     type: WORKER_TYPES.MINER,
     tag: WORKER_TAGS.MINER,
     aggrFields,
-    groupRange: '1D',
-    shouldCalculateAvg: true,
     start,
     end
   })
@@ -631,6 +922,7 @@ async function getGroupedMinerStatus (ctx, req) {
   return { log }
 }
 
+// Same day-bucket averaging as processMinerStatusData, per miner type.
 function processGroupedMinerStatusData (results) {
   const daily = {}
   for (const entry of iterateRpcEntries(results)) {
@@ -638,9 +930,10 @@ function processGroupedMinerStatusData (results) {
     const ts = rawTs ? getStartOfDay(rawTs) : null
     if (!ts) continue
     if (!daily[ts]) {
-      daily[ts] = { total: {}, online: {}, offline: {}, sleep: {}, maintenance: {}, error: {} }
+      daily[ts] = { total: {}, online: {}, offline: {}, sleep: {}, maintenance: {}, error: {}, snapshots: new Set() }
     }
     const bucket = daily[ts]
+    bucket.snapshots.add(rawTs)
     mergeGroupedField(bucket.total, entry[AGGR_FIELDS.TYPE_CNT])
     mergeGroupedField(bucket.offline, entry[AGGR_FIELDS.OFFLINE_TYPE_CNT])
     mergeGroupedField(bucket.sleep, entry[AGGR_FIELDS.SLEEP_TYPE_CNT])
@@ -648,11 +941,19 @@ function processGroupedMinerStatusData (results) {
     mergeGroupedField(bucket.error, entry[AGGR_FIELDS.ERROR_TYPE_CNT])
   }
 
-  for (const bucket of Object.values(daily)) {
+  for (const [ts, bucket] of Object.entries(daily)) {
+    const snapshots = bucket.snapshots.size || 1
+    delete bucket.snapshots
+    for (const field of ['total', 'offline', 'sleep', 'maintenance', 'error']) {
+      for (const key of Object.keys(bucket[field])) {
+        bucket[field][key] = Math.round(bucket[field][key] / snapshots)
+      }
+    }
     for (const type of Object.keys(bucket.total)) {
       const online = bucket.total[type] - (bucket.offline[type] || 0) - (bucket.sleep[type] || 0) - (bucket.maintenance[type] || 0) - (bucket.error[type] || 0)
       bucket.online[type] = Math.max(0, online)
     }
+    bucket.timeRange = { startTs: Number(ts), endTs: Number(ts) + METRICS_TIME.ONE_DAY_MS - 1 }
   }
   return daily
 }
@@ -799,6 +1100,209 @@ function processInventorySummary (results) {
   return { miners, spareParts }
 }
 
+const MINERS_BY_TYPE_AGGR_FIELDS = {
+  [AGGR_FIELDS.TYPE_CNT]: 1,
+  [AGGR_FIELDS.POWER_W_TYPE_GROUP_SUM]: 1,
+  [AGGR_FIELDS.OFFLINE_TYPE_CNT]: 1,
+  [AGGR_FIELDS.ERROR_TYPE_CNT]: 1,
+  [AGGR_FIELDS.MAINTENANCE_CNT]: 1,
+  [AGGR_FIELDS.SLEEP_TYPE_CNT]: 1,
+  [AGGR_FIELDS.POWER_MODE_LOW_TYPE_CNT]: 1,
+  [AGGR_FIELDS.POWER_MODE_NORMAL_TYPE_CNT]: 1,
+  [AGGR_FIELDS.POWER_MODE_HIGH_TYPE_CNT]: 1
+}
+
+async function getMinersByType (ctx, req) {
+  const results = await ctx.dataProxy.requestDataMap(RPC_METHODS.TAIL_LOG_MULTI, {
+    keys: [{ key: LOG_KEYS.STAT_5M, type: WORKER_TYPES.MINER, tag: WORKER_TAGS.MINER }],
+    limit: 1,
+    start: Date.now() - SITE_STATUS_LIVE_WINDOW_MS,
+    aggrFields: MINERS_BY_TYPE_AGGR_FIELDS
+  })
+
+  return processMinersByType(results)
+}
+
+function processMinersByType (results) {
+  const f = {
+    count: {},
+    powerW: {},
+    offline: {},
+    error: {},
+    maintenance: {},
+    sleep: {},
+    low: {},
+    normal: {},
+    high: {}
+  }
+
+  for (const orkResult of results) {
+    const entry = extractKeyEntry(orkResult, 0)
+    if (!entry) continue
+    mergeGroupedField(f.count, entry[AGGR_FIELDS.TYPE_CNT])
+    mergeGroupedField(f.powerW, entry[AGGR_FIELDS.POWER_W_TYPE_GROUP_SUM])
+    mergeGroupedField(f.offline, entry[AGGR_FIELDS.OFFLINE_TYPE_CNT])
+    mergeGroupedField(f.error, entry[AGGR_FIELDS.ERROR_TYPE_CNT])
+    mergeGroupedField(f.maintenance, entry[AGGR_FIELDS.MAINTENANCE_CNT])
+    mergeGroupedField(f.sleep, entry[AGGR_FIELDS.SLEEP_TYPE_CNT])
+    mergeGroupedField(f.low, entry[AGGR_FIELDS.POWER_MODE_LOW_TYPE_CNT])
+    mergeGroupedField(f.normal, entry[AGGR_FIELDS.POWER_MODE_NORMAL_TYPE_CNT])
+    mergeGroupedField(f.high, entry[AGGR_FIELDS.POWER_MODE_HIGH_TYPE_CNT])
+  }
+
+  const minerTypes = new Set()
+  for (const field of Object.values(f)) {
+    for (const type of Object.keys(field)) minerTypes.add(type)
+  }
+
+  const types = {}
+  for (const type of minerTypes) {
+    types[type] = {
+      count: f.count[type] || 0,
+      powerW: f.powerW[type] || 0,
+      offline: f.offline[type] || 0,
+      error: f.error[type] || 0,
+      maintenance: f.maintenance[type] || 0,
+      powerModes: {
+        sleep: f.sleep[type] || 0,
+        low: f.low[type] || 0,
+        normal: f.normal[type] || 0,
+        high: f.high[type] || 0
+      }
+    }
+  }
+
+  return { types }
+}
+
+const CONTAINER_MINER_COUNT_AGGR_FIELDS = {
+  [AGGR_FIELDS.OFFLINE_CNT]: 1,
+  [AGGR_FIELDS.ERROR_CNT]: 1,
+  [AGGR_FIELDS.NOT_MINING_CNT]: 1,
+  [AGGR_FIELDS.SLEEP_CNT]: 1,
+  [AGGR_FIELDS.POWER_MODE_LOW_CNT]: 1,
+  [AGGR_FIELDS.POWER_MODE_NORMAL_CNT]: 1,
+  [AGGR_FIELDS.POWER_MODE_HIGH_CNT]: 1
+}
+
+async function getMinerCountsByContainer (ctx) {
+  const results = await ctx.dataProxy.requestDataMap(RPC_METHODS.TAIL_LOG_MULTI, {
+    keys: [{ key: LOG_KEYS.STAT_RTD, type: WORKER_TYPES.MINER, tag: WORKER_TAGS.MINER }],
+    limit: 1,
+    aggrFields: CONTAINER_MINER_COUNT_AGGR_FIELDS
+  })
+
+  const counts = {}
+  for (const orkResult of results) {
+    const entry = extractKeyEntry(orkResult, 0)
+    if (!entry) continue
+    for (const field of Object.keys(CONTAINER_MINER_COUNT_AGGR_FIELDS)) {
+      mergeGroupedField(counts, entry[field])
+    }
+  }
+
+  const containers = {}
+  for (const [id, minerCount] of Object.entries(counts)) {
+    containers[id] = { minerCount }
+  }
+  return { containers }
+}
+
+const CONTAINER_MINER_TAG_REGEX = /container_miner-[^_]+_(.+)/
+
+function computeInstalledCapacity (containers, byContainer) {
+  const capacity = {}
+  for (const container of containers) {
+    const tags = Array.isArray(container?.tags) ? container.tags : []
+    const minerTag = tags.find(tag => typeof tag === 'string' && tag.startsWith('container_miner'))
+    const match = minerTag && minerTag.match(CONTAINER_MINER_TAG_REGEX)
+    if (!match) continue
+
+    const minerType = `miner-${match[1]}`
+    const total = Number(container.info?.nominalMinerCapacity) || 0
+    const entry = byContainer?.[container.info?.container]
+    const connected = entry ? entry.minerCount : 0
+    const available = Math.max(0, total - connected)
+
+    if (!capacity[minerType]) capacity[minerType] = { total: 0, available: 0 }
+    capacity[minerType].total += total
+    capacity[minerType].available += available
+  }
+  return capacity
+}
+
+async function getInventoryMinerDistribution (ctx, req) {
+  const site = ctx.conf?.site
+  const minersQuery = site
+    ? { $and: [{ 'info.site': { $eq: site } }, { tags: { $in: [WORKER_TAGS.MINER] } }] }
+    : { tags: { $in: [WORKER_TAGS.MINER] } }
+
+  const [minerResults, containerResults, byContainer] = await Promise.all([
+    ctx.dataProxy.requestDataAllPages(RPC_METHODS.LIST_THINGS, {
+      query: minersQuery,
+      fields: { id: 1, type: 1 }
+    }),
+    ctx.dataProxy.requestDataAllPages(RPC_METHODS.LIST_THINGS, {
+      query: { tags: { $in: [WORKER_TAGS.CONTAINER] } },
+      fields: { id: 1, tags: 1, 'info.container': 1, 'info.nominalMinerCapacity': 1 }
+    }),
+    getMinerCountsByContainer(ctx)
+  ])
+
+  const miners = flattenRpcResults(minerResults)
+  const countByType = {}
+  for (const miner of miners) {
+    if (miner?.type) countByType[miner.type] = (countByType[miner.type] || 0) + 1
+  }
+  const minerTypes = Object.keys(countByType).sort()
+
+  const locationResults = minerTypes.length
+    ? await ctx.dataProxy.requestDataMap(RPC_METHODS.TAIL_LOG_MULTI, {
+      keys: minerTypes.map(type => ({
+        key: LOG_KEYS.STAT_5M,
+        type: WORKER_TYPES.MINER,
+        tag: `t-${type}`
+      })),
+      limit: 1,
+      start: Date.now() - SITE_STATUS_LIVE_WINDOW_MS,
+      aggrFields: { [AGGR_FIELDS.MINER_INVENTORY_LOCATION]: 1 }
+    })
+    : []
+
+  const locationsByType = {}
+  for (const orkResult of locationResults) {
+    minerTypes.forEach((type, keyIndex) => {
+      const entry = extractKeyEntry(orkResult, keyIndex)
+      if (!entry) return
+      if (!locationsByType[type]) locationsByType[type] = {}
+      mergeGroupedField(locationsByType[type], entry[AGGR_FIELDS.MINER_INVENTORY_LOCATION])
+    })
+  }
+
+  const capacityByType = computeInstalledCapacity(flattenRpcResults(containerResults), byContainer.containers)
+
+  const rows = minerTypes.map(type => {
+    const locations = {}
+    let knownSum = 0
+    for (const [location, count] of Object.entries(locationsByType[type] || {})) {
+      if (location === 'unknown') continue
+      locations[location] = count
+      knownSum += count
+    }
+    locations.unknown = Math.max(0, countByType[type] - knownSum)
+
+    return {
+      type,
+      count: countByType[type],
+      totalPositions: capacityByType[type] ? capacityByType[type].total : null,
+      freePositions: capacityByType[type] ? capacityByType[type].available : null,
+      locations
+    }
+  })
+
+  return { rows, totalMiners: miners.length }
+}
+
 async function getPowerMode (ctx, req) {
   const { start, end } = validateStartEnd(req)
 
@@ -850,11 +1354,16 @@ function processPowerModeData (results, groupRange) {
   const emptyPoint = () => ({ low: 0, normal: 0, high: 0, sleep: 0, offline: 0, notMining: 0, maintenance: 0, error: 0 })
 
   for (const entry of iterateRpcEntries(results)) {
-    const rawTs = parseEntryTs(entry.ts || entry.timestamp)
-    const ts = groupRange && rawTs ? getStartOfDay(rawTs) : rawTs
+    // Grouped entries carry the bucket-start ts (already aligned to the group
+    // range), so use it directly rather than collapsing to the start of the day.
+    const ts = parseEntryTs(entry.ts || entry.timestamp)
     if (!ts) continue
 
-    if (!timePoints[ts]) timePoints[ts] = emptyPoint()
+    if (!timePoints[ts]) {
+      timePoints[ts] = emptyPoint()
+      const timeRange = parseEntryTimeRange(entry.ts || entry.timestamp)
+      if (timeRange) timePoints[ts].timeRange = timeRange
+    }
 
     const powerModeObj = entry[AGGR_FIELDS.POWER_MODE_GROUP] || entry.aggrFields?.[AGGR_FIELDS.POWER_MODE_GROUP] || {}
     const statusObj = entry[AGGR_FIELDS.STATUS_GROUP] || entry.aggrFields?.[AGGR_FIELDS.STATUS_GROUP] || {}
@@ -895,6 +1404,21 @@ function calculatePowerModeSummary (log) {
   return summary
 }
 
+const POWER_MODE_TIMELINE_INTERVALS = {
+  '1m': { key: LOG_KEYS.STAT_1M, stepMs: 60 * 1000 },
+  '5m': { key: LOG_KEYS.STAT_5M, stepMs: 5 * 60 * 1000 },
+  '30m': { key: LOG_KEYS.STAT_30M, stepMs: 30 * 60 * 1000 },
+  '3h': { key: LOG_KEYS.STAT_3H, stepMs: METRICS_TIME.THREE_HOURS_MS }
+}
+
+function resolvePowerModeTimelineInterval (start, end, requested) {
+  if (requested && POWER_MODE_TIMELINE_INTERVALS[requested]) return requested
+  const range = end - start
+  if (range <= METRICS_TIME.SEVEN_DAYS_MS) return '1m'
+  if (range <= METRICS_TIME.ONE_MONTH_MS) return '30m'
+  return '3h'
+}
+
 async function getPowerModeTimeline (ctx, req) {
   const now = Date.now()
   const start = Number(req.query.start) || (now - METRICS_TIME.ONE_MONTH_MS)
@@ -905,75 +1429,116 @@ async function getPowerModeTimeline (ctx, req) {
     throw new Error('ERR_INVALID_DATE_RANGE')
   }
 
-  const rpcPayload = {
-    key: LOG_KEYS.STAT_3H,
-    type: WORKER_TYPES.MINER,
-    tag: WORKER_TAGS.MINER,
-    aggrFields: {
-      [AGGR_FIELDS.POWER_MODE_GROUP]: 1,
-      [AGGR_FIELDS.STATUS_GROUP]: 1
-    },
-    start,
-    end
+  const interval = resolvePowerModeTimelineInterval(start, end, req.query.interval)
+  const { key, stepMs } = POWER_MODE_TIMELINE_INTERVALS[interval]
+  const windowMs = stepMs * METRICS_DEFAULTS.POWER_MODE_TIMELINE_WINDOW_SAMPLES
+
+  const aggregator = createPowerModeTimelineAggregator(container)
+
+  for (let windowStart = start; windowStart < end; windowStart += windowMs) {
+    const windowEnd = Math.min(windowStart + windowMs, end)
+
+    const results = await ctx.dataProxy.requestData(RPC_METHODS.TAIL_LOG, {
+      key,
+      type: WORKER_TYPES.MINER,
+      tag: WORKER_TAGS.MINER,
+      aggrFields: {
+        [AGGR_FIELDS.POWER_MODE_GROUP]: 1,
+        [AGGR_FIELDS.STATUS_GROUP]: 1
+      },
+      start: windowStart,
+      end: windowEnd,
+      limit: Math.ceil((windowEnd - windowStart) / stepMs) + 1
+    })
+
+    aggregator.addResults(results)
   }
 
-  const results = await ctx.dataProxy.requestData(RPC_METHODS.TAIL_LOG, rpcPayload)
+  return { log: aggregator.build(), interval }
+}
 
-  const log = processPowerModeTimelineData(results, container)
+// Segments are folded incrementally so memory scales with the number of mode
+// changes, not with samples x fleet size. Callers must feed results in
+// ascending time-window order.
+function createPowerModeTimelineAggregator (containerFilter) {
+  const minerStates = new Map()
+  const minerContainers = new Map()
 
-  return { log }
+  const minerContainer = (minerId) => {
+    let container = minerContainers.get(minerId)
+    if (container === undefined) {
+      container = extractContainerFromMinerKey(minerId)
+      minerContainers.set(minerId, container)
+    }
+    return container
+  }
+
+  const addSample = (minerId, ts, powerMode, status) => {
+    if (containerFilter && minerContainer(minerId) !== containerFilter) return
+
+    let state = minerStates.get(minerId)
+    if (!state) {
+      state = { segments: [], current: null }
+      minerStates.set(minerId, state)
+    }
+
+    const current = state.current
+    if (!current || current.powerMode !== powerMode || current.status !== status) {
+      if (current) {
+        current.to = ts
+        state.segments.push(current)
+      }
+      state.current = { from: ts, to: ts, powerMode, status }
+    } else {
+      current.to = ts
+    }
+  }
+
+  return {
+    addResults (results) {
+      const entries = []
+      for (const entry of iterateRpcEntries(results)) {
+        const ts = parseEntryTs(entry.ts || entry.timestamp)
+        if (!ts) continue
+        entries.push({ ts, entry })
+      }
+      entries.sort((a, b) => a.ts - b.ts)
+
+      for (const { ts, entry } of entries) {
+        const powerModeObj = entry[AGGR_FIELDS.POWER_MODE_GROUP] || entry.aggrFields?.[AGGR_FIELDS.POWER_MODE_GROUP] || {}
+        const statusObj = entry[AGGR_FIELDS.STATUS_GROUP] || entry.aggrFields?.[AGGR_FIELDS.STATUS_GROUP] || {}
+
+        const powerModes = (typeof powerModeObj === 'object' && powerModeObj !== null) ? powerModeObj : {}
+        const statuses = (typeof statusObj === 'object' && statusObj !== null) ? statusObj : {}
+
+        for (const minerId of Object.keys(statuses)) {
+          addSample(minerId, ts, powerModes[minerId] || statuses[minerId] || 'unknown', statuses[minerId] || 'unknown')
+        }
+        for (const minerId of Object.keys(powerModes)) {
+          if (!(minerId in statuses)) {
+            addSample(minerId, ts, powerModes[minerId] || 'unknown', 'unknown')
+          }
+        }
+      }
+    },
+
+    build () {
+      const log = []
+      for (const [minerId, state] of minerStates) {
+        const segments = state.current
+          ? [...state.segments, state.current]
+          : state.segments
+        log.push({ minerId, container: minerContainer(minerId), segments })
+      }
+      return log
+    }
+  }
 }
 
 function processPowerModeTimelineData (results, containerFilter) {
-  const minerTimelines = {}
-
-  for (const entry of iterateRpcEntries(results)) {
-    const ts = parseEntryTs(entry.ts || entry.timestamp)
-    if (!ts) continue
-
-    const powerModeObj = entry[AGGR_FIELDS.POWER_MODE_GROUP] || entry.aggrFields?.[AGGR_FIELDS.POWER_MODE_GROUP] || {}
-    const statusObj = entry[AGGR_FIELDS.STATUS_GROUP] || entry.aggrFields?.[AGGR_FIELDS.STATUS_GROUP] || {}
-
-    if (typeof powerModeObj === 'object' && powerModeObj !== null) {
-      for (const [minerId, powerMode] of Object.entries(powerModeObj)) {
-        if (!minerTimelines[minerId]) minerTimelines[minerId] = []
-        minerTimelines[minerId].push({
-          ts,
-          powerMode: powerMode || 'unknown',
-          status: statusObj[minerId] || 'unknown'
-        })
-      }
-    }
-  }
-
-  const log = []
-  for (const [minerId, entries] of Object.entries(minerTimelines)) {
-    entries.sort((a, b) => a.ts - b.ts)
-
-    const container = extractContainerFromMinerKey(minerId)
-
-    if (containerFilter && container !== containerFilter) continue
-
-    const segments = []
-    let current = null
-
-    for (const entry of entries) {
-      if (!current || current.powerMode !== entry.powerMode || current.status !== entry.status) {
-        if (current) {
-          current.to = entry.ts
-          segments.push(current)
-        }
-        current = { from: entry.ts, to: entry.ts, powerMode: entry.powerMode, status: entry.status }
-      } else {
-        current.to = entry.ts
-      }
-    }
-    if (current) segments.push(current)
-
-    log.push({ minerId, container, segments })
-  }
-
-  return log
+  const aggregator = createPowerModeTimelineAggregator(containerFilter)
+  aggregator.addResults(results)
+  return aggregator.build()
 }
 
 async function getTemperature (ctx, req) {
@@ -1018,8 +1583,9 @@ function processTemperatureData (results, groupRange, containerFilter) {
   const avgCounts = {}
 
   for (const entry of iterateRpcEntries(results)) {
-    const rawTs = parseEntryTs(entry.ts || entry.timestamp)
-    const ts = groupRange && rawTs ? getStartOfDay(rawTs) : rawTs
+    // Grouped entries carry the bucket-start ts (already aligned to the group
+    // range), so use it directly rather than collapsing to the start of the day.
+    const ts = parseEntryTs(entry.ts || entry.timestamp)
     if (!ts) continue
 
     const maxObj = entry[AGGR_FIELDS.TEMP_MAX] || entry.aggrFields?.[AGGR_FIELDS.TEMP_MAX] || {}
@@ -1027,6 +1593,8 @@ function processTemperatureData (results, groupRange, containerFilter) {
 
     if (!timePoints[ts]) {
       timePoints[ts] = { containers: {}, siteMaxC: null, siteAvgC: null }
+      const timeRange = parseEntryTimeRange(entry.ts || entry.timestamp)
+      if (timeRange) timePoints[ts].timeRange = timeRange
       avgCounts[ts] = {}
     }
 
@@ -1262,8 +1830,9 @@ async function getCooling (ctx, req) {
 function processCoolingData (results, groupRange) {
   const points = []
   for (const entry of iterateRpcEntries(results)) {
-    const rawTs = parseEntryTs(entry.ts || entry.timestamp)
-    const ts = groupRange && rawTs ? getStartOfDay(rawTs) : rawTs
+    // Grouped entries carry the bucket-start ts (already aligned to the group
+    // range), so use it directly rather than collapsing to the start of the day.
+    const ts = parseEntryTs(entry.ts || entry.timestamp)
     if (!ts) continue
 
     const read = (field) => {
@@ -1274,9 +1843,11 @@ function processCoolingData (results, groupRange) {
     const supply = read('miner_supply_temp_c')
     const ret = read('miner_return_temp_c')
     const chillerRunning = read('chiller_running')
+    const timeRange = parseEntryTimeRange(entry.ts || entry.timestamp)
 
     points.push({
       ts: Number(ts),
+      ...(timeRange && { timeRange }),
       minerSupplyTempC: round1(supply),
       minerReturnTempC: round1(ret),
       minerDeltaTC: (supply != null && ret != null) ? round1(ret - supply) : null,
@@ -1315,7 +1886,9 @@ module.exports = {
   calculateHashrateSummary,
   calculateGroupedHashrateSummary,
   getConsumption,
+  rollupMonthly,
   calculateConsumptionSummary,
+  calculateByMeterConsumptionSummary,
   calculateGroupedConsumptionSummary,
   getEfficiency,
   calculateEfficiencySummary,
@@ -1328,14 +1901,20 @@ module.exports = {
   processGroupedMinerStatusData,
   getMinersByContainer,
   processMinersByContainer,
+  getMinerCountsByContainer,
   getInventorySummary,
   processInventorySummary,
+  getMinersByType,
+  processMinersByType,
+  getInventoryMinerDistribution,
+  computeInstalledCapacity,
   getPowerMode,
   processPowerModeData,
   calculatePowerModeSummary,
   categorizeMiner,
   getPowerModeTimeline,
   processPowerModeTimelineData,
+  resolvePowerModeTimelineInterval,
   getTemperature,
   processTemperatureData,
   calculateTemperatureSummary,
