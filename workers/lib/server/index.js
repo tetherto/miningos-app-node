@@ -28,6 +28,7 @@ const sparePartsRoutes = require('./routes/spare.parts.routes')
 const workOrderFilesRoutes = require('./routes/work.order.files.routes')
 const pduLayoutRoutes = require('./routes/pdu.layout.routes')
 const exportRoutes = require('./routes/export.routes')
+const heatmapRoutes = require('./routes/heatmap.routes')
 
 /**
  * Collect all routes into a flat array for server injection.
@@ -62,7 +63,8 @@ function routes (ctx) {
     ...sparePartsRoutes(ctx),
     ...workOrderFilesRoutes(ctx),
     ...pduLayoutRoutes(ctx),
-    ...exportRoutes(ctx)
+    ...exportRoutes(ctx),
+    ...heatmapRoutes(ctx)
   ]
 }
 

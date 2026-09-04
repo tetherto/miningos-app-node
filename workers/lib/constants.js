@@ -244,6 +244,9 @@ const ENDPOINTS = {
   SPARE_PARTS_BATCH: '/auth/spare-parts/batch',
   SPARE_PART_BY_ID: '/auth/spare-parts/:id',
   SPARE_PART_REPAIR_HISTORY: '/auth/spare-parts/:id/repair-history',
+  // Heatmap endpoints
+  HEATMAP: '/auth/heatmap',
+  HEATMAP_DATES: '/auth/heatmap/dates',
   // Work Order export
   WORK_ORDER_EXPORT: '/auth/work-orders/:id/export',
   WORK_ORDER_EXPORT_RMA: '/auth/work-orders/export/rma',
@@ -1216,8 +1219,21 @@ const CUSTOM_ALERT_CONFIG = {
 
 const POOL_PROTOCOL = 'stratum+tcp'
 
+const HEATMAP_SNAPSHOT_SUB = 'heatmapSnapshots'
+const HEATMAP_SNAPSHOT_INDEX_KEY = 'index'
+const HEATMAP_SNAPSHOT_HOUR = 12
+const HEATMAP_SNAPSHOT_CHECK_MS = 10 * 60 * 1000
+const HEATMAP_MAX_DATES = 10
+const HEATMAP_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/
+
 module.exports = {
   SUPER_ADMIN_ROLE,
+  HEATMAP_SNAPSHOT_SUB,
+  HEATMAP_SNAPSHOT_INDEX_KEY,
+  HEATMAP_SNAPSHOT_HOUR,
+  HEATMAP_SNAPSHOT_CHECK_MS,
+  HEATMAP_MAX_DATES,
+  HEATMAP_DATE_REGEX,
   GLOBAL_DATA_TYPES,
   LCOE_SOURCES,
   SUPER_ADMIN_ID,

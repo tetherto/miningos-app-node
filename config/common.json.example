@@ -53,6 +53,7 @@
     }
   },
   "ttl": 300,
+  "timezone": "UTC",
   "site": "SITE_NAME",
   "rpcTimeout" : 15000,
   "expectedActionLatencyMs": 6000

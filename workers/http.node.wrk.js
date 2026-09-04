@@ -4,12 +4,13 @@ const async = require('async')
 const WebsocketPlugin = require('@fastify/websocket')
 const MultipartPlugin = require('@fastify/multipart')
 const fastifyPlugin = require('fastify-plugin')
-const { WORK_ORDER_FILE_MAX_BYTES_DEFAULT, MICROSOFT_AUTH_SCOPE } = require('./lib/constants')
+const { WORK_ORDER_FILE_MAX_BYTES_DEFAULT, MICROSOFT_AUTH_SCOPE, HEATMAP_SNAPSHOT_CHECK_MS } = require('./lib/constants')
 const TetherWrkBase = require('@tetherto/tether-wrk-base/workers/base.wrk.tether')
 const AuthLib = require('./lib/auth')
 const debug = require('debug')('store:aggr')
 const libServer = require('./lib/server')
 const GlobalDataLib = require('./lib/globalData')
+const { storeDailySnapshot } = require('./lib/server/lib/heatmap')
 const { UserService } = require('./lib/users')
 const { AlertsService } = require('./lib/alerts')
 const { auditLogger } = require('./lib/server/lib/auditLogger')
@@ -201,6 +202,14 @@ class WrkServerHttp extends TetherWrkBase {
         )
         await this.globalDataBee.ready()
         this.globalDataLib = new GlobalDataLib(this.globalDataBee, this.conf.site)
+
+        this.interval_0.add('captureHeatmapSnapshot', async () => {
+          try {
+            await storeDailySnapshot(this)
+          } catch (err) {
+            console.error(new Date().toISOString(), err)
+          }
+        }, HEATMAP_SNAPSHOT_CHECK_MS)
 
         // rpc client key to be allowed through destination server firewall
         this.status.rpcClientKey = this.net_r0.dht.defaultKeyPair.publicKey.toString('hex')
