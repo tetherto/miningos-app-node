@@ -18,6 +18,16 @@ function parseEntryTs (ts) {
   return null
 }
 
+function parseEntryTimeRange (ts) {
+  if (typeof ts !== 'string') return null
+  const dashIdx = ts.indexOf('-')
+  if (dashIdx <= 0) return null
+  const startTs = Number(ts.slice(0, dashIdx))
+  const endTs = Number(ts.slice(dashIdx + 1))
+  if (!Number.isFinite(startTs) || !Number.isFinite(endTs)) return null
+  return { startTs, endTs }
+}
+
 function validateStartEnd (req) {
   const start = Number(req.query.start)
   const end = Number(req.query.end)
@@ -91,9 +101,13 @@ function resolveInterval (start, end, requested) {
 function getIntervalConfig (interval) {
   switch (interval) {
     case '1h':
-      return { key: LOG_KEYS.STAT_3H, groupRange: null }
+      // Sample the finer-grained stat-30m log and bucket it into 1h windows,
+      // so hourly views aren't coarsened to the 3h stat cadence.
+      return { key: LOG_KEYS.STAT_30M, groupRange: '1H' }
     case '1w':
       return { key: LOG_KEYS.STAT_3H, groupRange: '1W' }
+    case '1M': // 30-day month; distinct from 1m (one minute)
+      return { key: LOG_KEYS.STAT_3H, groupRange: '1M' }
     case '1d':
     default:
       return { key: LOG_KEYS.STAT_3H, groupRange: '1D' }
@@ -130,6 +144,49 @@ function parseRackId (rackKey) {
 function getGroupNumber (groupName) {
   const match = groupName.match(/group-(\d+)/i)
   return match ? parseInt(match[1], 10) : null
+}
+
+// The '*_pdu_rack_group_*' aggregations are keyed by physical position ('group-1_1-1'), while
+// the rack grid is addressed by slot ('group-1_rack-1'). Both spellings reduce to group+ordinal.
+function rackSlotKey (rackId) {
+  const parsed = parseRackId(rackId)
+  if (!parsed) return null
+  const match = /(\d+)\s*$/.exec(parsed.rack)
+  return match ? `${parsed.group}#${parseInt(match[1], 10)}` : null
+}
+
+function rackKeysByGroupOrdinal (...rackMaps) {
+  const keysByGroup = new Map()
+
+  for (const rackMap of rackMaps) {
+    for (const rackKey of Object.keys(rackMap || {})) {
+      const parsed = parseRackId(rackKey)
+      if (!parsed) continue
+      if (!keysByGroup.has(parsed.group)) keysByGroup.set(parsed.group, new Set())
+      keysByGroup.get(parsed.group).add(rackKey)
+    }
+  }
+
+  const byGroupOrdinal = new Map()
+  for (const [groupId, rackKeys] of keysByGroup) {
+    const byOrdinal = new Map()
+    ;[...rackKeys]
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+      .forEach((rackKey, idx) => {
+        const slot = rackSlotKey(rackKey)
+        const ordinal = slot ? Number(slot.split('#')[1]) : idx + 1
+        if (!byOrdinal.has(ordinal)) byOrdinal.set(ordinal, rackKey)
+      })
+    byGroupOrdinal.set(groupId, byOrdinal)
+  }
+
+  return byGroupOrdinal
+}
+
+function rackFilterFor (racks) {
+  if (!racks?.length) return null
+  const slots = new Set(racks.map(rackSlotKey).filter(Boolean))
+  return (rackId) => slots.has(rackSlotKey(rackId))
 }
 
 function mergeGroupedField (target, source, isAverage = false) {
@@ -202,6 +259,7 @@ function buildGroupPowerFromDCS (powerMeters, hashrateByGroup, energyLayout, min
 
 module.exports = {
   parseEntryTs,
+  parseEntryTimeRange,
   validateStartEnd,
   iterateRpcEntries,
   forEachRangeAggrItem,
@@ -214,6 +272,9 @@ module.exports = {
   mhsToThs,
   parseRackId,
   getGroupNumber,
+  rackSlotKey,
+  rackKeysByGroupOrdinal,
+  rackFilterFor,
   mergeGroupedField,
   getMeterGroupMapping,
   buildGroupPowerFromDCS

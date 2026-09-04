@@ -3,12 +3,14 @@
 const test = require('brittle')
 const {
   getEnergyBalance,
-  processConsumptionData,
+  getCostParameters,
+  resolveLcoeUsdPerMwh,
+  resolveCostParametersForMonth,
+  resolveEnergyCostsUSD,
   processPriceData,
   processCostsData,
   calculateSummary,
   getEbitda,
-  processTailLogData,
   processEbitdaPrices,
   calculateEbitdaSummary,
   getCostSummary,
@@ -22,7 +24,11 @@ const {
   getRevenueSummary,
   calculateDetailedRevenueSummary,
   getHashRevenue,
-  processHashrateData,
+  getPowerCost,
+  getProductionCosts,
+  getStartOfMonthUtc,
+  processDailyRevenueBtc,
+  processDailyAvgPrices,
   processNetworkHashrateData,
   calculateHashRevenueSummary
 } = require('../../../workers/lib/server/handlers/finance.handlers')
@@ -38,8 +44,8 @@ test('getEnergyBalance - happy path', async (t) => {
     },
     net_r0: {
       jRequest: async (key, method, payload) => {
-        if (method === 'tailLogCustomRangeAggr') {
-          return [{ type: 'powermeter', data: [{ ts: dayTs, val: { site_power_w: 5000 } }], error: null }]
+        if (method === 'tailLog') {
+          return [{ ts: dayTs, site_power_w: 5000 }]
         }
         if (method === 'getWrkExtData') {
           if (payload.query && payload.query.key === 'transactions') {
@@ -170,8 +176,8 @@ test('getEnergyBalance - reads a grouped range-string ts on the electricity stat
     },
     net_r0: {
       jRequest: async (key, method, payload) => {
-        if (method === 'tailLogCustomRangeAggr') {
-          return [{ type: 'powermeter', data: [{ ts: dayTs, val: { site_power_w: 5000 } }], error: null }]
+        if (method === 'tailLog') {
+          return [{ ts: dayTs, site_power_w: 5000 }]
         }
         if (method === 'getWrkExtData') {
           if (payload.query && payload.query.key === 'transactions') {
@@ -211,37 +217,6 @@ test('getEnergyBalance - reads a grouped range-string ts on the electricity stat
   // consumptionMWh is 5000 W over 24 h = 0.12 MWh, so 1 MWh in leaves 0.88 curtailed
   t.is(day.curtailmentMWh, 0.88, 'should derive curtailment from the range-string bucket')
   t.ok(day.operationalIssuesRate !== null, 'should derive the operational issues rate too')
-  t.pass()
-})
-
-test('processConsumptionData - processes daily data from ORK', (t) => {
-  const results = [
-    [{ type: 'powermeter', data: [{ ts: 1700006400000, val: { site_power_w: 5000 } }], error: null }]
-  ]
-
-  const daily = processConsumptionData(results)
-  t.ok(typeof daily === 'object', 'should return object')
-  t.ok(Object.keys(daily).length > 0, 'should have entries')
-  const key = Object.keys(daily)[0]
-  t.is(daily[key].powerW, 5000, 'should extract power from val')
-  t.pass()
-})
-
-test('processConsumptionData - processes object-keyed data', (t) => {
-  const results = [
-    [{ data: { 1700006400000: { site_power_w: 5000 } } }]
-  ]
-
-  const daily = processConsumptionData(results)
-  t.ok(typeof daily === 'object', 'should return object')
-  t.pass()
-})
-
-test('processConsumptionData - handles error results', (t) => {
-  const results = [{ error: 'timeout' }]
-  const daily = processConsumptionData(results)
-  t.ok(typeof daily === 'object', 'should return object')
-  t.is(Object.keys(daily).length, 0, 'should be empty for error results')
   t.pass()
 })
 
@@ -322,12 +297,8 @@ function makeMockCtx (days) {
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
     net_r0: {
       jRequest: async (_key, method, payload) => {
-        if (method === 'tailLogCustomRangeAggr') {
-          return [{
-            type: 'powermeter',
-            data: days.map(d => ({ ts: d.ts, val: { site_power_w: d.powerW } })),
-            error: null
-          }]
+        if (method === 'tailLog') {
+          return days.map(d => ({ ts: d.ts, site_power_w: d.powerW, hashrate_mhs_5m_sum_aggr: d.hashrateMhs || 0 }))
         }
         if (method === 'getWrkExtData') {
           if (payload.query && payload.query.key === 'transactions') {
@@ -397,6 +368,52 @@ test('getEnergyBalance monthly - rates use MEAN, totals use SUM, per-MW is RECOM
   t.ok(Math.abs(m.energyRevenueBTC_MW - 0.3) < 1e-9, 'BTC per-MW recomputed')
 })
 
+test('getRevenueSummary monthly - rates use MEAN, totals use SUM', async (t) => {
+  const day1 = Date.UTC(2024, 0, 15)
+  const day2 = Date.UTC(2024, 0, 16)
+  const days = [
+    { ts: day1, powerW: 5_000_000, hashrateMhs: 100, btc: 0.5, price: 40000 },
+    { ts: day2, powerW: 3_000_000, hashrateMhs: 300, btc: 0.3, price: 60000 }
+  ]
+
+  const result = await getRevenueSummary(makeMockCtx(days), {
+    query: { start: day1 - 1000, end: day2 + 86400000, period: 'monthly' }
+  }, {})
+
+  t.is(result.log.length, 1, 'two days collapse to one monthly bucket')
+  const m = result.log[0]
+  t.ok(Math.abs(m.revenueBTC - 0.8) < 1e-9, 'revenueBTC summed')
+  t.is(m.consumptionMWh, 192, 'consumptionMWh summed: 120 + 72')
+  t.is(m.btcPrice, 50000, 'btcPrice averaged')
+  t.is(m.powerW, 4_000_000, 'powerW averaged')
+  t.is(m.hashrateMhs, 200, 'hashrateMhs averaged')
+})
+
+test('getCostSummary - central DCS reads site power from the DCS worker', async (t) => {
+  let captured
+  const mockCtx = withDataProxy({
+    conf: {
+      orks: [{ rpcPublicKey: 'key1' }],
+      featureConfig: { centralDCSSetup: { enabled: true, tag: 't-dcs-custom' } }
+    },
+    net_r0: {
+      jRequest: async (key, method, payload) => {
+        if (method === 'tailLog') {
+          captured = payload
+          return [{ ts: 1700006400000, site_power_w: 1000000 }]
+        }
+        return {}
+      }
+    },
+    globalDataLib: { getGlobalData: async () => [] }
+  })
+
+  const result = await getCostSummary(mockCtx, { query: { start: 1700000000000, end: 1700100000000 } }, {})
+  t.is(captured.type, 'dcs-siemens', 'queries the DCS worker type')
+  t.is(captured.tag, 't-dcs-custom', 'with the configured DCS tag')
+  t.is(result.log[0].consumptionMWh, 24, '1 MW over 24 h')
+})
+
 // ==================== EBITDA Tests ====================
 
 test('getEbitda - happy path', async (t) => {
@@ -406,8 +423,8 @@ test('getEbitda - happy path', async (t) => {
     },
     net_r0: {
       jRequest: async (key, method, payload) => {
-        if (method === 'tailLogCustomRangeAggr') {
-          return [{ data: { 1700006400000: { site_power_w: 5000, hashrate_mhs_5m_sum_aggr: 100000 } } }]
+        if (method === 'tailLog') {
+          return [{ ts: 1700006400000, site_power_w: 5000, hashrate_mhs_5m_sum_aggr: 100000 }]
         }
         if (method === 'getWrkExtData') {
           if (payload.query && payload.query.key === 'transactions') {
@@ -485,51 +502,6 @@ test('getEbitda - empty ork results', async (t) => {
   t.pass()
 })
 
-test('processTailLogData - processes power and hashrate', (t) => {
-  const results = [
-    [{ data: { 1700006400000: { site_power_w: 5000, hashrate_mhs_5m_sum_aggr: 100000 } } }]
-  ]
-
-  const daily = processTailLogData(results)
-  t.ok(typeof daily === 'object', 'should return object')
-  t.pass()
-})
-
-test('processTailLogData - drills into .val (production shape)', (t) => {
-  const results = [
-    [
-      {
-        type: 'powermeter',
-        data: [
-          { ts: 1700006400000, val: { site_power_w: 5000 } },
-          { ts: 1700092800000, val: { site_power_w: 6000 } }
-        ]
-      },
-      {
-        type: 'miner',
-        data: [
-          { ts: 1700006400000, val: { hashrate_mhs_5m_sum_aggr: 100000 } },
-          { ts: 1700092800000, val: { hashrate_mhs_5m_sum_aggr: 120000 } }
-        ]
-      }
-    ]
-  ]
-
-  const daily = processTailLogData(results)
-  t.is(daily[1700006400000].powerW, 5000, 'extracts powerW from .val on day 1')
-  t.is(daily[1700006400000].hashrateMhs, 100000, 'extracts hashrateMhs from .val on day 1')
-  t.is(daily[1700092800000].powerW, 6000, 'extracts powerW from .val on day 2')
-  t.is(daily[1700092800000].hashrateMhs, 120000, 'extracts hashrateMhs from .val on day 2')
-  t.pass()
-})
-
-test('processTailLogData - handles error results', (t) => {
-  const results = [{ error: 'timeout' }]
-  const daily = processTailLogData(results)
-  t.is(Object.keys(daily).length, 0, 'should be empty for errors')
-  t.pass()
-})
-
 test('processEbitdaPrices - processes valid data', (t) => {
   const results = [
     [{ prices: [{ ts: 1700006400000, price: 40000 }] }]
@@ -585,8 +557,8 @@ test('getCostSummary - happy path', async (t) => {
     },
     net_r0: {
       jRequest: async (key, method, payload) => {
-        if (method === 'tailLogCustomRangeAggr') {
-          return [{ data: { 1700006400000: { site_power_w: 5000 } } }]
+        if (method === 'tailLog') {
+          return [{ ts: 1700006400000, site_power_w: 5000 }]
         }
         if (method === 'getWrkExtData') {
           return { data: [{ prices: [{ ts: 1700006400000, price: 40000 }] }] }
@@ -898,8 +870,8 @@ test('getRevenueSummary - happy path', async (t) => {
     },
     net_r0: {
       jRequest: async (key, method, payload) => {
-        if (method === 'tailLogCustomRangeAggr') {
-          return [{ data: { [dayTs]: { site_power_w: 5000, hashrate_mhs_5m_sum_aggr: 100000 } } }]
+        if (method === 'tailLog') {
+          return [{ ts: dayTs, site_power_w: 5000, hashrate_mhs_5m_sum_aggr: 100000 }]
         }
         if (method === 'getWrkExtData') {
           if (payload.query && payload.query.key === 'transactions') {
@@ -1061,8 +1033,8 @@ test('getHashRevenue - happy path', async (t) => {
     },
     net_r0: {
       jRequest: async (key, method, payload) => {
-        if (method === 'tailLogCustomRangeAggr') {
-          return [{ data: { [dayTs]: { hashrate_mhs_5m_sum_aggr: 500000000 } } }]
+        if (method === 'tailLog') {
+          return [{ ts: dayTs, hashrate_mhs_5m_sum_aggr: 500000000 }]
         }
         if (method === 'getWrkExtData') {
           if (payload.query && payload.query.key === 'transactions') {
@@ -1146,55 +1118,6 @@ test('getHashRevenue - empty ork results', async (t) => {
   const result = await getHashRevenue(mockCtx, { query: { start: 1700000000000, end: 1700100000000 } }, {})
   t.ok(result.log, 'should return log array')
   t.is(result.log.length, 0, 'log should be empty')
-  t.pass()
-})
-
-test('processHashrateData - processes object-keyed data', (t) => {
-  const results = [
-    [{ data: { 1700006400000: { hashrate_mhs_5m_sum_aggr: 500000 } } }]
-  ]
-
-  const daily = processHashrateData(results)
-  t.ok(typeof daily === 'object', 'should return object')
-  t.ok(Object.keys(daily).length > 0, 'should have entries')
-  const key = Object.keys(daily)[0]
-  t.is(daily[key], 500000, 'should extract hashrate from val')
-  t.pass()
-})
-
-test('processHashrateData - processes array data', (t) => {
-  const results = [
-    [{ data: [{ ts: 1700006400000, hashrate_mhs_5m_sum_aggr: 500000 }] }]
-  ]
-
-  const daily = processHashrateData(results)
-  t.ok(typeof daily === 'object', 'should return object')
-  t.ok(Object.keys(daily).length > 0, 'should have entries')
-  t.pass()
-})
-
-test('processHashrateData - drills into .val (production shape)', (t) => {
-  const results = [
-    [
-      {
-        type: 'miner',
-        data: [
-          { ts: 1700006400000, val: { hashrate_mhs_5m_sum_aggr: 500000 } },
-          { ts: 1700092800000, val: { hashrate_mhs_5m_sum_aggr: 600000 } }
-        ]
-      }
-    ]
-  ]
-  const daily = processHashrateData(results)
-  t.is(daily[1700006400000], 500000, 'extracts hashrate from .val on day 1')
-  t.is(daily[1700092800000], 600000, 'extracts hashrate from .val on day 2')
-  t.pass()
-})
-
-test('processHashrateData - handles error results', (t) => {
-  const results = [{ error: 'timeout' }]
-  const daily = processHashrateData(results)
-  t.is(Object.keys(daily).length, 0, 'should be empty for errors')
   t.pass()
 })
 
@@ -1346,5 +1269,468 @@ test('getRevenueHourly - no pool param falls back to the generic minerpool type'
   const result = await getRevenueHourly(mockCtx, { query: { start: 1, end: 2 } })
   t.is(payload.type, 'minerpool', 'defaults to the generic minerpool type')
   t.alike(result, { log: [], summary: { totalRevenueBTC: 0 } }, 'empty source yields an empty shape')
+  t.pass()
+})
+
+// --- LCOE-derived energy cost (Cost Input) -------------------------------------
+
+test('processCostsData - an explicit zero energy cost stays zero, not derived', (t) => {
+  const result = processCostsData([
+    { site: 'site1', year: 2023, month: 11, energyCost: 0, operationalCost: 6000 }
+  ])
+
+  t.is(result['2023-11'].energyCostPerDay, 0, 'zero is a real value')
+  t.is(result['2023-11'].operationalCostPerDay, 200, 'operational cost unchanged')
+  t.pass()
+})
+
+test('processCostsData - a month with no energy cost is marked for derivation', (t) => {
+  const result = processCostsData([
+    { site: 'site1', year: 2023, month: 11, operationalCost: 6000 }
+  ])
+
+  t.is(result['2023-11'].energyCostPerDay, null, 'null marks "derive from consumption"')
+  t.is(result['2023-11'].operationalCostPerDay, 200, 'operational cost still computed')
+  t.pass()
+})
+
+test('resolveEnergyCostsUSD - existing rows behave exactly as before', (t) => {
+  t.is(resolveEnergyCostsUSD({ energyCostPerDay: 1000 }, 24, 42), 1000, 'a stored cost wins over the LCOE')
+  t.is(resolveEnergyCostsUSD({ energyCostPerDay: 0 }, 24, 42), 0, 'an explicit zero stays zero')
+  t.is(resolveEnergyCostsUSD({}, 24, 42), 0, 'a month with no row stays zero, as today')
+  t.pass()
+})
+
+test('resolveEnergyCostsUSD - derives from consumption when the month has no energy cost', (t) => {
+  t.is(resolveEnergyCostsUSD({ energyCostPerDay: null }, 24, 42), 1008, '24 MWh x 42 $/MWh')
+  t.is(resolveEnergyCostsUSD({ energyCostPerDay: null }, 24, 0), 0, 'no LCOE configured yields zero')
+  t.pass()
+})
+
+test('resolveLcoeUsdPerMwh - reads the pinned effective value', (t) => {
+  t.is(resolveLcoeUsdPerMwh({ lcoe: { source: 'current', effectiveUsdPerMwh: 42 } }), 42, 'reads effective')
+  t.is(resolveLcoeUsdPerMwh({ lcoe: { source: 'custom', effectiveUsdPerMwh: 55 } }), 55, 'source does not matter here')
+  t.is(resolveLcoeUsdPerMwh({ lcoe: { effectiveUsdPerMwh: 0 } }), 0, 'zero is valid')
+  t.pass()
+})
+
+test('resolveLcoeUsdPerMwh - falls back to zero on anything unusable', (t) => {
+  t.is(resolveLcoeUsdPerMwh(undefined), 0, 'no parameters')
+  t.is(resolveLcoeUsdPerMwh({}), 0, 'no lcoe')
+  t.is(resolveLcoeUsdPerMwh({ lcoe: {} }), 0, 'no effective value')
+  t.is(resolveLcoeUsdPerMwh({ lcoe: { effectiveUsdPerMwh: 'cheap' } }), 0, 'non-numeric')
+  t.is(resolveLcoeUsdPerMwh({ lcoe: { effectiveUsdPerMwh: -5 } }), 0, 'negative')
+  t.pass()
+})
+
+test('getCostParameters - returns an empty object without globalDataLib', async (t) => {
+  t.alike(await getCostParameters({}), {}, 'no lib, no parameters')
+  t.alike(await getCostParameters({ globalDataLib: { getGlobalData: async () => null } }), {}, 'null reads as empty')
+  t.alike(await getCostParameters({ globalDataLib: { getGlobalData: async () => ({ marginPct: 8 }) } }), { marginPct: 8 }, 'passes the stored object through')
+  t.pass()
+})
+
+test('getEbitda - derives energy cost from consumption when the month carries none', async (t) => {
+  const dayTs = 1700006400000
+  const mockCtx = withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    globalDataLib: {
+      getGlobalData: async ({ type }) => {
+        if (type === 'costParameters') {
+          return { lcoe: { source: 'custom', customUsdPerMwh: 42, effectiveUsdPerMwh: 42 } }
+        }
+        return [{ site: 's', year: 2023, month: 11, operationalCost: 3000 }]
+      }
+    },
+    net_r0: {
+      jRequest: async (key, method, payload) => {
+        if (method === 'tailLog') {
+          return [{ ts: dayTs, site_power_w: 1000000, hashrate_mhs_5m_sum_aggr: 100 }]
+        }
+        return []
+      }
+    }
+  })
+
+  const result = await getEbitda(mockCtx, {
+    query: { start: 1698710400000, end: 1700200000000, period: 'daily' }
+  })
+
+  const entry = result.log[0]
+  // 1 MW over 24 h = 24 MWh; 24 x 42 = 1008
+  t.is(entry.consumptionMWh, 24, 'daily consumption from site power')
+  t.is(entry.energyCostsUSD, 1008, 'energy cost derived from consumption x LCOE')
+  t.is(entry.operationalCostsUSD, 100, 'operational cost still comes from the stored month (3000/30)')
+  t.is(entry.totalCostsUSD, 1108, 'total combines both')
+  t.pass()
+})
+
+test('getEbitda - a stored energy cost is untouched by the fallback', async (t) => {
+  const dayTs = 1700006400000
+  const mockCtx = withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    globalDataLib: {
+      getGlobalData: async ({ type }) => {
+        if (type === 'costParameters') return { lcoe: { effectiveUsdPerMwh: 42 } }
+        return [{ site: 's', year: 2023, month: 11, energyCost: 30000, operationalCost: 3000 }]
+      }
+    },
+    net_r0: {
+      jRequest: async (key, method, payload) => {
+        if (method === 'tailLog') return [{ ts: dayTs, site_power_w: 1000000 }]
+        return []
+      }
+    }
+  })
+
+  const result = await getEbitda(mockCtx, {
+    query: { start: 1698710400000, end: 1700200000000, period: 'daily' }
+  })
+
+  t.is(result.log[0].energyCostsUSD, 1000, 'stored 30000/30 wins over the LCOE derivation')
+  t.pass()
+})
+
+test('getEbitda - no cost parameters configured leaves behaviour as it is today', async (t) => {
+  const dayTs = 1700006400000
+  const mockCtx = withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    globalDataLib: {
+      getGlobalData: async ({ type }) => {
+        if (type === 'costParameters') return {}
+        return [{ site: 's', year: 2023, month: 11, operationalCost: 3000 }]
+      }
+    },
+    net_r0: {
+      jRequest: async (key, method, payload) => {
+        if (method === 'tailLog') return [{ ts: dayTs, site_power_w: 1000000 }]
+        return []
+      }
+    }
+  })
+
+  const result = await getEbitda(mockCtx, {
+    query: { start: 1698710400000, end: 1700200000000, period: 'daily' }
+  })
+
+  t.is(result.log[0].energyCostsUSD, 0, 'no LCOE, no derived cost — same as before this change')
+  t.pass()
+})
+
+test('getEbitda - accepts the weekly period', async (t) => {
+  const mockCtx = withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    globalDataLib: { getGlobalData: async () => [] },
+    net_r0: {
+      jRequest: async (key, method, payload) => {
+        if (method === 'tailLog') {
+          return [
+            { ts: 1700006400000, site_power_w: 1000000 },
+            { ts: 1700092800000, site_power_w: 2000000 }
+          ]
+        }
+        return []
+      }
+    }
+  })
+
+  const result = await getEbitda(mockCtx, {
+    query: { start: 1700000000000, end: 1700200000000, period: 'weekly' }
+  })
+
+  t.ok(Array.isArray(result.log), 'returns a log')
+  t.is(result.log.length, 1, 'both days collapse into one weekly bucket')
+  t.pass()
+})
+
+// ==================== Power Cost Tests ====================
+
+const JAN_1 = 1767225600000
+const JAN_10 = 1768003200000
+const JAN_11 = 1768089600000
+const JAN_31 = 1769817600000
+const DAY_MS = 86400000
+
+function createPowerCostCtx ({ power = [], transactions = [], prices = [], costs = [] } = {}) {
+  return withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: {
+      jRequest: async (key, method, payload) => {
+        if (method === 'tailLog') {
+          return power
+        }
+        if (method === 'getWrkExtData') {
+          if (payload.query && payload.query.key === 'transactions') return transactions
+          if (payload.query && payload.query.key === 'HISTORICAL_PRICES') return prices
+        }
+        return []
+      }
+    },
+    globalDataLib: {
+      getGlobalData: async () => costs
+    }
+  })
+}
+
+test('getPowerCost - rolls daily data into monthly per-MWh points', async (t) => {
+  const mockCtx = createPowerCostCtx({
+    power: [
+      { ts: JAN_10, site_power_w: 2000000 },
+      { ts: JAN_11, site_power_w: 2000000 }
+    ],
+    transactions: [
+      { ts: JAN_10, transactions: [{ changed_balance: 0.5 }] },
+      { ts: JAN_11, transactions: [{ changed_balance: 0.25 }] }
+    ],
+    prices: [
+      { ts: JAN_10, priceUSD: 100000 },
+      { ts: JAN_11, priceUSD: 100000 }
+    ],
+    costs: [
+      { site: 's1', year: 2026, month: 1, energyCost: 40000, operationalCost: 8000 }
+    ]
+  })
+
+  const result = await getPowerCost(mockCtx, { query: { start: JAN_1, end: JAN_31 } })
+  t.is(result.log.length, 1, 'should return one month')
+  const jan = result.log[0]
+  t.is(jan.ts, JAN_1, 'month bucket should be the UTC month start')
+  // avg 2 MW over 2 days -> 2 * 24 * 2 = 96 MWh; revenue 0.75 BTC * 100k = 75000 USD
+  t.is(jan.revenueUSD, 75000 / 96, 'revenue should be USD per MWh')
+  t.is(jan.hashCostUSD, 48000 / 96, 'cost should be production costs per MWh')
+  t.pass()
+})
+
+test('getPowerCost - skips revenue on days without a BTC price', async (t) => {
+  const mockCtx = createPowerCostCtx({
+    power: [{ ts: JAN_10, site_power_w: 1000000 }],
+    transactions: [
+      { ts: JAN_10, transactions: [{ changed_balance: 1 }] },
+      { ts: JAN_11, transactions: [{ changed_balance: 5 }] }
+    ],
+    prices: [{ ts: JAN_10, priceUSD: 100000 }]
+  })
+
+  const result = await getPowerCost(mockCtx, { query: { start: JAN_1, end: JAN_31 } })
+  // only Jan 10 revenue counts: 1 BTC * 100k over 24 MWh
+  t.is(result.log[0].revenueUSD, 100000 / 24, 'priceless days should not contribute revenue')
+  t.pass()
+})
+
+test('getPowerCost - sums costs across sites and drops months outside the range', async (t) => {
+  const mockCtx = createPowerCostCtx({
+    power: [{ ts: JAN_10, site_power_w: 1000000 }],
+    costs: [
+      { site: 's1', year: 2026, month: 1, energyCost: 1000, operationalCost: 200 },
+      { site: 's2', year: 2026, month: 1, energyCost: 800, operationalCost: 400 },
+      { site: 's1', year: 2026, month: 3, energyCost: 9999, operationalCost: 0 },
+      { year: 2026, month: 1, energyCost: 500, operationalCost: 0 }
+    ]
+  })
+
+  const result = await getPowerCost(mockCtx, { query: { start: JAN_1, end: JAN_31 } })
+  t.is(result.log.length, 1, 'out-of-range months should be dropped')
+  t.is(result.log[0].hashCostUSD, 2400 / 24, 'should sum costs across sites and skip site-less rows')
+  t.pass()
+})
+
+test('getPowerCost - empty results', async (t) => {
+  const mockCtx = createPowerCostCtx()
+  const result = await getPowerCost(mockCtx, { query: { start: JAN_1, end: JAN_31 } })
+  t.alike(result.log, [], 'should return empty log')
+  t.pass()
+})
+
+test('getPowerCost - missing start throws', async (t) => {
+  const mockCtx = createPowerCostCtx()
+  try {
+    await getPowerCost(mockCtx, { query: { end: JAN_31 } })
+    t.fail('should have thrown')
+  } catch (err) {
+    t.is(err.message, 'ERR_MISSING_START_END', 'should throw missing start/end error')
+  }
+  t.pass()
+})
+
+test('processDailyRevenueBtc - prefers changed_balance and falls back to satoshis', (t) => {
+  const daily = processDailyRevenueBtc([
+    [
+      {
+        ts: JAN_10,
+        transactions: [
+          { changed_balance: 0.5, satoshis_net_earned: 999 },
+          { satoshis_net_earned: 50000000 },
+          { note: 'no amounts' }
+        ]
+      }
+    ]
+  ], JAN_1, JAN_31)
+  t.is(daily[JAN_10], 1, 'should sum 0.5 BTC + 0.5 BTC')
+  t.pass()
+})
+
+test('processDailyAvgPrices - averages price points within a day', (t) => {
+  const daily = processDailyAvgPrices([
+    [
+      { ts: JAN_10, priceUSD: 90000 },
+      { ts: JAN_10 + 3600000, priceUSD: 110000 },
+      { ts: JAN_31 + DAY_MS, priceUSD: 500 }
+    ]
+  ], JAN_1, JAN_31)
+  t.is(daily[JAN_10], 100000, 'should average intra-day prices')
+  t.absent(daily[JAN_31 + DAY_MS], 'should drop out-of-range days')
+  t.pass()
+})
+
+test('getStartOfMonthUtc - buckets to UTC month start', (t) => {
+  t.is(getStartOfMonthUtc(JAN_10), JAN_1)
+  t.is(getStartOfMonthUtc(JAN_1), JAN_1)
+  t.pass()
+})
+
+test('resolveCostParametersForMonth - a month without an override resolves to the base doc', (t) => {
+  const base = { marginPct: 8, lcoe: { source: 'current', effectiveUsdPerMwh: 42 } }
+
+  t.alike(resolveCostParametersForMonth(base, '2026-08'), base, 'no overrides map at all')
+  t.alike(resolveCostParametersForMonth(base), base, 'no month key')
+  t.alike(resolveCostParametersForMonth({ ...base, overrides: {} }, '2026-08'), { ...base, overrides: {} }, 'empty overrides map')
+  t.alike(resolveCostParametersForMonth({ ...base, overrides: { '2026-09': { marginPct: 1 } } }, '2026-08'), { ...base, overrides: { '2026-09': { marginPct: 1 } } }, 'a different month is overridden')
+  t.alike(resolveCostParametersForMonth(undefined, '2026-08'), {}, 'no parameters at all')
+  t.pass()
+})
+
+test('resolveCostParametersForMonth - an override merges over the base, lcoe one level deep', (t) => {
+  const base = {
+    minerAmortizationUsd: 45000,
+    marginPct: 8,
+    lcoe: { source: 'current', customUsdPerMwh: null, effectiveUsdPerMwh: 42 },
+    overrides: { '2026-08': { marginPct: 10, lcoe: { source: 'custom', customUsdPerMwh: 51, effectiveUsdPerMwh: 51 } } }
+  }
+
+  const merged = resolveCostParametersForMonth(base, '2026-08')
+  t.is(merged.marginPct, 10, 'override wins')
+  t.is(merged.minerAmortizationUsd, 45000, 'untouched base fields survive')
+  t.is(merged.lcoe.effectiveUsdPerMwh, 51, 'override lcoe wins')
+
+  const partial = resolveCostParametersForMonth({
+    ...base,
+    overrides: { '2026-08': { lcoe: { effectiveUsdPerMwh: 99 } } }
+  }, '2026-08')
+  t.is(partial.lcoe.effectiveUsdPerMwh, 99, 'partial lcoe override wins')
+  t.is(partial.lcoe.source, 'current', 'unset lcoe keys fall back to the base')
+  t.is(partial.marginPct, 8, 'base margin kept when the override omits it')
+  t.pass()
+})
+
+test('resolveLcoeUsdPerMwh - resolves per month, base untouched', (t) => {
+  const params = {
+    lcoe: { effectiveUsdPerMwh: 42 },
+    overrides: { '2026-08': { lcoe: { effectiveUsdPerMwh: 60 } } }
+  }
+
+  t.is(resolveLcoeUsdPerMwh(params, '2026-08'), 60, 'overridden month')
+  t.is(resolveLcoeUsdPerMwh(params, '2026-07'), 42, 'month without an override keeps the base')
+  t.is(resolveLcoeUsdPerMwh(params), 42, 'no month key behaves exactly as before')
+  t.is(resolveLcoeUsdPerMwh({ overrides: { '2026-08': { lcoe: { effectiveUsdPerMwh: -5 } } } }, '2026-08'), 0, 'an unusable override still falls back to zero')
+  t.pass()
+})
+
+test('getEbitda - a monthly LCOE override only moves its own month', async (t) => {
+  const octTs = 1697068800000 // 2023-10-12
+  const novTs = 1700006400000 // 2023-11-15
+
+  const buildCtx = (costParameters) => withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    globalDataLib: {
+      getGlobalData: async ({ type }) => {
+        if (type === 'costParameters') return costParameters
+        return [
+          { site: 's', year: 2023, month: 10, operationalCost: 3100 },
+          { site: 's', year: 2023, month: 11, operationalCost: 3000 }
+        ]
+      }
+    },
+    net_r0: {
+      jRequest: async (key, method, payload) => {
+        if (method === 'tailLog') {
+          return [
+            { ts: octTs, site_power_w: 1000000, hashrate_mhs_5m_sum_aggr: 100 },
+            { ts: novTs, site_power_w: 1000000, hashrate_mhs_5m_sum_aggr: 100 }
+          ]
+        }
+        return []
+      }
+    }
+  })
+
+  const query = { query: { start: 1693526400000, end: 1700200000000, period: 'daily' } }
+  const base = { lcoe: { source: 'current', customUsdPerMwh: null, effectiveUsdPerMwh: 42 } }
+
+  const overridden = await getEbitda(buildCtx({
+    ...base,
+    overrides: { '2023-11': { lcoe: { source: 'custom', customUsdPerMwh: 60, effectiveUsdPerMwh: 60 } } }
+  }), query)
+
+  t.is(overridden.log.length, 2, 'one entry per day')
+  t.is(overridden.log[0].energyCostsUSD, 1008, 'October uses the base LCOE (24 MWh x 42)')
+  t.is(overridden.log[1].energyCostsUSD, 1440, 'November uses its override (24 MWh x 60)')
+
+  const plain = await getEbitda(buildCtx(base), query)
+  t.is(plain.log[0].energyCostsUSD, 1008, 'no overrides: October unchanged')
+  t.is(plain.log[1].energyCostsUSD, 1008, 'no overrides: November falls back to the base too')
+  t.alike(plain, await getEbitda(buildCtx({ ...base, overrides: {} }), query), 'an empty overrides map changes nothing')
+
+  t.pass()
+})
+
+// The mempool worker only serves HISTORICAL_* keys and destructures `prices` out of its
+// fallback reply, so asking for 'prices' returned nothing and every historical day was
+// silently valued at today's spot price.
+test('getEbitda and getHashRevenue request the historical price key the mempool worker serves', async (t) => {
+  const requestedKeys = []
+  const dayTs = 1700006400000
+
+  const makeCtx = () => withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: {
+      jRequest: async (key, method, payload) => {
+        if (method === 'tailLog') return [{ ts: dayTs, site_power_w: 5000, hashrate_mhs_5m_sum_aggr: 100 }]
+        if (method === 'getWrkExtData') {
+          const qKey = payload.query && payload.query.key
+          if (payload.type === 'mempool') requestedKeys.push(qKey)
+          if (qKey === 'transactions') return [{ ts: dayTs, transactions: [{ ts: dayTs, changed_balance: 0.5 }] }]
+          if (qKey === 'HISTORICAL_PRICES') return [{ ts: dayTs, priceUSD: 61000 }]
+        }
+        return []
+      }
+    },
+    globalDataLib: { getGlobalData: async () => [] }
+  })
+
+  const req = { query: { start: dayTs - 86400000, end: dayTs + 86400000 } }
+  await getEbitda(makeCtx(), req, {})
+  await getHashRevenue(makeCtx(), req, {})
+
+  t.ok(requestedKeys.includes('HISTORICAL_PRICES'), 'asks for the key the worker actually serves')
+  t.absent(requestedKeys.includes('prices'), 'never asks for the stripped `prices` key')
+  t.pass()
+})
+
+// ==================== Production Costs Tests ====================
+
+test('getProductionCosts - keeps every month overlapping the range', async (t) => {
+  const AUG_1_UTC = Date.UTC(2026, 7, 1)
+  const SEP_1_UTC = Date.UTC(2026, 8, 1)
+  const FOUR_HOURS = 4 * 60 * 60 * 1000
+  const mockCtx = {
+    globalDataLib: {
+      getGlobalData: async () => [7, 8, 9, 10].map(month => ({ site: 'Ivinhema', year: 2026, month, operationalCost: month }))
+    }
+  }
+  const months = async (start, end) => (await getProductionCosts(mockCtx, start, end)).map(r => r.month)
+
+  t.alike(await months(AUG_1_UTC, SEP_1_UTC - 1), [8], 'UTC month bounds select only that month')
+  t.alike(await months(AUG_1_UTC + FOUR_HOURS, SEP_1_UTC + FOUR_HOURS - 1), [8, 9], 'a local-midnight start must not drop the requested month')
+  t.alike(await months(Date.UTC(2026, 7, 15), Date.UTC(2026, 7, 20)), [8], 'a range inside a month keeps that month')
   t.pass()
 })

@@ -2,10 +2,14 @@
 
 const GLOBAL_DATA_TYPES = {
   PRODUCTION_COSTS: 'productionCosts',
+  COST_PARAMETERS: 'costParameters',
   FEATURES: 'features',
   SITE_ENERGY: 'siteEnergy',
-  CONTAINER_SETTINGS: 'containerSettings'
+  CONTAINER_SETTINGS: 'containerSettings',
+  ALERT_PARAMETERS: 'alertParameters'
 }
+
+const LCOE_SOURCES = ['current', 'custom']
 
 const USER_SETTINGS_TYPE = 'userSettings'
 
@@ -37,10 +41,14 @@ const AUTH_PERMISSIONS = {
   REPORTING: 'reporting',
   SETTINGS: 'settings',
   TICKETS: 'tickets',
-  FORECAST: 'forecast',
+  FORECAST_SUMMARY: 'forecast_summary',
+  FORECAST_OVERVIEW: 'forecast_overview',
+  FORECAST_SETTINGS: 'forecast_settings',
   POOL_CONFIG: 'pool_config',
   POOL_CONFIG_APPROVE: 'pool_config_approve',
-  WORK_ORDER: 'work_order'
+  WORK_ORDER: 'work_order',
+  ALERT_CONFIG: 'alert_config',
+  ALERT_CONFIG_SENSITIVE: 'alert_config_sensitive'
 }
 
 const WORK_ORDER_THING_TYPE = 'inventory-work_order'
@@ -52,7 +60,10 @@ const MINER_LOCATIONS = ['workshop.warehouse', 'workshop.lab', 'site.warehouse',
 const MINER_ROOM_LOCATION = 'miner.room'
 const MAINTENANCE_CONTAINER = 'maintenance'
 const SPARE_PART_INITIAL_LOCATION = 'site.warehouse'
+const IN_OPERATION_STATUS = 'in_operation'
 const FILE_TYPES = { WORK_ORDER: 'work_order' }
+const WORK_ORDER_ACTION_WAIT_ATTEMPTS = 8
+const WORK_ORDER_ACTION_WAIT_MS = 1000
 const WORK_ORDER_FILE_MAX_BYTES_DEFAULT = 10 * 1024 * 1024
 const WORK_ORDER_FILE_COUNT_CAP_DEFAULT = 20
 const WORK_ORDER_FILE_MIME_ALLOWLIST_DEFAULT = [
@@ -116,6 +127,9 @@ const ENDPOINTS = {
   ACTIONS_CANCEL: '/auth/actions/voting/cancel',
   DOWNLOAD_LOGS: '/auth/download-logs/:id',
 
+  // Generic data-export endpoint (type-discriminated, streams CSV/JSON)
+  EXPORT: '/auth/export',
+
   // Miner log download flow (start → poll status → stream file)
   MINER_DOWNLOAD_LOGS_START: '/auth/miners/:minerId/download-logs',
   MINER_DOWNLOAD_LOGS_STATUS: '/auth/miners/:minerId/download-logs/:jobId/status',
@@ -147,6 +161,7 @@ const ENDPOINTS = {
   FINANCE_REVENUE: '/auth/finance/revenue',
   FINANCE_REVENUE_SUMMARY: '/auth/finance/revenue-summary',
   FINANCE_HASH_REVENUE: '/auth/finance/hash-revenue',
+  FINANCE_POWER_COST: '/auth/finance/power-cost',
 
   // Pools endpoints
   POOLS: '/auth/pools',
@@ -171,6 +186,8 @@ const ENDPOINTS = {
   METRICS_EFFICIENCY: '/auth/metrics/efficiency',
   METRICS_MINER_STATUS: '/auth/metrics/miner-status',
   METRICS_MINERS_BY_CONTAINER: '/auth/metrics/miners/by-container',
+  METRICS_MINERS_BY_TYPE: '/auth/metrics/miners/by-type',
+  METRICS_INVENTORY_MINER_DISTRIBUTION: '/auth/metrics/inventory/miner-distribution',
   METRICS_SITE_SUMMARY: '/auth/metrics/site/summary',
   METRICS_INVENTORY_SUMMARY: '/auth/metrics/inventory/summary',
   METRICS_REVENUE_HOURLY: '/auth/metrics/revenue/hourly',
@@ -187,8 +204,11 @@ const ENDPOINTS = {
   // Alerts endpoints
   ALERTS_SITE: '/auth/alerts/site',
   ALERTS_HISTORY: '/auth/alerts/history',
+  ALERTS_CONFIG: '/auth/alerts/config',
+  ALERTS_PARAMS: '/auth/alerts/params',
 
   MINERS: '/auth/miners',
+  CONTAINER_MINERS: '/auth/containers/:id/miners',
   LIST_FIRMWARES: '/auth/list-firmwares',
   // Cooling System endpoints
   COOLING_SYSTEM: '/auth/dcs/cooling-system',
@@ -196,6 +216,7 @@ const ENDPOINTS = {
   ENERGY_SYSTEM: '/auth/dcs/energy-system',
   // Site Overview endpoints
   SITE_OVERVIEW_GROUPS: '/auth/site/overview/groups',
+  SITE_OVERVIEW_UNITS: '/auth/site/overview/units',
   // Site Efficiency endpoint
   SITE_EFFICIENCY: '/auth/site/efficiency',
   // Explorer endpoints
@@ -225,7 +246,8 @@ const ENDPOINTS = {
   SPARE_PART_REPAIR_HISTORY: '/auth/spare-parts/:id/repair-history',
   // Work Order export
   WORK_ORDER_EXPORT: '/auth/work-orders/:id/export',
-  WORK_ORDER_EXPORT_RMA: '/auth/work-orders/export/rma'
+  WORK_ORDER_EXPORT_RMA: '/auth/work-orders/export/rma',
+  WORK_ORDER_EXPORT_BULK: '/auth/work-orders/export/bulk'
 }
 
 const WORK_ORDER_EXPORT_FORMATS = ['pdf', 'csv', 'docx']
@@ -310,12 +332,14 @@ const RPC_METHODS = {
   TAIL_LOG: 'tailLog',
   TAIL_LOG_MULTI: 'tailLogMulti',
   GLOBAL_CONFIG: 'getGlobalConfig',
-  GET_CONFIGS: 'getConfigs'
+  GET_CONFIGS: 'getConfigs',
+  SET_ALERT_PARAMS: 'setAlertParams'
 }
 
 const WORKER_TYPES = {
   MINER: 'miner',
   CONTAINER: 'container',
+  CABINET: 'cabinet',
   POWERMETER: 'powermeter',
   MINERPOOL: 'minerpool',
   MEMPOOL: 'mempool',
@@ -401,13 +425,15 @@ const MINER_POOL_STATUS = {
 const METRICS_TIME = {
   ONE_DAY_MS: 24 * 60 * 60 * 1000,
   TWO_DAYS_MS: 2 * 24 * 60 * 60 * 1000,
+  SEVEN_DAYS_MS: 7 * 24 * 60 * 60 * 1000,
   NINETY_DAYS_MS: 90 * 24 * 60 * 60 * 1000,
   THREE_HOURS_MS: 3 * 60 * 60 * 1000,
   ONE_MONTH_MS: 30 * 24 * 60 * 60 * 1000
 }
 
 const METRICS_DEFAULTS = {
-  CONTAINER_HISTORY_LIMIT: 10080
+  CONTAINER_HISTORY_LIMIT: 10080,
+  POWER_MODE_TIMELINE_WINDOW_SAMPLES: 720
 }
 
 const MINER_CATEGORIES = {
@@ -435,11 +461,40 @@ const WORKER_TAGS = {
   MINER: 't-miner',
   CONTAINER: 't-container',
   POWERMETER: 't-powermeter',
+  SENSOR: 't-sensor',
   TEMP_SENSOR: 't-sensor-temp'
 }
 
 const DEVICE_LIST_FIELDS = {
   id: 1, type: 1, code: 1, ip: 1, tags: 1, info: 1, rack: 1
+}
+
+const CONTAINER_LIST_FIELDS = {
+  ...DEVICE_LIST_FIELDS,
+  comments: 1,
+  containerId: 1,
+  'opts.address': 1,
+  'last.err': 1,
+  'last.alerts': 1,
+  'last.snap.stats.status': 1,
+  'last.snap.stats.power_w': 1,
+  'last.snap.stats.ambient_temp_c': 1,
+  'last.snap.stats.humidity_percent': 1,
+  'last.snap.stats.alarm_status': 1,
+  'last.snap.stats.temperature_c': 1,
+  'last.snap.stats.uptime_ms': 1
+}
+
+const CABINET_DEVICE_FIELDS = {
+  id: 1,
+  type: 1,
+  code: 1,
+  tags: 1,
+  rack: 1,
+  info: 1,
+  comments: 1,
+  'last.alerts': 1,
+  'last.snap.stats': 1
 }
 
 // Cooling system field projections by type/view
@@ -591,7 +646,7 @@ const SITE_OVERVIEW_AGGR_FIELDS = {
   power_w_rack_group_sum_aggr: 1,
   efficiency_w_ths_container_group_avg_aggr: 1,
   efficiency_w_ths_pdu_rack_group_avg_aggr: 1,
-  hashrate_mhs_5m_pdu_rack_group_avg_aggr: 1,
+  hashrate_mhs_5m_pdu_rack_group_sum_aggr: 1,
   power_w_pdu_rack_group_sum_aggr: 1,
   offline_cnt: 1,
   error_cnt: 1,
@@ -608,6 +663,7 @@ const SITE_STATUS_LIVE_AGGR_FIELDS = {
   nominal_hashrate_mhs_sum_aggr: 1,
   alerts_aggr: 1,
   online_or_minor_error_miners_amount_aggr: 1,
+  error_miners_amount_aggr: 1,
   not_mining_miners_amount_aggr: 1,
   offline_or_sleeping_miners_amount_aggr: 1,
   hashrate_mhs_1m_cnt_aggr: 1,
@@ -639,7 +695,9 @@ const DCS_EFFICIENCY_FIELDS = {
 
 const LOG_FIELDS = {
   HASHRATE_SUM: 'hashrate_mhs_5m_sum',
+  NOMINAL_HASHRATE_SUM: 'nominal_hashrate_mhs_sum',
   SITE_POWER: 'site_power_w',
+  BY_METER_POWER: 'by_meter_power_w',
   EFFICIENCY: 'efficiency_w_ths_avg',
   HASHRATE_SUM_TYPE_GROUP: 'hashrate_mhs_5m_type_group_sum',
   HASHRATE_SUM_CONTAINER_GROUP: 'hashrate_mhs_5m_container_group_sum',
@@ -654,10 +712,12 @@ const LOG_FIELDS = {
 
 const AGGR_FIELDS = {
   HASHRATE_SUM: 'hashrate_mhs_5m_sum_aggr',
+  NOMINAL_HASHRATE_SUM: 'nominal_hashrate_mhs_sum_aggr',
   HASHRATE_SUM_TYPE_GROUP_AGGR: 'hashrate_mhs_5m_type_group_sum_aggr',
   HASHRATE_SUM_CONTAINER_GROUP_AGGR: 'hashrate_mhs_5m_container_group_sum_aggr',
   HASHRATE_SUM_RACK_GROUP_AGGR: 'hashrate_mhs_5m_pdu_rack_group_sum_aggr',
   SITE_POWER: 'site_power_w',
+  BY_METER_POWER: 'by_meter_power_w',
   ENERGY_AGGR: 'energy_aggr',
   ACTIVE_ENERGY_IN: 'active_energy_in_aggr',
   UTE_ENERGY: 'ute_energy_aggr',
@@ -684,6 +744,9 @@ const AGGR_FIELDS = {
   POWER_MODE_LOW_CNT: 'power_mode_low_cnt',
   POWER_MODE_NORMAL_CNT: 'power_mode_normal_cnt',
   POWER_MODE_HIGH_CNT: 'power_mode_high_cnt',
+  POWER_MODE_LOW_TYPE_CNT: 'power_mode_low_type_cnt',
+  POWER_MODE_NORMAL_TYPE_CNT: 'power_mode_normal_type_cnt',
+  POWER_MODE_HIGH_TYPE_CNT: 'power_mode_high_type_cnt',
   ERROR_CNT: 'error_cnt',
   NOT_MINING_CNT: 'not_mining_cnt',
   ACTIVE_CONTAINER_CNT: 'hashrate_mhs_5m_active_container_group_cnt',
@@ -703,7 +766,8 @@ const PERIOD_TYPES = {
 
 const MINERPOOL_EXT_DATA_KEYS = {
   TRANSACTIONS: 'transactions',
-  STATS: 'stats'
+  STATS: 'stats',
+  STATS_HISTORY: 'stats-history'
 }
 
 const ELECTRICITY_EXT_DATA_KEYS = {
@@ -751,6 +815,8 @@ const RPC_RETRY_DELAY = 100
 const RPC_RETRYABLE_METHODS = new Set([
   'getAction',
   'getActionsBatch',
+  'getAlertConf',
+  'getAlertParams',
   'getConfigs',
   'getGlobalConfig',
   'getHistoricalLogs',
@@ -820,7 +886,8 @@ const MINER_FIELD_MAP = {
   powerMode: 'last.snap.config.power_mode',
   firmware: 'last.snap.config.firmware_ver',
   model: 'last.snap.model',
-  ip: 'opts.address',
+  ip: 'address',
+  subnet: 'info.subnet',
   container: 'info.container',
   rack: 'rack',
   serialNum: 'info.serialNum',
@@ -828,7 +895,11 @@ const MINER_FIELD_MAP = {
   pool: 'last.snap.config.pool_config.url',
   led: 'last.snap.config.led_status',
   alerts: 'last.alerts',
-  poolConfig: 'info.poolConfig'
+  // `poolConfig` in a response is the miner-reported endpoint list
+  // (`last.snap.config.pool_config`); the assigned pool config lives on
+  // `info.poolConfig` and is exposed as `poolConfigId`.
+  poolConfig: 'info.poolConfig',
+  poolConfigId: 'info.poolConfig'
 }
 
 const MINER_PROJECTION_MAP = {
@@ -836,7 +907,8 @@ const MINER_PROJECTION_MAP = {
   type: ['type'],
   model: ['last.snap.model', 'type'],
   code: ['code'],
-  ip: ['opts.address'],
+  ip: ['address', 'last.snap.config.network_config.ip_address'],
+  subnet: ['info.subnet'],
   container: ['info.container'],
   rack: ['rack'],
   position: ['info.pos'],
@@ -844,12 +916,14 @@ const MINER_PROJECTION_MAP = {
   hashrate: ['last.snap.stats.hashrate_mhs'],
   power: ['last.snap.stats.power_w'],
   temperature: ['last.snap.stats.temperature_c'],
+  frequency: ['last.snap.stats.frequency_mhz'],
   efficiency: ['last.snap.stats.efficiency_w_ths'],
-  uptime: ['last.uptime'],
+  uptime: ['last.snap.stats.uptime_ms'],
   firmware: ['last.snap.config.firmware_ver'],
   powerMode: ['last.snap.config.power_mode'],
   ledStatus: ['last.snap.config.led_status'],
   poolConfig: ['last.snap.config.pool_config'],
+  poolConfigId: ['info.poolConfig'],
   alerts: ['last.alerts'],
   comments: ['comments'],
   serialNum: ['info.serialNum'],
@@ -859,7 +933,7 @@ const MINER_PROJECTION_MAP = {
 
 const MINER_SEARCH_FIELDS = [
   'id',
-  'opts.address',
+  'address',
   'info.serialNum',
   'info.macAddress',
   'info.container',
@@ -879,18 +953,45 @@ const MINER_DEFAULT_FIELDS = {
   'last.snap.stats': 1,
   'last.snap.config': 1,
   'last.snap.model': 1,
-  'last.uptime': 1,
   'last.ts': 1,
-  'opts.address': 1,
+  address: 1,
   ts: 1
 }
 
 const MINER_MAX_LIMIT = 200
 const MINER_DEFAULT_LIMIT = 50
 
+// Raw-doc projection for the container-scoped miners list. Matches the
+// fields the container view reads so the response stays lean.
+const CONTAINER_MINER_FIELDS = {
+  id: 1,
+  type: 1,
+  code: 1,
+  info: 1,
+  tags: 1,
+  rack: 1,
+  address: 1,
+  'opts.address': 1,
+  'last.alerts': 1,
+  'last.snap.stats.status': 1,
+  'last.snap.stats.are_all_errors_minor': 1,
+  'last.snap.stats.hashrate': 1,
+  'last.snap.stats.hashrate_mhs': 1,
+  'last.snap.stats.temperature_c': 1,
+  'last.snap.stats.frequency_mhz': 1,
+  'last.snap.stats.power_w': 1,
+  'last.snap.stats.miner_specific.power_pct': 1,
+  'last.snap.stats.miner_specific.liquid_temp': 1,
+  'last.snap.stats.uptime_ms': 1,
+  'last.snap.config.power_mode': 1,
+  'last.snap.config.led_status': 1,
+  'last.snap.config.firmware_ver': 1,
+  'last.snap.config.pool_config': 1
+}
+
 // Explorer racks aggregation fields
 const EXPLORER_RACK_AGGR_FIELDS = {
-  hashrate_mhs_5m_pdu_rack_group_avg_aggr: 1,
+  hashrate_mhs_5m_pdu_rack_group_sum_aggr: 1,
   power_w_pdu_rack_group_sum_aggr: 1,
   efficiency_w_ths_pdu_rack_group_avg_aggr: 1
 }
@@ -899,9 +1000,225 @@ const EXPLORER_RACK_DEFAULT_LIMIT = 20
 const EXPLORER_RACK_MAX_LIMIT = 100
 const MICROSOFT_AUTH_SCOPE = ['openid', 'profile', 'email', 'User.Read']
 
+const CUSTOM_ALERT_CONFIG = {
+  'custom.low_hashrate.warning': {
+    configSchema: {
+      enabled: {
+        type: 'boolean'
+      },
+      notes: {
+        type: 'string'
+      },
+      minHashRateMhs: {
+        type: 'number'
+      }
+    },
+    rackTypes: ['miner']
+  },
+  'custom.low_hashrate.critical': {
+    configSchema: {
+      enabled: {
+        type: 'boolean'
+      },
+      notes: {
+        type: 'string'
+      },
+      minHashRateMhs: {
+        type: 'number'
+      }
+    },
+    rackTypes: ['miner']
+  },
+  'custom.high_board_temp.warning': {
+    configSchema: {
+      enabled: {
+        type: 'boolean'
+      },
+      notes: {
+        type: 'string'
+      },
+      maxTempC: {
+        type: 'number'
+      }
+    },
+    rackTypes: ['miner']
+  },
+  'custom.high_board_temp.critical': {
+    configSchema: {
+      enabled: {
+        type: 'boolean'
+      },
+      notes: {
+        type: 'string'
+      },
+      maxTempC: {
+        type: 'number'
+      }
+    },
+    rackTypes: ['miner']
+  },
+  'custom.high_supply_temp.warning': {
+    configSchema: {
+      enabled: {
+        type: 'boolean'
+      },
+      notes: {
+        type: 'string'
+      },
+      maxTempC: {
+        type: 'number'
+      }
+    },
+    rackTypes: ['dcs']
+  },
+  'custom.high_supply_temp.critical': {
+    configSchema: {
+      enabled: {
+        type: 'boolean'
+      },
+      notes: {
+        type: 'string'
+      },
+      maxTempC: {
+        type: 'number'
+      }
+    },
+    rackTypes: ['dcs']
+  },
+  'custom.high_differential_pressure.warning': {
+    configSchema: {
+      enabled: {
+        type: 'boolean'
+      },
+      notes: {
+        type: 'string'
+      },
+      maxPressureBar: {
+        type: 'number'
+      }
+    },
+    rackTypes: ['dcs']
+  },
+  'custom.high_differential_pressure.critical': {
+    configSchema: {
+      enabled: {
+        type: 'boolean'
+      },
+      notes: {
+        type: 'string'
+      },
+      maxPressureBar: {
+        type: 'number'
+      }
+    },
+    rackTypes: ['dcs']
+  },
+  'custom.low_tank_level.warning': {
+    configSchema: {
+      enabled: {
+        type: 'boolean'
+      },
+      notes: {
+        type: 'string'
+      },
+      minLevelPct: {
+        type: 'number'
+      }
+    },
+    rackTypes: ['dcs']
+  },
+  'custom.low_tank_level.critical': {
+    configSchema: {
+      enabled: {
+        type: 'boolean'
+      },
+      notes: {
+        type: 'string'
+      },
+      minLevelPct: {
+        type: 'number'
+      }
+    },
+    rackTypes: ['dcs']
+  },
+  'custom.high_site_power.warning': {
+    configSchema: {
+      enabled: {
+        type: 'boolean'
+      },
+      notes: {
+        type: 'string'
+      },
+      maxSitePowerMW: {
+        type: 'number'
+      }
+    },
+    rackTypes: ['dcs']
+  },
+  'custom.high_site_power.critical': {
+    configSchema: {
+      enabled: {
+        type: 'boolean'
+      },
+      notes: {
+        type: 'string'
+      },
+      maxSitePowerMW: {
+        type: 'number'
+      }
+    },
+    rackTypes: ['dcs']
+  },
+  'custom.tower_vibration.critical': {
+    configSchema: {
+      enabled: {
+        type: 'boolean'
+      },
+      notes: {
+        type: 'string'
+      },
+      onError: {
+        type: 'boolean'
+      }
+    },
+    rackTypes: ['dcs']
+  },
+  'custom.high_site_efficiency.warning': {
+    configSchema: {
+      enabled: {
+        type: 'boolean'
+      },
+      notes: {
+        type: 'string'
+      },
+      maxSiteEfficiencyWThs: {
+        type: 'number'
+      }
+    },
+    rackTypes: []
+  },
+  'custom.high_site_efficiency.critical': {
+    configSchema: {
+      enabled: {
+        type: 'boolean'
+      },
+      notes: {
+        type: 'string'
+      },
+      maxSiteEfficiencyWThs: {
+        type: 'number'
+      }
+    },
+    rackTypes: []
+  }
+}
+
+const POOL_PROTOCOL = 'stratum+tcp'
+
 module.exports = {
   SUPER_ADMIN_ROLE,
   GLOBAL_DATA_TYPES,
+  LCOE_SOURCES,
   SUPER_ADMIN_ID,
   MIGRATED_USER_ROLES,
   COMMENT_ACTION,
@@ -963,12 +1280,15 @@ module.exports = {
   MINER_TYPE_REGEX,
   HISTORY_ALERTS_QUERY_MAP,
   DEVICE_LIST_FIELDS,
+  CONTAINER_LIST_FIELDS,
+  CABINET_DEVICE_FIELDS,
   MINER_FIELD_MAP,
   MINER_PROJECTION_MAP,
   MINER_SEARCH_FIELDS,
   MINER_DEFAULT_FIELDS,
   MINER_MAX_LIMIT,
   MINER_DEFAULT_LIMIT,
+  CONTAINER_MINER_FIELDS,
   COOLING_SYSTEM_PROJECTIONS,
   ENERGY_SYSTEM_PROJECTIONS,
   SITE_OVERVIEW_AGGR_FIELDS,
@@ -990,13 +1310,18 @@ module.exports = {
   MINER_LOCATIONS,
   MINER_ROOM_LOCATION,
   MAINTENANCE_CONTAINER,
+  IN_OPERATION_STATUS,
   SPARE_PART_INITIAL_LOCATION,
   FILE_TYPES,
+  WORK_ORDER_ACTION_WAIT_ATTEMPTS,
+  WORK_ORDER_ACTION_WAIT_MS,
   WORK_ORDER_FILE_MAX_BYTES_DEFAULT,
   WORK_ORDER_FILE_COUNT_CAP_DEFAULT,
   WORK_ORDER_FILE_MIME_ALLOWLIST_DEFAULT,
   WORK_ORDER_EXPORT_FORMATS,
   RMA_COLUMNS,
   MINER_MODEL_DISPLAY_NAMES,
-  MICROSOFT_AUTH_SCOPE
+  MICROSOFT_AUTH_SCOPE,
+  CUSTOM_ALERT_CONFIG,
+  POOL_PROTOCOL
 }

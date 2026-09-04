@@ -26,7 +26,8 @@ const {
   extractDcsThing,
   fetchDcsThing,
   extractSiteMainMeterPowerW,
-  extractMinerCoolingStatus
+  extractMinerCoolingStatus,
+  extractMinerSocketCapacity
 } = require('../../dcs.utils')
 const {
   sumTransformerPowerW,
@@ -34,6 +35,7 @@ const {
   formatDeviceAlerts,
   composeSiteStatus
 } = require('./site.utils')
+const { flattenRpcResults } = require('../../utils')
 
 // Resolves consumption by featureConfig, mirroring the header UI:
 // totalSystemConsumptionHeader (0) > totalTransformerConsumptionHeader > site meter
@@ -123,7 +125,8 @@ async function getSiteLiveStatus (ctx, req) {
     dcsEnabled
       ? { powerW: extractSiteMainMeterPowerW(dcsThing), alert: '' }
       : consumption,
-    dcsEnabled ? extractMinerCoolingStatus(dcsThing) : null
+    dcsEnabled ? extractMinerCoolingStatus(dcsThing) : null,
+    dcsEnabled ? extractMinerSocketCapacity(dcsThing) : null
   )
 }
 
@@ -150,7 +153,7 @@ function aggregateOverviewMinerStats (tailLogResults) {
     if (!entry) continue
 
     mergeGroupedField(aggregated.hashrateByGroup, entry.hashrate_mhs_5m_container_group_sum_aggr)
-    mergeGroupedField(aggregated.hashrateByRack, entry.hashrate_mhs_5m_pdu_rack_group_avg_aggr)
+    mergeGroupedField(aggregated.hashrateByRack, entry.hashrate_mhs_5m_pdu_rack_group_sum_aggr)
     mergeGroupedField(aggregated.powerByGroup, entry.power_w_container_group_sum_aggr)
     mergeGroupedField(aggregated.powerByRack, entry.power_w_pdu_rack_group_sum_aggr)
     mergeGroupedField(aggregated.efficiencyByGroup, entry.efficiency_w_ths_container_group_avg_aggr, true)
@@ -483,8 +486,72 @@ async function getSiteEfficiency (ctx, req) {
   return composeSiteEfficiency(minerStats, dcsThing)
 }
 
+const CONTAINER_RUNNING_STATUS = 'running'
+const UNIT_STATUSES = { MINING: 'mining', OFFLINE: 'offline' }
+
+async function getSiteOverviewUnits (ctx, req) {
+  const { getMinersByContainer } = require('./metrics.handlers')
+  const { getPoolStatsContainers } = require('./pools.handlers')
+
+  const [containerResults, byContainer, poolStats] = await Promise.all([
+    ctx.dataProxy.requestDataAllPages('listThings', {
+      query: { tags: { $in: [WORKER_TAGS.CONTAINER] } },
+      status: 1,
+      fields: {
+        id: 1,
+        type: 1,
+        info: 1,
+        'last.snap.stats.status': 1,
+        'last.snap.stats.power_w': 1
+      }
+    }),
+    getMinersByContainer(ctx, req),
+    getPoolStatsContainers(ctx, req).catch(() => [])
+  ])
+
+  const poolStatsByContainer = {}
+  for (const stat of poolStats || []) {
+    if (stat?.container) poolStatsByContainer[stat.container] = stat
+  }
+
+  const units = flattenRpcResults(containerResults)
+    .map(container => {
+      const name = container.info?.container
+      const entry = (byContainer.containers || {})[name]
+      const capacity = Number(container.info?.nominalMinerCapacity) || 0
+      const connected = entry ? entry.minerCount : 0
+      const containerStatus = container.last?.snap?.stats?.status ?? null
+
+      return {
+        id: container.id,
+        type: container.type,
+        info: container.info,
+        containerStatus,
+        status: containerStatus === CONTAINER_RUNNING_STATUS
+          ? UNIT_STATUSES.MINING
+          : UNIT_STATUSES.OFFLINE,
+        powerW: container.last?.snap?.stats?.power_w ?? null,
+        miners: {
+          total: capacity,
+          connected,
+          disconnected: Math.max(0, capacity - connected),
+          actualMiners: Math.min(capacity, connected),
+          online: entry ? entry.onlineCount : 0,
+          offline: entry ? entry.offlineCount : 0
+        },
+        hashrateMhs: entry ? entry.hashrateMhs : 0,
+        poolStats: (name && poolStatsByContainer[name]) || null
+      }
+    })
+    .sort((a, b) => String(a.info?.container || '').localeCompare(String(b.info?.container || '')))
+
+  return { units }
+}
+
 module.exports = {
   getSiteLiveStatus,
   getSiteOverviewGroupsStats,
-  getSiteEfficiency
+  getSiteOverviewUnits,
+  getSiteEfficiency,
+  getSiteConsumption
 }

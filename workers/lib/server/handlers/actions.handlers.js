@@ -1,7 +1,8 @@
 'use strict'
 
 const { parseJsonQueryParam } = require('../../utils')
-const { ACTIONS_MAX_QUERIES } = require('../../constants')
+const { ACTIONS_MAX_QUERIES, POOL_PROTOCOL } = require('../../constants')
+const { detectPayloadFormat, peekFirstChunk, prependChunk } = require('../lib/payloadFormat')
 
 async function queryActionsBatch (ctx, req) {
   const payload = {
@@ -77,6 +78,64 @@ async function pushActionsBatch (ctx, req, rep) {
   })
 }
 
+const transformPushActionPayload = async (ctx, payload) => {
+  switch (payload.action) {
+    case 'registerConfig':
+    case 'updateConfig': {
+      if (!payload || !Array.isArray(payload.params)) {
+        throw new Error('ERR_INVALID_PAYLOAD')
+      }
+
+      const [poolConfig] = payload.params
+      if (!poolConfig) return payload
+
+      const { poolUrls } = poolConfig.data ?? {}
+      if (!poolUrls || !Array.isArray(poolUrls)) throw new Error('ERR_INVALID_POOL_URLS')
+      delete poolConfig.data.poolUrls
+
+      const result = []
+      for (const poolUrlSetting of poolUrls) {
+        const {
+          poolUrlId, workerName, workerPassword
+        } = poolUrlSetting
+
+        if (!poolUrlId) {
+          throw new Error('ERR_INVALID_POOL_URL_ID_MISSING')
+        }
+
+        let approvedPoolUrls = []
+        const orkGlobalConfigResults = await ctx.dataProxy.requestDataMap('getGlobalConfig', {})
+        for (const orkResult of orkGlobalConfigResults) {
+          if (!orkResult || typeof orkResult !== 'object') continue
+          if (orkResult.approvedPoolUrls) {
+            approvedPoolUrls = orkResult.approvedPoolUrls
+          }
+        }
+
+        const poolUrl = approvedPoolUrls.find(config => config.id === poolUrlId)
+        if (!poolUrl) {
+          throw new Error('ERR_INVALID_POOL_URL_ID_INVALID')
+        }
+
+        const { host, port, name } = poolUrl
+        result.push({
+          poolUrlId,
+          url: host?.startsWith(POOL_PROTOCOL) ? `${host}:${port}` : `${POOL_PROTOCOL}://${host}:${port}`,
+          workerName,
+          workerPassword,
+          pool: name
+        })
+      }
+
+      poolConfig.data.poolUrls = result
+      return payload
+    }
+
+    default:
+      return payload
+  }
+}
+
 async function pushAction (ctx, req) {
   const { write, permissions } = await ctx.authLib.getTokenPerms(req._info.authToken)
   if (!write) {
@@ -91,7 +150,9 @@ async function pushAction (ctx, req) {
     authPerms: permissions
   }
 
-  return await ctx.dataProxy.requestData('pushAction', payload, (res, resultsArray) => {
+  const transformedPayload = await transformPushActionPayload(ctx, structuredClone(payload))
+
+  return await ctx.dataProxy.requestData('pushAction', transformedPayload, (res, resultsArray) => {
     if (res.error) {
       resultsArray.push({ id: null, errors: [res.error] })
     } else {
@@ -142,9 +203,11 @@ async function cancelActionsBatch (ctx, req) {
   })
 }
 
+// The ork action record has no `voter` field — the submitter is the first
+// (initiating) vote in `votesPos` (see svc-facs-action-approver pushAction)
 function assertLogDownloadOwner (action, req) {
   const email = req._info?.user?.metadata?.email
-  if (!email || !action.voter || action.voter !== email) {
+  if (!email || action.votesPos?.[0] !== email) {
     return false
   }
   return true
@@ -206,18 +269,32 @@ async function downloadLogFile (ctx, req, reply) {
     return reply.code(code).send({ error: err.message })
   }
 
+  // The miner decides the payload format — plain text on some models, a gzipped tar of the log
+  // directory on Whatsminers — and the action result carries no format field. Read the leading
+  // bytes so the declared name and type match the payload, then re-emit them ahead of the rest.
+  let head = null
+  try {
+    head = await peekFirstChunk(stream)
+  } catch (err) {
+    stream.destroy()
+    return reply.code(500).send({ error: err.message })
+  }
+
+  const body = prependChunk(stream, head)
+  const { extension, contentType } = detectPayloadFormat(head)
+
   // Set headers only after stream is ready — if set before the try-catch and stream()
-  // throws, the error response would carry application/octet-stream content-type and
-  // Fastify would refuse to serialize the JSON error object.
+  // throws, the error response would carry a binary content-type and Fastify would refuse
+  // to serialize the JSON error object.
   const { safeContentDispositionFilename } = require('../lib/queryUtils')
-  const filename = safeContentDispositionFilename(`miner-log-${meta.minerId || 'unknown'}-${id}.log`)
-  reply.header('Content-Type', 'application/octet-stream')
+  const filename = safeContentDispositionFilename(`miner-log-${meta.minerId || 'unknown'}-${id}.${extension}`)
+  reply.header('Content-Type', contentType)
   reply.header('Content-Disposition', `attachment; filename="${filename}"`)
   reply.header('Content-Length', meta.byteLength)
   reply.header('Cache-Control', 'no-store')
 
   // Fastify pipes a Readable stream directly to the HTTP response — no buffering
-  return reply.send(stream)
+  return reply.send(body)
 }
 
 module.exports = {

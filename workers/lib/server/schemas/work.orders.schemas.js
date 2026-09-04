@@ -36,7 +36,8 @@ const create = {
           deviceStatus: { type: 'string', maxLength: 100 },
           pos: { type: 'string', maxLength: 200 },
           container: { type: 'string', maxLength: 200 },
-          subnet: { type: 'string', maxLength: 200 }
+          subnet: { type: 'string', maxLength: 200 },
+          replacementIdentifier: { type: 'string', minLength: 1, maxLength: 200 }
         }
       }
     },
@@ -67,7 +68,8 @@ const createBatch = {
             deviceIdentifier: { type: 'string', minLength: 1, maxLength: 200 },
             pos: { type: 'string', maxLength: 200 },
             container: { type: 'string', maxLength: 200 },
-            subnet: { type: 'string', maxLength: 200 }
+            subnet: { type: 'string', maxLength: 200 },
+            replacementIdentifier: { type: 'string', minLength: 1, maxLength: 200 }
           }
         }
       },
@@ -146,6 +148,7 @@ const update = {
           remarks: { type: 'string', maxLength: 4000 },
           site: { type: 'string', maxLength: 200 },
           location: { type: 'string', maxLength: 200 },
+          deviceStatus: { type: 'string', maxLength: 100 },
           partsMoves: {
             type: 'array',
             items: {
@@ -246,15 +249,21 @@ const exportRoute = {
   }
 }
 
-const exportRma = {
-  querystring: {
-    type: 'object',
-    required: ['ids'],
-    additionalProperties: false,
-    properties: {
-      ids: { type: 'string', minLength: 1, maxLength: 4000 }
-    }
+const idsQuerystring = (maxLength) => ({
+  type: 'object',
+  required: ['ids'],
+  additionalProperties: false,
+  properties: {
+    ids: { type: 'string', minLength: 1, maxLength }
   }
+})
+
+const exportRma = {
+  querystring: idsQuerystring(4000)
 }
 
-module.exports = { create, createBatch, list, byId, update, close, cancel, reopen, assign, audit, log, export: exportRoute, exportRma }
+const exportBulk = {
+  querystring: idsQuerystring(8000)
+}
+
+module.exports = { create, createBatch, list, byId, update, close, cancel, reopen, assign, audit, log, export: exportRoute, exportRma, exportBulk }

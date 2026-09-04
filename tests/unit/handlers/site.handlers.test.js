@@ -1,7 +1,7 @@
 'use strict'
 
 const test = require('brittle')
-const { getSiteLiveStatus, getSiteOverviewGroupsStats, getSiteEfficiency } = require('../../../workers/lib/server/handlers/site.handlers')
+const { getSiteLiveStatus, getSiteOverviewGroupsStats, getSiteOverviewUnits, getSiteEfficiency } = require('../../../workers/lib/server/handlers/site.handlers')
 const { withDataProxy } = require('../helpers/mockHelpers')
 
 function createMockCtx (tailLogMultiResponse, extDataResponse, globalConfigResponse, listThingsResponse = [], featureConfig = {}) {
@@ -198,6 +198,57 @@ test('getSiteLiveStatus - does not expose a derived sleep field', async (t) => {
   t.is(result.miners.offline, 10, 'offline should match (includes sleeping)')
   t.is(result.miners.sleep, undefined, 'sleep should not be present (UI has no sleep concept)')
   t.is(result.miners.total, 100, 'total should match')
+  t.pass()
+})
+
+test('getSiteLiveStatus - counts error_miners_amount_aggr in the error bucket', async (t) => {
+  // The moria miner template emits error_miners_cnt (-> error_miners_amount_aggr) and
+  // has no not_mining status at all. Reading only not_mining dropped every errored
+  // miner from the site totals, so a miner hashing with errors vanished from the header.
+  const tailLogMultiResponse = [
+    [{
+      online_or_minor_error_miners_amount_aggr: 1279,
+      error_miners_amount_aggr: 1,
+      offline_or_sleeping_miners_amount_aggr: 0,
+      hashrate_mhs_1m_cnt_aggr: 1280
+    }],
+    [{}],
+    [{}]
+  ]
+
+  const ctx = createMockCtx(tailLogMultiResponse, [], {})
+  const req = { query: {} }
+
+  const result = await getSiteLiveStatus(ctx, req)
+
+  t.is(result.miners.error, 1, 'errored miner should be counted, not dropped')
+  t.is(
+    result.miners.online + result.miners.error + result.miners.offline,
+    1280,
+    'buckets should account for every miner'
+  )
+  t.pass()
+})
+
+test('getSiteLiveStatus - error bucket sums both error and not_mining aggregates', async (t) => {
+  const tailLogMultiResponse = [
+    [{
+      online_or_minor_error_miners_amount_aggr: 80,
+      error_miners_amount_aggr: 3,
+      not_mining_miners_amount_aggr: 5,
+      offline_or_sleeping_miners_amount_aggr: 10,
+      hashrate_mhs_1m_cnt_aggr: 98
+    }],
+    [{}],
+    [{}]
+  ]
+
+  const ctx = createMockCtx(tailLogMultiResponse, [], {})
+  const req = { query: {} }
+
+  const result = await getSiteLiveStatus(ctx, req)
+
+  t.is(result.miners.error, 8, 'error should sum the error and not_mining aggregates')
   t.pass()
 })
 
@@ -457,6 +508,81 @@ test('getSiteLiveStatus - no cooling status outside central DCS setups', async (
   t.pass()
 })
 
+function createDcsThingWithMiningConfig (mining) {
+  return [
+    {
+      id: 'dcs-1',
+      type: 'dcs-central',
+      tags: ['t-dcs'],
+      last: { snap: { config: { mining }, stats: { dcs_specific: {} } } }
+    }
+  ]
+}
+
+test('getSiteLiveStatus - central DCS derives container capacity from the mining config', async (t) => {
+  const tailLogMultiResponse = [[{ hashrate_mhs_1m_cnt_aggr: 1277 }], [{}], [{}]]
+
+  const listThingsResponse = createDcsThingWithMiningConfig({
+    total_groups: 16,
+    racks_per_group: 4,
+    miners_per_rack: 20
+  })
+
+  const ctx = createMockCtx(tailLogMultiResponse, [], {}, listThingsResponse, { centralDCSSetup: { enabled: true, tag: 't-dcs' } })
+
+  const result = await getSiteLiveStatus(ctx, { query: {} })
+
+  t.is(result.miners.containerCapacity, 1280, 'capacity should be groups x racks x miners per rack')
+  t.is(result.miners.total, 1277, 'miner total should stay on the existing counting rules')
+  t.pass()
+})
+
+test('getSiteLiveStatus - central DCS capacity is null when the mining config is incomplete', async (t) => {
+  const tailLogMultiResponse = [[{}], [{}], []]
+
+  const listThingsResponse = createDcsThingWithMiningConfig({ total_groups: 16 })
+
+  const ctx = createMockCtx(tailLogMultiResponse, [], {}, listThingsResponse, { centralDCSSetup: { enabled: true, tag: 't-dcs' } })
+
+  const result = await getSiteLiveStatus(ctx, { query: {} })
+
+  t.is(result.miners.containerCapacity, null, 'a partial mining config should not produce a capacity')
+  t.pass()
+})
+
+test('getSiteLiveStatus - central DCS capacity is null when the DCS thing is missing', async (t) => {
+  const tailLogMultiResponse = [[{}], [{}], []]
+
+  const ctx = createMockCtx(tailLogMultiResponse, [], {}, [], { centralDCSSetup: { enabled: true, tag: 't-dcs' } })
+
+  const result = await getSiteLiveStatus(ctx, { query: {} })
+
+  t.is(result.miners.containerCapacity, null, 'no DCS thing should map to unknown capacity, not 0')
+  t.pass()
+})
+
+test('getSiteLiveStatus - container capacity is null when no container thing reports one', async (t) => {
+  const tailLogMultiResponse = [[{ hashrate_mhs_1m_cnt_aggr: 100 }], [{}], []]
+
+  const ctx = createMockCtx(tailLogMultiResponse, [], {})
+
+  const result = await getSiteLiveStatus(ctx, { query: {} })
+
+  t.is(result.miners.containerCapacity, null, 'missing capacity data should not be presented as 0')
+  t.pass()
+})
+
+test('getSiteLiveStatus - container capacity of 0 is kept when containers report it', async (t) => {
+  const tailLogMultiResponse = [[{}], [{}], [{ container_nominal_miner_capacity_sum_aggr: 0 }]]
+
+  const ctx = createMockCtx(tailLogMultiResponse, [], {})
+
+  const result = await getSiteLiveStatus(ctx, { query: {} })
+
+  t.is(result.miners.containerCapacity, 0, 'a reported zero is real data and should pass through')
+  t.pass()
+})
+
 test('getSiteLiveStatus - central DCS takes precedence over other consumption branches', async (t) => {
   const tailLogMultiResponse = [[{}], [{}], [{}]]
 
@@ -598,7 +724,7 @@ test('getSiteOverviewGroupsStats - returns groups with correct structure', async
   const tailLogResponse = [
     [{
       hashrate_mhs_5m_container_group_sum_aggr: { 'group-1': 100000000, 'group-2': 200000000 },
-      hashrate_mhs_5m_pdu_rack_group_avg_aggr: { 'group-1_rack-1': 50000000, 'group-1_rack-2': 50000000 },
+      hashrate_mhs_5m_pdu_rack_group_sum_aggr: { 'group-1_rack-1': 50000000, 'group-1_rack-2': 50000000 },
       power_w_container_group_sum_aggr: { 'group-1': 50000, 'group-2': 100000 },
       power_w_pdu_rack_group_sum_aggr: { 'group-1_rack-1': 25000, 'group-1_rack-2': 25000 },
       offline_cnt: { 'group-1': 2, 'group-2': 1 },
@@ -708,7 +834,7 @@ test('getSiteOverviewGroupsStats - builds racks for groups', async (t) => {
   const tailLogResponse = [
     [{
       hashrate_mhs_5m_container_group_sum_aggr: { 'group-1': 100000000 },
-      hashrate_mhs_5m_pdu_rack_group_avg_aggr: {
+      hashrate_mhs_5m_pdu_rack_group_sum_aggr: {
         'group-1_rack-1': 30000000,
         'group-1_rack-2': 40000000,
         'group-1_rack-3': 30000000
@@ -1128,5 +1254,111 @@ test('getSiteEfficiency - handles efficiency per meter correctly', async (t) => 
   t.is(meter.feeds, 'Groups 1-2', 'feeds should match')
   t.is(meter.efficiency.value, 20, 'efficiency should be 20 W/TH')
   t.is(meter.miners, 160, 'miners should be 2 groups * 4 racks * 20 miners = 160')
+  t.pass()
+})
+
+// ==================== Site Overview Units Tests ====================
+
+function createUnitsCtx ({ containers = [], byContainerEntry = null, poolStats = [] } = {}) {
+  return withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: {
+      jRequest: async (key, method, payload) => {
+        if (method === 'listThings' && payload.fields && payload.fields['last.snap.stats.status']) {
+          return containers
+        }
+        if (method === 'listThings') {
+          return poolStats
+        }
+        if (method === 'tailLogMulti') {
+          return byContainerEntry ? [[byContainerEntry]] : [[]]
+        }
+        return []
+      }
+    }
+  })
+}
+
+test('getSiteOverviewUnits - merges containers with miner counts, hashrate and pool stats', async (t) => {
+  const mockCtx = createUnitsCtx({
+    containers: [
+      {
+        id: 'thing-c1',
+        type: 'antbox-hydro',
+        info: { container: 'c1', nominalMinerCapacity: 100, poolConfig: 'pool-a' },
+        last: { snap: { stats: { status: 'running', power_w: 500000 } } }
+      },
+      {
+        id: 'thing-c2',
+        type: 'bitdeer-d40',
+        info: { container: 'c2', nominalMinerCapacity: 50 },
+        last: { snap: { stats: { status: 'stopped' } } }
+      }
+    ],
+    byContainerEntry: {
+      hashrate_mhs_5m_container_group_sum_aggr: { c1: 9000 },
+      hashrate_mhs_5m_active_container_group_cnt: { c1: 80 },
+      offline_cnt: { c1: 5 },
+      error_cnt: { c1: 3 },
+      not_mining_cnt: { c1: 2 },
+      power_mode_sleep_cnt: { c1: 0 },
+      power_mode_low_cnt: { c1: 10 },
+      power_mode_normal_cnt: { c1: 70 },
+      power_mode_high_cnt: { c1: 0 }
+    }
+  })
+
+  const result = await getSiteOverviewUnits(mockCtx, { query: {} })
+  t.is(result.units.length, 2, 'should return every container')
+
+  const c1 = result.units[0]
+  t.is(c1.info.container, 'c1', 'should sort by container name')
+  t.is(c1.status, 'mining', 'running containers report mining')
+  t.is(c1.containerStatus, 'running', 'raw status preserved')
+  t.is(c1.powerW, 500000)
+  t.is(c1.miners.connected, 90, 'connected = sum of by-container counts')
+  t.is(c1.miners.disconnected, 10, 'disconnected = capacity minus connected')
+  t.is(c1.miners.actualMiners, 90)
+  t.is(c1.miners.online, 80)
+  t.is(c1.hashrateMhs, 9000)
+
+  const c2 = result.units[1]
+  t.is(c2.status, 'offline', 'non-running containers report offline')
+  t.is(c2.miners.connected, 0, 'containers without stats have zero miners')
+  t.is(c2.miners.disconnected, 50)
+  t.is(c2.hashrateMhs, 0)
+  t.pass()
+})
+
+test('getSiteOverviewUnits - clamps over-filled containers', async (t) => {
+  const mockCtx = createUnitsCtx({
+    containers: [{
+      id: 'thing-c1',
+      type: 'antbox',
+      info: { container: 'c1', nominalMinerCapacity: 10 },
+      last: { snap: { stats: { status: 'running' } } }
+    }],
+    byContainerEntry: {
+      offline_cnt: { c1: 0 },
+      error_cnt: { c1: 0 },
+      not_mining_cnt: { c1: 0 },
+      power_mode_sleep_cnt: { c1: 0 },
+      power_mode_low_cnt: { c1: 0 },
+      power_mode_normal_cnt: { c1: 15 },
+      power_mode_high_cnt: { c1: 0 }
+    }
+  })
+
+  const result = await getSiteOverviewUnits(mockCtx, { query: {} })
+  const unit = result.units[0]
+  t.is(unit.miners.disconnected, 0, 'disconnected clamps at zero')
+  t.is(unit.miners.actualMiners, 10, 'actual miners cap at capacity')
+  t.pass()
+})
+
+test('getSiteOverviewUnits - empty site', async (t) => {
+  const mockCtx = createUnitsCtx()
+  const result = await getSiteOverviewUnits(mockCtx, { query: {} })
+  t.alike(result.units, [], 'should return empty units')
   t.pass()
 })

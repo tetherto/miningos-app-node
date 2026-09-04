@@ -21,11 +21,15 @@
       "explorer:rw",
       "inventory:rw",
       "reporting:rw",
-      "forecast:rw",
+      "forecast_summary:rw",
+      "forecast_overview:rw",
+      "forecast_settings:rw",
       "settings:rw",
       "ticket:rw",
       "pool_config:rw",
       "pool_config_approve:rw",
+      "alert_config:rw",
+      "alert_config_sensitive:rw",
       "work_order:rw"
     ],
     "roles": {
@@ -48,11 +52,15 @@
         "explorer:rw",
         "inventory:rw",
         "reporting:rw",
-        "forecast:rw",
+        "forecast_summary:rw",
+        "forecast_overview:rw",
+        "forecast_settings:rw",
         "settings:rw",
         "ticket:rw",
         "pool_config:rw",
         "pool_config_approve:rw",
+        "alert_config:rw",
+        "alert_config_sensitive:rw",
         "work_order:rw"
       ],
       "admin_external": [
@@ -74,17 +82,23 @@
         "explorer:r",
         "inventory:r",
         "reporting:r",
-        "forecast:r",
+        "forecast_summary:r",
+        "forecast_overview:r",
+        "forecast_settings:r",
         "settings:r",
         "ticket:r",
         "pool_config:r",
+        "alert_config:rw",
+        "alert_config_sensitive:rw",
         "work_order:r"
-      ],      
+      ],
       "reporting_tool_manager": [
         "revenue:rw",
         "production:rw",
         "reporting:rw",
-        "forecast:rw",
+        "forecast_summary:rw",
+        "forecast_overview:rw",
+        "forecast_settings:rw",
         "settings:r",
         "revenue:r"
       ],
@@ -107,10 +121,14 @@
         "explorer:rw",
         "inventory:rw",
         "reporting:rw",
-        "forecast:rw",
+        "forecast_summary:rw",
+        "forecast_overview:rw",
+        "forecast_settings:rw",
         "settings:rw",
         "ticket:rw",
         "work_order:rw",
+        "alert_config:rw",
+        "alert_config_sensitive:r",
         "pool_config:r"
       ],
       "site_operator": [
@@ -128,7 +146,8 @@
         "settings:rw",
         "ticket:rw",
         "alerts:rw",
-        "work_order:rw"
+        "work_order:rw",
+        "forecast_summary:r"
       ],
       "field_operator": [
         "miner:r",
