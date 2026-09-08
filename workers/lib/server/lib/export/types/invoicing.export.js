@@ -86,12 +86,16 @@ function buildHashesEntry ({ type, interval, seconds, filenamePrefix, periodColu
       async function * rows () {
         for (const entry of log) {
           const hashrateMhs = num(entry.hashrateMhs)
+          const poolHashrateMhs = num(entry.poolHashrateMhs)
           yield roundRow({
-            ...mapPeriod(entry.ts, timezone),
-            hashesDeliveredEh: derive([hashrateMhs], (mhs) => (mhs * seconds) / 1e12),
+            // Buckets are UTC-aligned and pools credit hashes per UTC day, so period
+            // labels stay UTC regardless of the caller's display timezone.
+            ...mapPeriod(entry.ts, 'UTC'),
+            // Delivered hashes bill against what the pool credited, not miner telemetry
+            hashesDeliveredEh: derive([poolHashrateMhs], (mhs) => (mhs * seconds) / 1e12),
             pctOfNominal: num(entry.pctOfNominal),
             avgMinerHashratePhs: derive([hashrateMhs], (mhs) => mhs / 1e9),
-            avgPoolHashratePhs: derive([num(entry.poolHashrateMhs)], (mhs) => mhs / 1e9)
+            avgPoolHashratePhs: derive([poolHashrateMhs], (mhs) => mhs / 1e9)
           })
         }
       }
