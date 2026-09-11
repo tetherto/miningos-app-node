@@ -11,6 +11,19 @@ const schemas = {
       },
       required: ['data']
     },
+    availableEnergyHistory: {
+      type: 'object',
+      properties: {
+        start: { type: 'integer', minimum: 0 },
+        end: { type: 'integer', minimum: 0 },
+        available: { type: 'boolean' }
+      },
+      required: [
+        'start',
+        'end',
+        'available'
+      ]
+    },
     forecastSettings: {
       type: 'object',
       properties: {

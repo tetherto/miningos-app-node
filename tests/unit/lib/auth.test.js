@@ -1,8 +1,14 @@
 'use strict'
 
+const fs = require('fs')
+const path = require('path')
 const test = require('brittle')
 const AuthLib = require('../../../workers/lib/auth')
 const { MIGRATED_USER_ROLES } = require('../../../workers/lib/constants')
+
+const AUTH_CONFIG = JSON.parse(
+  fs.readFileSync(path.join(__dirname, '../../../config/facs/auth.config.json.example'), 'utf8')
+)
 
 test('AuthLib - constructor', (t) => {
   const mockHttpc = {}
@@ -377,7 +383,7 @@ test('AuthLib - tokenHasPerms auto-qualifies bare perm names', async (t) => {
 })
 
 test('AuthLib - admin_external role can read the users list (users:r, write=false)', async (t) => {
-  const { a0: { roles } } = require('../../../config/facs/auth.config.json')
+  const { a0: { roles } } = AUTH_CONFIG
 
   const mockAuth = {
     getTokenPerms: function () {
@@ -401,7 +407,7 @@ test('AuthLib - admin_external role can read the users list (users:r, write=fals
 })
 
 test('AuthLib - admin_external role is denied write-gated users check (users:r, write=true)', async (t) => {
-  const { a0: { roles } } = require('../../../config/facs/auth.config.json')
+  const { a0: { roles } } = AUTH_CONFIG
 
   const mockAuth = {
     getTokenPerms: function () {
@@ -425,7 +431,7 @@ test('AuthLib - admin_external role is denied write-gated users check (users:r, 
 })
 
 test('AuthLib - roles without the users capability cannot read the users list', async (t) => {
-  const { a0: { roles } } = require('../../../config/facs/auth.config.json')
+  const { a0: { roles } } = AUTH_CONFIG
 
   const hasUsersRead = (perms) => perms.some(p => p === 'users:r' || p === 'users:rw')
   const rolesWithoutUsers = Object.keys(roles).filter(name => !hasUsersRead(roles[name]))
@@ -675,7 +681,7 @@ test('AuthLib - _resolveOAuthMicrosoft throws when graph request fails', async (
 })
 
 test('AuthLib - site_operator reads the forecast summary but not overview or settings', async (t) => {
-  const { a0 } = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '../../../config/facs/auth.config.json.example')))
+  const { a0 } = AUTH_CONFIG
   const authLib = new AuthLib({
     httpc: {},
     httpd: {},

@@ -242,6 +242,8 @@ test('constants - ENDPOINTS', (t) => {
   t.is(ENDPOINTS.TAIL_LOG, '/auth/tail-log', 'should have tail-log endpoint')
   t.is(ENDPOINTS.LIST_THINGS, '/auth/list-things', 'should have list-things endpoint')
   t.is(ENDPOINTS.WEBSOCKET, '/ws', 'should have websocket endpoint')
+  t.is(ENDPOINTS.ENERGY_FORECAST_OVERRIDE_HISTORY, '/auth/energy/forecast/override-history', 'should have forecast override history endpoint')
+  t.is(ENDPOINTS.ENERGY_AVAILABLE_HISTORY, '/auth/energy/available-history', 'should have available energy history endpoint')
   t.ok(Object.keys(ENDPOINTS).length >= 20, 'should have multiple endpoints')
   t.pass()
 })

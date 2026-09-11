@@ -227,7 +227,9 @@ const ENDPOINTS = {
   ENERGY_FORECAST_HISTORY: '/auth/energy/forecast/history',
   ENERGY_FORECAST_SETTINGS: '/auth/energy/forecast/settings',
   ENERGY_FORECAST_OVERRIDE: '/auth/energy/forecast/override',
+  ENERGY_FORECAST_OVERRIDE_HISTORY: '/auth/energy/forecast/override-history',
   ENERGY_AVAILABLE: '/auth/energy/available',
+  ENERGY_AVAILABLE_HISTORY: '/auth/energy/available-history',
   // Work Order endpoints
   WORK_ORDERS: '/auth/work-orders',
   WORK_ORDERS_BATCH: '/auth/work-orders/batch',
@@ -778,7 +780,9 @@ const ELECTRICITY_EXT_DATA_KEYS = {
   FORECAST_SETTINGS: 'forecastSettings',
   FORECAST_HISTORY: 'forecastHistory',
   AVAIL_ENERGY: 'availableEnergy',
-  FORECAST_OVERRIDE: 'forecastOverride'
+  AVAIL_ENERGY_HISTORY: 'availableEnergyHistory',
+  FORECAST_OVERRIDE: 'forecastOverride',
+  FORECAST_OVERRIDE_HISTORY: 'forecastOverrideHistory'
 }
 
 const NON_METRIC_KEYS = [

@@ -1,8 +1,14 @@
 'use strict'
 
+const fs = require('fs')
+const path = require('path')
 const test = require('brittle')
 const { testModuleStructure, testHandlerFunctions, testOnRequestFunctions } = require('../helpers/routeTestHelpers')
 const { createRoutesForTest } = require('../helpers/mockHelpers')
+
+const AUTH_CONFIG = JSON.parse(
+  fs.readFileSync(path.join(__dirname, '../../../config/facs/auth.config.json.example'), 'utf8')
+)
 
 test('users routes - module structure', (t) => {
   testModuleStructure(t, '../../../workers/lib/server/routes/users.routes.js', 'users')
@@ -72,7 +78,7 @@ test('users routes - handler functions', (t) => {
 
 test('users routes - GET /auth/users allows admin_external to read the users list', async (t) => {
   const AuthLib = require('../../../workers/lib/auth')
-  const { a0: { roles, roleManagement } } = require('../../../config/facs/auth.config.json')
+  const { a0: { roles, roleManagement } } = AUTH_CONFIG
   const usersRoutesFactory = require('../../../workers/lib/server/routes/users.routes.js')
 
   const mockAuthFacility = {
@@ -133,7 +139,7 @@ test('users routes - GET /auth/users allows admin_external to read the users lis
 
 test('users routes - GET /auth/users denies roles without the users capability', async (t) => {
   const AuthLib = require('../../../workers/lib/auth')
-  const { a0: { roles } } = require('../../../config/facs/auth.config.json')
+  const { a0: { roles } } = AUTH_CONFIG
   const usersRoutesFactory = require('../../../workers/lib/server/routes/users.routes.js')
 
   const mockAuthFacility = {
