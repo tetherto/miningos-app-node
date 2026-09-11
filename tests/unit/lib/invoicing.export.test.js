@@ -235,12 +235,14 @@ test('rollupLocalDays - a non-finite miner value is left out of the day mean, no
   ], 'UTC')
 
   t.is(day.hashrateMhs, 200, 'mean of the two finite miner samples')
+  t.is(day.pctOfNominal, 100, 'miner-based, like every other bucket')
   t.is(day.poolHashrateMhs, 150)
-  t.is(day.pctOfNominal, 75, 'summed pool over summed nominal of the hours carrying both')
+  t.is(day.poolPctOfNominal, 75, 'summed pool over summed nominal of the hours carrying both')
   t.is(day.poolSeconds, 7200)
+  t.is(day.ts, START, 'a local day starts at its own midnight')
 
   const [empty] = rollupLocalDays([{ ts: START, hashrateMhs: null, nominalHashrateMhs: 0, poolHashrateMhs: null }], 'UTC')
   t.is(empty.hashrateMhs, null, 'no finite miner sample is null, not NaN')
-  t.is(empty.pctOfNominal, null)
+  t.is(empty.poolPctOfNominal, null)
   t.pass()
 })

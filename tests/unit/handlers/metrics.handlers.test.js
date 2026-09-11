@@ -4502,3 +4502,99 @@ test('buildHourlyDowntime + aggregateDowntimeDaily - numeric ts entries fall bac
     'daily bucket always carries a timeRange')
   t.pass()
 })
+
+const TZ_HOUR_MS = 3600000
+const TZ_START = Date.UTC(2026, 7, 1)
+
+// 48 hourly buckets from Aug 1 00:00 UTC, 10 MW of site power, 100 PH/s miner,
+// 125 PH/s nominal and a 99 PH/s pool sample per hour.
+function localDaysCtx (capture) {
+  return withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: {
+      jRequest: async (key, method, payload) => {
+        if (method === 'getWrkExtData') {
+          return Array.from({ length: 48 }, (_, i) => ({
+            ts: TZ_START + i * TZ_HOUR_MS + 1000,
+            stats: [{ poolType: 'f2pool', username: 'account-a', hashrate: 9.9e16 }]
+          }))
+        }
+        capture.payload = payload
+        return Array.from({ length: 48 }, (_, i) => ({
+          ts: TZ_START + i * TZ_HOUR_MS,
+          ...(payload.type === 'powermeter'
+            ? { site_power_w: 10e6 }
+            : { hashrate_mhs_5m_sum_aggr: 1e11, nominal_hashrate_mhs_sum_aggr: 1.25e11 })
+        }))
+      }
+    }
+  })
+}
+
+test('getHashrate - a timezone turns daily buckets into that zone calendar days built from hourly ones', async (t) => {
+  const capture = {}
+  const result = await getHashrate(localDaysCtx(capture), {
+    query: { start: TZ_START, end: TZ_START + 48 * TZ_HOUR_MS, interval: '1d', timezone: 'America/Sao_Paulo', nominal: true, pool: true }
+  })
+
+  t.is(capture.payload.key, 'stat-30m', 'local days are built from the hourly stat log')
+  t.is(capture.payload.groupRange, '1H')
+  t.is(result.log.length, 3, 'a UTC-aligned 2-day range spans 3 Sao Paulo days')
+  t.is(result.totalCount, 3)
+
+  const [jul31, aug1, aug2] = result.log
+  t.is(jul31.hours, 3, 'the 3 hours before Aug 1 00:00 UTC are still July 31 locally')
+  t.is(aug1.ts, Date.UTC(2026, 7, 1, 3), 'a local day starts at its own midnight, 03:00 UTC')
+  t.alike(aug1.timeRange, { startTs: Date.UTC(2026, 7, 1, 3), endTs: Date.UTC(2026, 7, 2, 3) - 1 })
+  t.is(aug1.hours, 24)
+  t.is(aug2.hours, 21)
+  t.is(aug1.hashrateMhs, 1e11)
+  t.is(aug1.nominalHashrateMhs, 1.25e11)
+  t.is(aug1.pctOfNominal, 80, 'miner-based, like every other bucket')
+  t.is(aug1.poolHashrateMhs, 9.9e10)
+  t.is(aug1.poolPctOfNominal, 79.2, 'pool-based share for the financial reports')
+  t.is(aug1.poolSeconds, 24 * 3600)
+  t.is(result.summary.avgPoolHashrateMhs, 9.9e10)
+  t.pass()
+})
+
+test('getHashrate - without a timezone the daily interval still reads UTC buckets from the 3h log', async (t) => {
+  const capture = {}
+  await getHashrate(localDaysCtx(capture), {
+    query: { start: TZ_START, end: TZ_START + 48 * TZ_HOUR_MS, interval: '1d' }
+  })
+
+  t.is(capture.payload.key, 'stat-3h')
+  t.is(capture.payload.groupRange, '1D')
+  t.pass()
+})
+
+test('getHashrate - an unknown timezone is rejected', async (t) => {
+  await t.exception(
+    getHashrate(localDaysCtx({}), { query: { start: TZ_START, end: TZ_START + TZ_HOUR_MS, interval: '1d', timezone: 'Not/AZone' } }),
+    /ERR_TIMEZONE_INVALID/
+  )
+  t.pass()
+})
+
+test('getConsumption - a timezone sums hourly energy into that zone calendar days and months', async (t) => {
+  const capture = {}
+  const query = { start: TZ_START, end: TZ_START + 48 * TZ_HOUR_MS, timezone: 'America/Sao_Paulo' }
+
+  const days = await getConsumption(localDaysCtx(capture), { query: { ...query, interval: '1d' } })
+  t.is(capture.payload.key, 'stat-30m', 'local days are built from the hourly stat log')
+  t.is(days.log.length, 3)
+  t.is(days.log[0].consumptionMWh, 30, '3 July 31 hours at 10 MW')
+  t.is(days.log[1].ts, Date.UTC(2026, 7, 1, 3))
+  t.is(days.log[1].consumptionMWh, 240, 'a full local day at 10 MW')
+  t.is(days.log[1].powerW, 10e6)
+  t.is(days.log[1].hours, 24)
+  t.is(days.summary.totalConsumptionMWh, 480, 'the range total is unchanged by the re-bucketing')
+
+  const months = await getConsumption(localDaysCtx(capture), { query: { ...query, interval: '1M' } })
+  t.is(months.log.length, 2, 'July and August in Sao Paulo')
+  t.is(months.log[0].ts, Date.UTC(2026, 6, 1, 3), 'a local month starts at its own midnight')
+  t.is(months.log[0].consumptionMWh, 30)
+  t.is(months.log[1].consumptionMWh, 450)
+  t.pass()
+})

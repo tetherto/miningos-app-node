@@ -35,6 +35,9 @@ const {
   sumObjectValues,
   extractContainerFromMinerKey,
   resolveInterval,
+  assertTimezone,
+  localPeriods,
+  rollupLocalDays,
   getIntervalConfig,
   mergeGroupedField,
   extractKeyEntry,
@@ -114,7 +117,12 @@ async function resolveHashrate (ctx, req) {
     return { log: scoped, summary: calculateHashrateSummary(scoped) }
   }
 
-  const { key, groupRange } = getIntervalConfig(resolveInterval(start, end, req.query.interval))
+  const timezone = req.query.timezone ? assertTimezone(req.query.timezone) : null
+  const interval = resolveInterval(start, end, req.query.interval)
+  // A timezone turns daily buckets into that zone's calendar days, built from
+  // hourly ones since the racks only bucket on UTC days.
+  const localDays = Boolean(timezone) && interval === '1d'
+  const { key, groupRange } = getIntervalConfig(localDays ? '1h' : interval)
   const container = req.query.container || null
   const field = container ? LOG_FIELDS.HASHRATE_SUM_CONTAINER_GROUP : LOG_FIELDS.HASHRATE_SUM
   const aggrField = container ? AGGR_FIELDS.HASHRATE_SUM_CONTAINER_GROUP_AGGR : AGGR_FIELDS.HASHRATE_SUM
@@ -161,15 +169,16 @@ async function resolveHashrate (ctx, req) {
 
   if (withPool) await mergePoolHashrate(ctx, log, { start, end, groupRange })
 
-  const summary = calculateHashrateSummary(log, withNominal)
+  const buckets = localDays ? rollupLocalDays(log, timezone) : log
+  const summary = calculateHashrateSummary(buckets, withNominal)
 
-  if (withPool) summary.avgPoolHashrateMhs = calculateAvgPoolHashrate(log)
+  if (withPool) summary.avgPoolHashrateMhs = calculateAvgPoolHashrate(buckets)
 
   if (req.query.current) {
     summary.currentHashrateMhs = await getCurrentHashrate(ctx, aggrField, container)
   }
 
-  return { log, summary }
+  return { log: buckets, summary }
 }
 
 // Attaches the pool-reported hashrate to each miner-telemetry bucket, using the
@@ -311,6 +320,16 @@ function scaleBucketValues (val, factor) {
   return (Number(val) || 0) * factor
 }
 
+function rollupLocalConsumption (buckets, timezone, unit) {
+  return localPeriods(buckets, timezone, unit).map(({ ts, timeRange, entries }) => ({
+    ts,
+    timeRange,
+    hours: entries.length,
+    powerW: scaleBucketValues(entries.reduce((acc, entry) => addBucketValues(acc, entry.powerW), null), 1 / entries.length),
+    consumptionMWh: entries.reduce((acc, entry) => addBucketValues(acc, entry.consumptionMWh), null)
+  }))
+}
+
 function rollupMonthly (log) {
   const months = new Map()
 
@@ -354,9 +373,13 @@ async function getConsumption (ctx, req) {
   const byMeter = req.query.byMeter === true || req.query.byMeter === 'true'
   if (byMeter) return getByMeterConsumption(ctx, req)
 
+  const timezone = req.query.timezone ? assertTimezone(req.query.timezone) : null
   const interval = resolveInterval(start, end, req.query.interval)
   const monthly = interval === '1M'
-  const { key, groupRange } = getIntervalConfig(monthly ? '1d' : interval)
+  // A timezone turns daily and monthly buckets into that zone's calendar periods,
+  // built from hourly ones since the racks only bucket on UTC days.
+  const localUnit = timezone && (monthly ? 'month' : interval === '1d' ? 'day' : null)
+  const { key, groupRange } = getIntervalConfig(localUnit ? '1h' : monthly ? '1d' : interval)
 
   // Central-DCS sites report site power through the Siemens DCS worker's stat log
   // (site_power_w), not a powermeter worker
@@ -395,7 +418,9 @@ async function getConsumption (ctx, req) {
     }
   })
 
-  const log = monthly ? rollupMonthly(buckets) : buckets
+  const log = localUnit
+    ? rollupLocalConsumption(buckets, timezone, localUnit)
+    : monthly ? rollupMonthly(buckets) : buckets
   const summary = calculateConsumptionSummary(log)
 
   return { log, summary }

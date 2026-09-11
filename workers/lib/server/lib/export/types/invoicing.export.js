@@ -7,7 +7,7 @@ const {
   resolveCostParametersForMonth
 } = require('../../../handlers/finance.handlers')
 const { formatDateTime } = require('../mappers')
-const { rollupLocalDays, poolPctOfNominal } = require('../../../../metrics.utils')
+const { poolPctOfNominal } = require('../../../../metrics.utils')
 
 const SECONDS = { hour: 3600 }
 const EXPORT_PRECISION = 3
@@ -81,18 +81,17 @@ function buildHashesEntry ({ type, interval, seconds, rollup, filenamePrefix, pe
     assertParams: assertRange,
     async fetchExport (ctx, { params, now, timezone }) {
       const { log } = await getHashrate(ctx, {
-        query: { start: params.start, end: params.end, interval, nominal: true, pool: true }
+        query: { start: params.start, end: params.end, interval, nominal: true, pool: true, ...(rollup && { timezone }) }
       })
-      const buckets = rollup ? rollupLocalDays(log, timezone) : log
 
       async function * rows () {
-        for (const entry of buckets) {
+        for (const entry of log) {
           const hashrateMhs = num(entry.hashrateMhs)
           const poolHashrateMhs = num(entry.poolHashrateMhs)
           yield roundRow({
             ...mapPeriod(entry.ts, timezone),
             hashesDeliveredEh: derive([poolHashrateMhs], (mhs) => (mhs * (entry.poolSeconds ?? seconds)) / 1e12),
-            pctOfNominal: rollup ? entry.pctOfNominal : poolPctOfNominal([entry]),
+            pctOfNominal: rollup ? entry.poolPctOfNominal : poolPctOfNominal([entry]),
             avgMinerHashratePhs: derive([hashrateMhs], (mhs) => mhs / 1e9),
             avgPoolHashratePhs: derive([poolHashrateMhs], (mhs) => mhs / 1e9)
           })
@@ -121,7 +120,7 @@ const invoicingHourlyHashes = buildHashesEntry({
 
 const invoicingDailyHashes = buildHashesEntry({
   type: 'invoicing-daily-hashes',
-  interval: '1h',
+  interval: '1d',
   rollup: true,
   filenamePrefix: 'invoicing_daily_hashes_',
   periodColumns: ['month', 'day'],

@@ -42,6 +42,7 @@ module.exports = (ctx) => {
           req.query.start,
           req.query.end,
           req.query.interval,
+          req.query.timezone,
           req.query.groupBy,
           req.query.container,
           req.query.current,
@@ -69,6 +70,7 @@ module.exports = (ctx) => {
           req.query.start,
           req.query.end,
           req.query.interval,
+          req.query.timezone,
           req.query.groupBy,
           req.query.byMeter,
           req.query.racks

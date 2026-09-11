@@ -269,25 +269,73 @@ function poolPctOfNominal (entries) {
   return (sum(pairs.map((entry) => entry.poolHashrateMhs)) / sum(pairs.map((entry) => entry.nominalHashrateMhs))) * 100
 }
 
-function rollupLocalDays (log, timezone) {
-  const dayOf = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' })
-  const days = new Map()
+function assertTimezone (timezone, error = 'ERR_TIMEZONE_INVALID') {
+  try {
+    Intl.DateTimeFormat('en-US', { timeZone: timezone })
+    return timezone
+  } catch (err) {
+    throw new Error(error)
+  }
+}
+
+function tzOffsetMs (ts, timezone) {
+  const p = {}
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit'
+  }).formatToParts(new Date(ts))
+  for (const { type, value } of parts) p[type] = value
+  return Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second) - Math.floor(ts / 1000) * 1000
+}
+
+// Epoch ms at which the wall-clock date starts in the timezone. One offset probe is
+// exact for zones without DST; a DST switch on that midnight would be off by the shift.
+function zonedStartTs (timezone, year, month, day = 1) {
+  const guess = Date.UTC(year, month - 1, day)
+  return guess - tzOffsetMs(guess, timezone)
+}
+
+// Groups UTC-aligned buckets into the timezone's calendar days or months, since the
+// racks only bucket on UTC windows.
+function localPeriods (log, timezone, unit = 'day') {
+  const dateOf = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' })
+  const periods = new Map()
 
   for (const entry of log) {
-    const key = dayOf.format(new Date(entry.ts))
-    if (!days.has(key)) days.set(key, [])
-    days.get(key).push(entry)
+    const [year, month, day] = dateOf.format(new Date(entry.ts)).split('-').map(Number)
+    const key = unit === 'month' ? `${year}-${month}` : `${year}-${month}-${day}`
+    if (!periods.has(key)) {
+      const startTs = unit === 'month' ? zonedStartTs(timezone, year, month) : zonedStartTs(timezone, year, month, day)
+      const endTs = (unit === 'month' ? zonedStartTs(timezone, year, month + 1) : zonedStartTs(timezone, year, month, day + 1)) - 1
+      periods.set(key, { ts: startTs, timeRange: { startTs, endTs }, entries: [] })
+    }
+    periods.get(key).entries.push(entry)
   }
 
-  return [...days.values()].map((entries) => {
+  return [...periods.values()].sort((a, b) => a.ts - b.ts)
+}
+
+function rollupLocalDays (log, timezone) {
+  return localPeriods(log, timezone, 'day').map(({ ts, timeRange, entries }) => {
+    const withNominal = entries.some((entry) => 'nominalHashrateMhs' in entry)
+    const withPool = entries.some((entry) => 'poolHashrateMhs' in entry)
+    const hashrateMhs = mean(finiteValues(entries, 'hashrateMhs'))
+    const nominalHashrateMhs = mean(finiteValues(entries, 'nominalHashrateMhs'))
     const pool = finiteValues(entries, 'poolHashrateMhs')
 
     return {
-      ts: entries[0].ts,
-      hashrateMhs: mean(finiteValues(entries, 'hashrateMhs')),
-      poolHashrateMhs: mean(pool),
-      pctOfNominal: poolPctOfNominal(entries),
-      poolSeconds: pool.length * 3600
+      ts,
+      timeRange,
+      hours: entries.length,
+      hashrateMhs,
+      ...(withNominal && {
+        nominalHashrateMhs,
+        pctOfNominal: nominalHashrateMhs ? (hashrateMhs / nominalHashrateMhs) * 100 : null
+      }),
+      ...(withPool && {
+        poolHashrateMhs: mean(pool),
+        poolPctOfNominal: poolPctOfNominal(entries),
+        poolSeconds: pool.length * 3600
+      })
     }
   })
 }
@@ -303,6 +351,8 @@ module.exports = {
   extractKeyEntry,
   resolveInterval,
   getIntervalConfig,
+  assertTimezone,
+  localPeriods,
   rollupLocalDays,
   poolPctOfNominal,
   mhsToPhs,

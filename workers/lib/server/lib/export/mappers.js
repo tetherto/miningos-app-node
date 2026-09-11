@@ -1,14 +1,11 @@
 'use strict'
 
+const metricsUtils = require('../../../metrics.utils')
+
 const DEFAULT_TIMEZONE = 'UTC'
 
 function assertTimezone (timezone) {
-  try {
-    Intl.DateTimeFormat('en-US', { timeZone: timezone })
-    return timezone
-  } catch (err) {
-    throw new Error('ERR_EXPORT_TIMEZONE_INVALID')
-  }
+  return metricsUtils.assertTimezone(timezone, 'ERR_EXPORT_TIMEZONE_INVALID')
 }
 
 function dateTimeParts (date, timezone, options) {
