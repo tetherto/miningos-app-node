@@ -1803,3 +1803,50 @@ test('getRevenueSummary - monthly btcProductionCost is total cost over total BTC
 
   t.is(Math.round(month.btcProductionCost), 200)
 })
+
+test('getRevenueSummary - folds forecast energy sales, pool rebates and net-of-tax into the daily row', async (t) => {
+  const dayTs = 1700006400000
+  const hour = 3600000
+  const mockCtx = withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: {
+      jRequest: async (key, method, payload) => {
+        if (method === 'tailLog') return [{ ts: dayTs, site_power_w: 5000000 }]
+        if (method !== 'getWrkExtData') return []
+        switch (payload.query.key) {
+          case 'transactions': return [{ transactions: [{ ts: dayTs, changed_balance: 1 }] }]
+          case 'HISTORICAL_PRICES': return [{ data: [{ ts: dayTs, priceUSD: 40000 }] }]
+          case 'stats-history': return [[{ ts: dayTs, energy_aggr: { active_energy_in_aggr: 200 } }]]
+          case 'forecastSettings': return [{ miningRevenueTaxFees: { percent: 4, fixed: 2 } }]
+          case 'forecastHistory': return [{
+            hourlyForecast: [
+              { start: dayTs, isEnergySelected: true, energySalesRevenue: 100, energySalesRevenueSelected: 100, energySalesRevenuePerMwh: 10, energySalesTaxesAndFees: 2, miningRevenue: 50, taxesAndFees: 1 },
+              { start: dayTs + hour, isEnergySelected: false, energySalesRevenue: 100, energySalesRevenueSelected: 100, energySalesRevenuePerMwh: 10, energySalesTaxesAndFees: 2, miningRevenue: 500, taxesAndFees: 20 }
+            ]
+          }]
+          default: return []
+        }
+      }
+    },
+    globalDataLib: {
+      getGlobalData: async ({ type }) => type === 'poolRebates' ? [{ ts: dayTs + hour, amountBTC: 0.5 }] : []
+    }
+  })
+
+  const { log: [row], summary } = await getRevenueSummary(mockCtx, { query: { start: dayTs, end: dayTs + 86400000, period: 'daily' } }, {})
+
+  t.is(row.revenueBTC, 1.5)
+  t.is(row.payoutBTC, 1)
+  t.is(row.rebateBTC, 0.5)
+  t.is(row.soldMWh, 10)
+  t.is(row.availableMWh, 20)
+  t.is(row.energySalesNetUSD, 98)
+  t.is(row.allMineNetUSD, 529)
+  t.is(row.allSellNetUSD, 196)
+  t.is(row.optimalNetUSD, 578)
+  t.is(row.curtailmentMWh, 70)
+  t.is(row.miningNetUSD, 57360)
+  t.is(row.netCashUSD, 57458)
+  t.is(summary.totalRebateBTC, 0.5)
+  t.is(summary.totalNetCashUSD, 57458)
+})

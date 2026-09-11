@@ -58,7 +58,7 @@ function processTransactions (results, opts) {
       if (!Array.isArray(txList)) continue
       for (const t of txList) {
         if (!t) continue
-        const rawTs = t.ts || t.created_at || t.timestamp || t.time
+        const rawTs = t.mining_extra?.mining_date || t.ts || t.created_at || t.timestamp || t.time
         const ts = getStartOfDay(normalizeTimestampMs(rawTs))
         if (!ts) continue
         const day = daily[ts] ??= trackFees
@@ -77,6 +77,18 @@ function processTransactions (results, opts) {
         }
       }
     }
+  }
+  return daily
+}
+
+function addRebates (daily, rebates) {
+  for (const day of Object.values(daily)) day.payoutBTC = day.revenueBTC
+  for (const r of rebates) {
+    if (!Number.isFinite(r?.ts) || !Number.isFinite(r?.amountBTC)) continue
+    const ts = getStartOfDay(r.ts)
+    const day = daily[ts] ??= { revenueBTC: 0, payoutBTC: 0 }
+    day.revenueBTC += r.amountBTC
+    day.rebateBTC = (day.rebateBTC || 0) + r.amountBTC
   }
   return daily
 }
@@ -152,5 +164,6 @@ module.exports = {
   processTransactions,
   extractCurrentPrice,
   processBlockData,
-  historyLimit
+  historyLimit,
+  addRebates
 }

@@ -5,6 +5,7 @@ const {
   AGGR_FIELDS,
   PERIOD_TYPES,
   MINERPOOL_EXT_DATA_KEYS,
+  ELECTRICITY_EXT_DATA_KEYS,
   RPC_METHODS,
   GLOBAL_DATA_TYPES,
   BTC_SATS
@@ -19,7 +20,8 @@ const {
   processTransactions,
   extractCurrentPrice,
   processBlockData,
-  historyLimit
+  historyLimit,
+  addRebates
 } = require('./finance.utils')
 
 // Daily site power and hashrate come from the metrics handlers: DCS-aware and averaged per
@@ -44,7 +46,8 @@ async function getEnergyBalance (ctx, req) {
     productionCosts,
     activeEnergyInResults,
     globalConfigResults,
-    costParameters
+    costParameters,
+    poolRebates
   ] = await runParallel([
     (cb) => getDailySeries(ctx, start, end, getConsumption, 'powerW')
       .then(r => cb(null, r)).catch(cb),
@@ -76,10 +79,13 @@ async function getEnergyBalance (ctx, req) {
       .then(r => cb(null, r)).catch(cb),
 
     (cb) => getCostParameters(ctx)
+      .then(r => cb(null, r)).catch(cb),
+
+    (cb) => getPoolRebates(ctx, start, end)
       .then(r => cb(null, r)).catch(cb)
   ])
 
-  const dailyTransactions = processTransactions(transactionResults)
+  const dailyTransactions = addRebates(processTransactions(transactionResults), poolRebates)
   const dailyPrices = processPriceData(priceResults)
   const currentBtcPrice = extractCurrentPrice(currentPriceResults)
   const costsByMonth = processCostsData(productionCosts)
@@ -135,6 +141,8 @@ async function getEnergyBalance (ctx, req) {
       sitePowerMW,
       consumptionMWh,
       revenueBTC,
+      payoutBTC: transactions.payoutBTC || 0,
+      rebateBTC: transactions.rebateBTC || 0,
       revenueUSD,
       btcPrice,
       energyCostUSD,
@@ -213,6 +221,52 @@ function processEnergyData (results, aggrField) {
     }
   }
   return daily
+}
+
+async function getPoolRebates (ctx, start, end) {
+  if (!ctx.globalDataLib) return []
+  const rebates = await ctx.globalDataLib.getGlobalData({
+    type: GLOBAL_DATA_TYPES.POOL_REBATES,
+    range: { gte: start, lte: end }
+  })
+  return Array.isArray(rebates) ? rebates : []
+}
+
+function processForecastHistory (results) {
+  const daily = {}
+  for (const res of results) {
+    if (!res || res.error) continue
+    for (const payload of Array.isArray(res) ? res : [res]) {
+      for (const h of payload?.hourlyForecast || []) {
+        if (!Number.isFinite(h?.energySalesRevenue)) continue
+        const ts = getStartOfDay(Number(h.start))
+        const d = daily[ts] ??= { energySalesGrossUSD: 0, energySalesTaxesAndFeesUSD: 0, soldMWh: 0, availableMWh: 0, allMineNetUSD: 0, allSellNetUSD: 0, optimalNetUSD: 0 }
+        const mwh = safeDiv(h.energySalesRevenue, h.energySalesRevenuePerMwh) || 0
+        const sellNet = h.energySalesRevenue - (h.energySalesTaxesAndFees || 0)
+        const mineNet = (h.miningRevenue || 0) - (h.taxesAndFees || 0)
+        if (h.isEnergySelected === true) {
+          d.energySalesGrossUSD += h.energySalesRevenue
+          d.energySalesTaxesAndFeesUSD += h.energySalesTaxesAndFees || 0
+          d.soldMWh += mwh
+        }
+        d.availableMWh += mwh
+        d.allMineNetUSD += mineNet
+        d.allSellNetUSD += sellNet
+        d.optimalNetUSD += Math.max(mineNet, sellNet)
+      }
+    }
+  }
+  return daily
+}
+
+function extractForecastSettings (results) {
+  for (const res of results) {
+    if (!res || res.error) continue
+    for (const entry of Array.isArray(res) ? res : [res]) {
+      if (entry?.miningRevenueTaxFees) return entry
+    }
+  }
+  return {}
 }
 
 function extractNominalPower (results) {
@@ -311,7 +365,7 @@ async function getEbitda (ctx, req) {
   const { start, end } = validateStartEnd(req)
   const period = req.query.period || PERIOD_TYPES.MONTHLY
 
-  const [transactionResults, dailyPower, dailyHashrate, priceResults, currentPriceResults, productionCosts, costParameters] = await runParallel([
+  const [transactionResults, dailyPower, dailyHashrate, priceResults, currentPriceResults, productionCosts, costParameters, poolRebates] = await runParallel([
     (cb) => ctx.dataProxy.requestData(RPC_METHODS.GET_WRK_EXT_DATA, {
       type: WORKER_TYPES.MINERPOOL,
       query: { key: MINERPOOL_EXT_DATA_KEYS.TRANSACTIONS, start, end }
@@ -337,10 +391,13 @@ async function getEbitda (ctx, req) {
       .then(r => cb(null, r)).catch(cb),
 
     (cb) => getCostParameters(ctx)
+      .then(r => cb(null, r)).catch(cb),
+
+    (cb) => getPoolRebates(ctx, start, end)
       .then(r => cb(null, r)).catch(cb)
   ])
 
-  const dailyTransactions = processTransactions(transactionResults)
+  const dailyTransactions = addRebates(processTransactions(transactionResults), poolRebates)
   const dailyPrices = processEbitdaPrices(priceResults)
   const currentBtcPrice = extractCurrentPrice(currentPriceResults)
   const costsByMonth = processCostsData(productionCosts)
@@ -376,6 +433,8 @@ async function getEbitda (ctx, req) {
     log.push({
       ts,
       revenueBTC,
+      payoutBTC: transactions.payoutBTC || 0,
+      rebateBTC: transactions.rebateBTC || 0,
       revenueUSD,
       btcPrice,
       powerW,
@@ -744,7 +803,10 @@ async function getRevenueSummary (ctx, req) {
     blockResults,
     activeEnergyInResults,
     globalConfigResults,
-    costParameters
+    costParameters,
+    poolRebates,
+    forecastResults,
+    forecastSettingsResults
   ] = await runParallel([
     (cb) => ctx.dataProxy.requestData(RPC_METHODS.GET_WRK_EXT_DATA, {
       type: WORKER_TYPES.MINERPOOL,
@@ -784,10 +846,25 @@ async function getRevenueSummary (ctx, req) {
       .then(r => cb(null, r)).catch(cb),
 
     (cb) => getCostParameters(ctx)
-      .then(r => cb(null, r)).catch(cb)
+      .then(r => cb(null, r)).catch(cb),
+
+    (cb) => getPoolRebates(ctx, start, end)
+      .then(r => cb(null, r)).catch(cb),
+
+    (cb) => ctx.dataProxy.requestData(RPC_METHODS.GET_WRK_EXT_DATA, {
+      type: WORKER_TYPES.ELECTRICITY,
+      query: { key: ELECTRICITY_EXT_DATA_KEYS.FORECAST_HISTORY },
+      start,
+      end
+    }).then(r => cb(null, r)).catch(cb),
+
+    (cb) => ctx.dataProxy.requestData(RPC_METHODS.GET_WRK_EXT_DATA, {
+      type: WORKER_TYPES.ELECTRICITY,
+      query: { key: ELECTRICITY_EXT_DATA_KEYS.FORECAST_SETTINGS }
+    }).then(r => cb(null, r)).catch(cb)
   ])
 
-  const dailyRevenue = processTransactions(transactionResults, { trackFees: true })
+  const dailyRevenue = addRebates(processTransactions(transactionResults, { trackFees: true }), poolRebates)
   const dailyPrices = processEbitdaPrices(priceResults)
   const currentBtcPrice = extractCurrentPrice(currentPriceResults)
   const costsByMonth = processCostsData(productionCosts)
@@ -795,9 +872,12 @@ async function getRevenueSummary (ctx, req) {
   const dailyActiveEnergyIn = processEnergyData(activeEnergyInResults, AGGR_FIELDS.ACTIVE_ENERGY_IN)
   const dailyUteEnergy = processEnergyData(activeEnergyInResults, AGGR_FIELDS.UTE_ENERGY)
   const nominalPowerMW = extractNominalPower(globalConfigResults)
+  const dailyForecast = processForecastHistory(forecastResults)
+  const taxFees = extractForecastSettings(forecastSettingsResults).miningRevenueTaxFees || {}
 
   const allDays = new Set([
     ...Object.keys(dailyRevenue),
+    ...Object.keys(dailyForecast),
     ...Object.keys(dailyPower),
     ...Object.keys(dailyHashrate),
     ...Object.keys(dailyPrices)
@@ -830,9 +910,12 @@ async function getRevenueSummary (ctx, req) {
     const activeEnergyIn = dailyActiveEnergyIn[dayTs] || 0
     const uteEnergy = dailyUteEnergy[dayTs] || 0
     const nominalConsumptionMWh = nominalPowerMW * 24
+    const fc = dailyForecast[dayTs] || {}
+    const energySalesNetUSD = (fc.energySalesGrossUSD || 0) - (fc.energySalesTaxesAndFeesUSD || 0)
+    const miningNetUSD = revenueUSD - revenueUSD * (taxFees.percent || 0) / 100 - (taxFees.fixed || 0) * consumptionMWh
 
     const curtailmentMWh = activeEnergyIn > 0
-      ? activeEnergyIn - consumptionMWh
+      ? activeEnergyIn - consumptionMWh - (fc.soldMWh || 0)
       : null
     const curtailmentRate = curtailmentMWh !== null
       ? safeDiv(curtailmentMWh, consumptionMWh)
@@ -850,6 +933,8 @@ async function getRevenueSummary (ctx, req) {
     log.push({
       ts,
       revenueBTC,
+      payoutBTC: revenue.payoutBTC || 0,
+      rebateBTC: revenue.rebateBTC || 0,
       feesBTC,
       revenueUSD,
       feesUSD,
@@ -877,7 +962,17 @@ async function getRevenueSummary (ctx, req) {
       availableEnergyMWh: uteEnergy,
       nominalConsumptionMWh,
       downtimeMWh: nominalPowerMW > 0 ? nominalConsumptionMWh - consumptionMWh : null,
-      lcoeUsdPerMwh
+      lcoeUsdPerMwh,
+      energySalesGrossUSD: fc.energySalesGrossUSD || 0,
+      energySalesTaxesAndFeesUSD: fc.energySalesTaxesAndFeesUSD || 0,
+      energySalesNetUSD,
+      soldMWh: fc.soldMWh || 0,
+      availableMWh: fc.availableMWh || 0,
+      allMineNetUSD: fc.allMineNetUSD || 0,
+      allSellNetUSD: fc.allSellNetUSD || 0,
+      optimalNetUSD: fc.optimalNetUSD || 0,
+      miningNetUSD,
+      netCashUSD: miningNetUSD + energySalesNetUSD - totalCostsUSD
     })
   }
 
@@ -904,6 +999,18 @@ function calculateDetailedRevenueSummary (log, currentBtcPrice) {
       totalAvailableEnergyMWh: 0,
       totalNominalConsumptionMWh: 0,
       totalDowntimeMWh: 0,
+      totalPayoutBTC: 0,
+      totalRebateBTC: 0,
+      totalEnergySalesGrossUSD: 0,
+      totalEnergySalesTaxesAndFeesUSD: 0,
+      totalEnergySalesNetUSD: 0,
+      totalSoldMWh: 0,
+      totalAvailableMWh: 0,
+      totalAllMineNetUSD: 0,
+      totalAllSellNetUSD: 0,
+      totalOptimalNetUSD: 0,
+      totalMiningNetUSD: 0,
+      totalNetCashUSD: 0,
       totalCostsUSD: 0,
       totalConsumptionMWh: 0,
       avgCostPerMWh: null,
@@ -926,6 +1033,18 @@ function calculateDetailedRevenueSummary (log, currentBtcPrice) {
     acc.availableEnergyMWh += entry.availableEnergyMWh || 0
     acc.nominalConsumptionMWh += entry.nominalConsumptionMWh || 0
     acc.downtimeMWh += entry.downtimeMWh || 0
+    acc.payoutBTC += entry.payoutBTC || 0
+    acc.rebateBTC += entry.rebateBTC || 0
+    acc.energySalesGrossUSD += entry.energySalesGrossUSD || 0
+    acc.energySalesTaxesAndFeesUSD += entry.energySalesTaxesAndFeesUSD || 0
+    acc.energySalesNetUSD += entry.energySalesNetUSD || 0
+    acc.soldMWh += entry.soldMWh || 0
+    acc.availableMWh += entry.availableMWh || 0
+    acc.allMineNetUSD += entry.allMineNetUSD || 0
+    acc.allSellNetUSD += entry.allSellNetUSD || 0
+    acc.optimalNetUSD += entry.optimalNetUSD || 0
+    acc.miningNetUSD += entry.miningNetUSD || 0
+    acc.netCashUSD += entry.netCashUSD || 0
     acc.consumptionMWh += entry.consumptionMWh || 0
     acc.ebitdaSelling += entry.ebitdaSelling || 0
     acc.ebitdaHodl += entry.ebitdaHodl || 0
@@ -949,6 +1068,18 @@ function calculateDetailedRevenueSummary (log, currentBtcPrice) {
     availableEnergyMWh: 0,
     nominalConsumptionMWh: 0,
     downtimeMWh: 0,
+    payoutBTC: 0,
+    rebateBTC: 0,
+    energySalesGrossUSD: 0,
+    energySalesTaxesAndFeesUSD: 0,
+    energySalesNetUSD: 0,
+    soldMWh: 0,
+    availableMWh: 0,
+    allMineNetUSD: 0,
+    allSellNetUSD: 0,
+    optimalNetUSD: 0,
+    miningNetUSD: 0,
+    netCashUSD: 0,
     consumptionMWh: 0,
     ebitdaSelling: 0,
     ebitdaHodl: 0,
@@ -968,6 +1099,18 @@ function calculateDetailedRevenueSummary (log, currentBtcPrice) {
     totalAvailableEnergyMWh: totals.availableEnergyMWh,
     totalNominalConsumptionMWh: totals.nominalConsumptionMWh,
     totalDowntimeMWh: totals.downtimeMWh,
+    totalPayoutBTC: totals.payoutBTC,
+    totalRebateBTC: totals.rebateBTC,
+    totalEnergySalesGrossUSD: totals.energySalesGrossUSD,
+    totalEnergySalesTaxesAndFeesUSD: totals.energySalesTaxesAndFeesUSD,
+    totalEnergySalesNetUSD: totals.energySalesNetUSD,
+    totalSoldMWh: totals.soldMWh,
+    totalAvailableMWh: totals.availableMWh,
+    totalAllMineNetUSD: totals.allMineNetUSD,
+    totalAllSellNetUSD: totals.allSellNetUSD,
+    totalOptimalNetUSD: totals.optimalNetUSD,
+    totalMiningNetUSD: totals.miningNetUSD,
+    totalNetCashUSD: totals.netCashUSD,
     totalCostsUSD: totals.costsUSD,
     totalConsumptionMWh: totals.consumptionMWh,
     avgCostPerMWh: safeDiv(totals.costsUSD, totals.consumptionMWh),

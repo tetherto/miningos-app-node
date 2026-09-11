@@ -6,7 +6,8 @@ const GLOBAL_DATA_TYPES = {
   FEATURES: 'features',
   SITE_ENERGY: 'siteEnergy',
   CONTAINER_SETTINGS: 'containerSettings',
-  ALERT_PARAMETERS: 'alertParameters'
+  ALERT_PARAMETERS: 'alertParameters',
+  POOL_REBATES: 'poolRebates'
 }
 
 const LCOE_SOURCES = ['current', 'custom']

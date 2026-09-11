@@ -322,3 +322,20 @@ test('processBlockData - error/empty results', (t) => {
   t.is(Object.keys(processBlockData([])).length, 0, 'empty results empty')
   t.pass()
 })
+
+test('processTransactions buckets f2pool payouts by mining_extra.mining_date when present', (t) => {
+  const { processTransactions } = require('../../../workers/lib/server/handlers/finance.utils')
+  const miningDay = 1700006400000
+  const settleDay = miningDay + 86400000
+  const daily = processTransactions([[{ transactions: [{ created_at: settleDay / 1000, changed_balance: 1, mining_extra: { mining_date: miningDay / 1000 } }] }]])
+  t.alike(Object.keys(daily), [String(miningDay)])
+})
+
+test('addRebates folds rebates into revenueBTC and keeps the payout/rebate split', (t) => {
+  const { addRebates } = require('../../../workers/lib/server/handlers/finance.utils')
+  const d1 = 1700006400000
+  const d2 = d1 + 86400000
+  const daily = addRebates({ [d1]: { revenueBTC: 1 } }, [{ ts: d1 + 5, amountBTC: 0.5 }, { ts: d2, amountBTC: 0.25 }])
+  t.alike(daily[d1], { revenueBTC: 1.5, payoutBTC: 1, rebateBTC: 0.5 })
+  t.alike(daily[d2], { revenueBTC: 0.25, payoutBTC: 0, rebateBTC: 0.25 })
+})

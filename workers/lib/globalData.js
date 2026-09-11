@@ -216,6 +216,20 @@ class GlobalDataLib {
     return true
   }
 
+  async setPoolRebatesData (data) {
+    if (!Number.isInteger(data.ts) || data.ts <= 0) throw new Error('ERR_INVALID_TS')
+    const db = this._globalDataBee.sub(GLOBAL_DATA_TYPES.POOL_REBATES)
+    const key = utilsStore.convIntToBin(data.ts)
+    if (data.remove) {
+      await db.del(key)
+      return true
+    }
+    if (!Number.isFinite(data.amountBTC) || data.amountBTC <= 0) throw new Error('ERR_INVALID_AMOUNT')
+    const { ts, amountBTC, txid, sender, receiver } = data
+    await db.put(key, JSON.stringify({ site: this.site, ts, amountBTC, txid, sender, receiver }))
+    return true
+  }
+
   async setGlobalData (data, type) {
     if (!Object.values(GLOBAL_DATA_TYPES).includes(type)) {
       throw new Error('ERR_INVALID_TYPE')
@@ -231,6 +245,10 @@ class GlobalDataLib {
 
     if (type === GLOBAL_DATA_TYPES.CONTAINER_SETTINGS) {
       return this.setContainerSettingsData(data)
+    }
+
+    if (type === GLOBAL_DATA_TYPES.POOL_REBATES) {
+      return this.setPoolRebatesData(data)
     }
 
     return this.saveGlobalDataForType(data, type)
