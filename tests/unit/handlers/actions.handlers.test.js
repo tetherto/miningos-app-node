@@ -698,6 +698,97 @@ for (const action of ['registerConfig', 'updateConfig']) {
     t.pass()
   })
 
+  // The worker credentials used to be passed through unchecked while poolUrlId was
+  // validated strictly, so a client that omitted them stored `undefined` and every
+  // miner worker pushed `undefined` to the hardware.
+  const credentialCtx = () => withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    authLib: {
+      getTokenPerms: async () => ({ write: true, permissions: [] })
+    },
+    net_r0: {
+      jRequest: async (key, method, payload, opts) => {
+        if (method === 'getGlobalConfig') {
+          return { approvedPoolUrls: APPROVED_POOL_URLS }
+        }
+        return { id: 'new-action', success: true }
+      }
+    }
+  })
+
+  const credentialReq = (poolUrl) => ({
+    _info: {
+      authToken: 'token123',
+      user: { metadata: { email: 'test@example.com' } }
+    },
+    body: {
+      action,
+      params: [{ name: 'my-config', data: { poolUrls: [poolUrl] } }]
+    }
+  })
+
+  for (const [label, poolUrl, expected] of [
+    ['a missing workerName', { workerPassword: 'secret' }, 'ERR_INVALID_WORKER_NAME'],
+    ['a non-string workerName', { workerName: 42, workerPassword: 'secret' }, 'ERR_INVALID_WORKER_NAME'],
+    ['a missing workerPassword', { workerName: 'worker1' }, 'ERR_INVALID_WORKER_PASSWORD'],
+    ['a non-string workerPassword', { workerName: 'worker1', workerPassword: null }, 'ERR_INVALID_WORKER_PASSWORD']
+  ]) {
+    test(`pushAction - ${action} throws for ${label}`, async (t) => {
+      const mockReq = credentialReq({ poolUrlId: APPROVED_POOL_URLS[0].id, ...poolUrl })
+
+      try {
+        await pushAction(credentialCtx(), mockReq)
+        t.fail(`should throw error for ${label}`)
+      } catch (err) {
+        t.is(err.message, expected, `should throw ${expected}`)
+      }
+
+      t.pass()
+    })
+  }
+
+  // An endpoint may legitimately need no password, and a config registered before
+  // the UI collected one still carries a placeholder on endpoints nobody has
+  // corrected yet. updateConfig re-sends every endpoint, so rejecting either would
+  // fail the whole call and leave such a config impossible to repair.
+  for (const [label, workerPassword] of [
+    ['an empty password', ''],
+    ['the legacy placeholder', '.']
+  ]) {
+    test(`pushAction - ${action} accepts ${label}`, async (t) => {
+      let capturedPayload = null
+      const mockCtx = withDataProxy({
+        conf: { orks: [{ rpcPublicKey: 'key1' }] },
+        authLib: {
+          getTokenPerms: async () => ({ write: true, permissions: [] })
+        },
+        net_r0: {
+          jRequest: async (key, method, payload, opts) => {
+            if (method === 'getGlobalConfig') {
+              return { approvedPoolUrls: APPROVED_POOL_URLS }
+            }
+            capturedPayload = payload
+            return { id: 'new-action', success: true }
+          }
+        }
+      })
+
+      const mockReq = credentialReq({
+        poolUrlId: APPROVED_POOL_URLS[0].id,
+        workerName: 'worker1',
+        workerPassword
+      })
+
+      await pushAction(mockCtx, mockReq)
+
+      const [poolConfig] = capturedPayload.params
+      const [resolved] = poolConfig.data.poolUrls
+      t.is(resolved.workerPassword, workerPassword, `${label} should pass through untouched`)
+
+      t.pass()
+    })
+  }
+
   test(`pushAction - ${action} with no pool config passes params through unchanged`, async (t) => {
     let capturedPayload = null
     const mockCtx = withDataProxy({

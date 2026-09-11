@@ -117,6 +117,21 @@ const transformPushActionPayload = async (ctx, payload) => {
           throw new Error('ERR_INVALID_POOL_URL_ID_INVALID')
         }
 
+        // Checked after the pool url resolves, so an unknown id still reports itself
+        // rather than being masked by a credential complaint.
+        if (typeof workerName !== 'string') {
+          throw new Error('ERR_INVALID_WORKER_NAME')
+        }
+
+        // Any string is accepted, '' included: an endpoint may legitimately need no
+        // worker password, and configs registered before the UI collected one still
+        // carry a placeholder on endpoints nobody has corrected yet. Rejecting those
+        // would fail the whole call - updateConfig re-sends every endpoint, not just
+        // the edited one - and leave such a config impossible to repair.
+        if (typeof workerPassword !== 'string') {
+          throw new Error('ERR_INVALID_WORKER_PASSWORD')
+        }
+
         const { host, port, name } = poolUrl
         result.push({
           poolUrlId,
