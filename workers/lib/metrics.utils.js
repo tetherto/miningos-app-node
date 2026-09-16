@@ -262,11 +262,30 @@ const mean = (values) => values.length ? sum(values) / values.length : null
 const finiteValues = (entries, field) => entries.map((entry) => entry[field]).filter(Number.isFinite)
 
 // Financial reports use pool data only: summed pool vs summed nominal over the
-// buckets carrying both, so a pool polling gap never dilutes the share.
+// buckets carrying both, so a pool polling gap never dilutes the share. This is
+// the coverage basis used by the per-hour and per-day export rows.
 function poolPctOfNominal (entries) {
   const pairs = entries.filter((entry) => Number.isFinite(entry.poolHashrateMhs) && entry.nominalHashrateMhs > 0)
   if (!pairs.length) return null
   return (sum(pairs.map((entry) => entry.poolHashrateMhs)) / sum(pairs.map((entry) => entry.nominalHashrateMhs))) * 100
+}
+
+// Pool share of nominal over the WHOLE invoice period: every bucket with a positive
+// nominal counts in the denominator and a bucket without pool data counts as zero
+// delivered. The invoice bills the calendar month, so hours the pool did not report
+// (site not mining yet, pool outage) lower the percentage instead of being dropped -
+// dropping them switched the denominator to "hours with pool data" and overstated a
+// mid-month start by the coverage ratio (August 2026: 78.9% instead of 52.5%,
+// inflating amortizationPayableUsd and monthlyInvoiceUsd). Null when the pool never
+// reported in the period, so a missing feed is not misread as zero production.
+// Mirrors moria-app-ui invoicePeriodPoolPctOfNominal (PR 3061).
+function invoicePeriodPoolPctOfNominal (entries) {
+  const nominalBuckets = entries.filter((entry) => entry.nominalHashrateMhs > 0)
+  const poolEverReported = nominalBuckets.some((entry) => Number.isFinite(entry.poolHashrateMhs))
+  if (!poolEverReported) return null
+
+  const pool = sum(nominalBuckets.map((entry) => Number.isFinite(entry.poolHashrateMhs) ? entry.poolHashrateMhs : 0))
+  return (pool / sum(nominalBuckets.map((entry) => entry.nominalHashrateMhs))) * 100
 }
 
 function rollupLocalDays (log, timezone) {
@@ -305,6 +324,7 @@ module.exports = {
   getIntervalConfig,
   rollupLocalDays,
   poolPctOfNominal,
+  invoicePeriodPoolPctOfNominal,
   mhsToPhs,
   mhsToThs,
   parseRackId,

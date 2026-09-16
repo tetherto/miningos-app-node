@@ -7,7 +7,7 @@ const {
   resolveCostParametersForMonth
 } = require('../../../handlers/finance.handlers')
 const { formatDateTime } = require('../mappers')
-const { rollupLocalDays, poolPctOfNominal } = require('../../../../metrics.utils')
+const { rollupLocalDays, poolPctOfNominal, invoicePeriodPoolPctOfNominal } = require('../../../../metrics.utils')
 
 const SECONDS = { hour: 3600 }
 const EXPORT_PRECISION = 3
@@ -167,7 +167,10 @@ const invoiceBreakdown = {
     const lcoeUsdPerMwh = num(resolved.lcoe?.effectiveUsdPerMwh)
     const energyCostsUsd = derive([energyConsumedMwh, lcoeUsdPerMwh], (mwh, lcoe) => mwh * lcoe)
     const operationalCostUsd = num(costs?.operationalCost ?? costs?.operationalCostsUSD)
-    const pctOfNominal = poolPctOfNominal(hashrate.log)
+    // Invoice-month basis: hours without pool data count as zero delivered (see
+    // invoicePeriodPoolPctOfNominal) - the hourly/daily rows above keep the
+    // coverage basis on purpose.
+    const pctOfNominal = invoicePeriodPoolPctOfNominal(hashrate.log)
     const minerAmortizationUsd = num(resolved.minerAmortizationUsd)
     const infraAmortizationUsd = num(resolved.infraAmortizationUsd)
     const amortizationUsd = derive([minerAmortizationUsd, infraAmortizationUsd], (miner, infra) => miner + infra)

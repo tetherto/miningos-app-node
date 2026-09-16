@@ -12,7 +12,7 @@ const MHS = 1e11
 const NOMINAL_MHS = 1.25e11
 const POOL_HS = 9.9e16 // 99 PH/s, pool stats are in H/s
 
-function mockCtx ({ buckets = 3, interval = HOUR_MS, globalData = {}, hashrateMhs = MHS, poolHashrateHs = POOL_HS } = {}) {
+function mockCtx ({ buckets = 3, interval = HOUR_MS, globalData = {}, hashrateMhs = MHS, poolHashrateHs = POOL_HS, poolBuckets = null } = {}) {
   return withDataProxy({
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
     globalDataLib: { getGlobalData: async ({ type }) => globalData[type] },
@@ -22,7 +22,7 @@ function mockCtx ({ buckets = 3, interval = HOUR_MS, globalData = {}, hashrateMh
           return [{
             hashrateHistory: poolHashrateHs === null
               ? []
-              : Array.from({ length: buckets }, (_, i) => ({
+              : Array.from({ length: poolBuckets ?? buckets }, (_, i) => ({
                 poolType: 'f2pool',
                 ts: START + i * interval + 1000,
                 username: 'account-a',
@@ -171,6 +171,50 @@ test('invoice-breakdown - one row, margin applied over energy, ops and payable a
   t.is(row.amortizationPayableUsd, 118800, '79.2% of the amortization is payable')
   t.is(row.marginUsd, 14780, '10% of energy + ops + payable amortization')
   t.is(row.monthlyInvoiceUsd, 162580)
+  t.pass()
+})
+
+test('invoice-breakdown - hours without pool data count as zero delivered, not dropped', async (t) => {
+  // 4 hourly buckets, pool samples only in the first 2: the invoice bills the whole
+  // period, so the share halves instead of staying at the covered-hours 79.2%.
+  const { out } = await runExport(
+    'invoice-breakdown',
+    { start: START, end: START + 4 * HOUR_MS, timezone: 'UTC', format: 'json' },
+    {
+      buckets: 4,
+      interval: HOUR_MS,
+      poolBuckets: 2,
+      globalData: {
+        costParameters: { minerAmortizationUsd: 100000, infraAmortizationUsd: 50000 },
+        productionCosts: []
+      }
+    }
+  )
+  const row = JSON.parse(out).breakdown[0]
+
+  t.is(row.pctOfNominal, 39.6, 'half the coverage-basis 79.2%: 2 of 4 nominal hours delivered')
+  t.is(row.amortizationPayableUsd, 59400, '39.6% of the amortization is payable')
+  t.pass()
+})
+
+test('invoice-breakdown - a month the pool never reported has a null share, not zero', async (t) => {
+  const { out } = await runExport(
+    'invoice-breakdown',
+    { start: START, end: START + 2 * DAY_MS, timezone: 'UTC', format: 'json' },
+    {
+      buckets: 2,
+      interval: DAY_MS,
+      poolHashrateHs: null,
+      globalData: {
+        costParameters: { minerAmortizationUsd: 100000, infraAmortizationUsd: 50000 },
+        productionCosts: []
+      }
+    }
+  )
+  const row = JSON.parse(out).breakdown[0]
+
+  t.is(row.pctOfNominal, null, 'a missing pool feed is not zero production')
+  t.is(row.amortizationPayableUsd, null, 'payable amortization cannot be derived without a share')
   t.pass()
 })
 
