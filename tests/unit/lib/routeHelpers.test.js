@@ -293,3 +293,35 @@ test('createCachedAuthRoute - with permissions', (t) => {
 
   t.pass()
 })
+
+test('createCachedHandler - null key bypasses cache', async (t) => {
+  const mockCtx = {
+    conf: {
+      cacheTiming: {}
+    },
+    lru_30s: {
+      get: () => t.fail('should not read the cache'),
+      set: () => t.fail('should not write the cache')
+    },
+    queuedRequests: new Map()
+  }
+
+  const mockReq = {
+    query: { start: 1, end: 2 }
+  }
+
+  let sent
+  const mockRep = {
+    status: function () { return this },
+    send: function (data) {
+      sent = data
+      return this
+    }
+  }
+
+  const handler = createCachedHandler(mockCtx, () => null, '/test', async () => ({ result: 'fresh' }))
+  await handler(mockReq, mockRep)
+
+  t.is(sent.result, 'fresh', 'should return the handler result directly')
+  t.pass()
+})

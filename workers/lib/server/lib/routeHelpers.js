@@ -55,7 +55,9 @@ function createReadAuthOnRequest (ctx, perms = null) {
 }
 
 /**
- * Creates a cached route handler
+ * Creates a cached route handler. A keyParts function may return null to
+ * bypass the cache for that request (e.g. keys that embed caller-supplied
+ * timestamps and would never be requested again).
  * @param {Object} ctx - Context object
  * @param {Array|Function} keyParts - Cache key parts or function to generate them
  * @param {string} endpoint - Endpoint path
@@ -65,6 +67,10 @@ function createReadAuthOnRequest (ctx, perms = null) {
 function createCachedHandler (ctx, keyParts, endpoint, handler) {
   return async (req, rep) => {
     const key = typeof keyParts === 'function' ? keyParts(req) : keyParts
+    if (!key) {
+      const result = await handler(ctx, req, rep)
+      return send200(rep, result)
+    }
     const handlerFunc = () => handler(ctx, req, rep)
     const result = await cachedRoute(ctx, key, endpoint, handlerFunc, !!req.query.overwriteCache)
     return send200(rep, result)

@@ -149,3 +149,62 @@ test('auth routes - preHandler functions', (t) => {
   testPreHandlerFunctions(t, routes, 'auth')
   t.pass()
 })
+
+const buildExtDataTestCtx = () => {
+  const cache = new Map()
+  const state = { handlerCalls: 0 }
+  const ctx = {
+    conf: { cacheTiming: {} },
+    lru_30s: {
+      get: (key) => cache.get(key),
+      set: (key, value) => cache.set(key, value)
+    },
+    queuedRequests: new Map(),
+    dataProxy: {
+      requestDataMap: async () => {
+        state.handlerCalls++
+        return [[{ ts: state.handlerCalls }]]
+      }
+    }
+  }
+  return { ctx, cache, state }
+}
+
+const buildRep = () => ({
+  status: function () { return this },
+  send: function (data) {
+    this.sent = data
+    return this
+  }
+})
+
+test('auth routes - ext-data skips the cache for time-ranged queries', async (t) => {
+  const { ctx, cache, state } = buildExtDataTestCtx()
+  const routes = require('../../../workers/lib/server/routes/auth.routes.js')(ctx)
+  const extDataRoute = routes.find(r => r.url === '/auth/ext-data')
+
+  const query = JSON.stringify({ key: 'stats-history', start: 1000, end: 2000 })
+  await extDataRoute.handler({ query: { type: 'minerpool', query } }, buildRep())
+  await extDataRoute.handler({ query: { type: 'minerpool', query } }, buildRep())
+
+  t.is(state.handlerCalls, 2, 'should hit the data proxy on every request')
+  t.is(cache.size, 0, 'should not store time-ranged responses in the LRU')
+  t.pass()
+})
+
+test('auth routes - ext-data still caches un-ranged queries', async (t) => {
+  const { ctx, cache, state } = buildExtDataTestCtx()
+  const routes = require('../../../workers/lib/server/routes/auth.routes.js')(ctx)
+  const extDataRoute = routes.find(r => r.url === '/auth/ext-data')
+
+  const query = JSON.stringify({ key: 'stats' })
+  const repA = buildRep()
+  const repB = buildRep()
+  await extDataRoute.handler({ query: { type: 'minerpool-ocean', query } }, repA)
+  await extDataRoute.handler({ query: { type: 'minerpool-ocean', query } }, repB)
+
+  t.is(state.handlerCalls, 1, 'should serve the second request from the LRU')
+  t.is(cache.size, 1, 'should store the response once')
+  t.alike(repB.sent, repA.sent, 'should return the cached payload')
+  t.pass()
+})

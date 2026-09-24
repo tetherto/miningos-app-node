@@ -12,6 +12,20 @@ const {
 } = require('../handlers/auth.handlers')
 const { createAuthRoute, createCachedAuthRoute } = require('../lib/routeHelpers')
 
+// Time-ranged queries embed caller-supplied ms timestamps, so their cache
+// keys are unique per request and would only pile up dead LRU entries;
+// bypass the cache for them (invalid JSON falls through to the handler,
+// which rejects it with a proper error).
+function extDataCacheKey (req) {
+  if (req.query.query) {
+    try {
+      const query = JSON.parse(req.query.query)
+      if (query.start != null || query.end != null) return null
+    } catch (err) {}
+  }
+  return ['ext-data', req.query.type, req.query.query]
+}
+
 module.exports = (ctx) => [
   {
     method: HTTP_METHODS.GET,
@@ -78,7 +92,7 @@ module.exports = (ctx) => [
     },
     ...createCachedAuthRoute(
       ctx,
-      (req) => ['ext-data', req.query.type, req.query.query],
+      extDataCacheKey,
       ENDPOINTS.EXT_DATA,
       extDataRoute
     )
