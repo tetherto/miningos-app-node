@@ -3,7 +3,8 @@ const { parseJsonQueryParam } = require('../../utils')
 const {
   ENDPOINTS,
   HTTP_METHODS,
-  TAIL_LOG_MAX_LIMIT
+  TAIL_LOG_MAX_LIMIT,
+  AUTH_PERMISSIONS
 } = require('../../constants')
 const {
   tailLogRoute,
@@ -11,7 +12,7 @@ const {
   tailLogRangeAggrRoute,
   getHistoryLogRoute
 } = require('../handlers/logs.handlers')
-const { createCachedAuthRoute, rejectTimezone } = require('../lib/routeHelpers')
+const { createCachedAuthRoute, rejectTimezone, AUTH_ONLY } = require('../lib/routeHelpers')
 
 module.exports = (ctx) => {
   return [
@@ -49,7 +50,8 @@ module.exports = (ctx) => {
           req.query.applyAggrCrossthg
         ],
         ENDPOINTS.TAIL_LOG,
-        tailLogRoute
+        tailLogRoute,
+        AUTH_ONLY
       )
     },
     {
@@ -80,7 +82,8 @@ module.exports = (ctx) => {
           req.query.offset, req.query.limit, req.query.fields, req.query.aggrFields, req.query.aggrTimes
         ],
         ENDPOINTS.TAIL_LOG_MULTI,
-        tailLogMultiRoute
+        tailLogMultiRoute,
+        AUTH_ONLY
       )
     },
     {
@@ -120,7 +123,8 @@ module.exports = (ctx) => {
         ctx,
         (req) => ['tail-log/range-aggr', JSON.stringify(req.query.keys)],
         ENDPOINTS.TAIL_LOG_RANGE_AGGR,
-        tailLogRangeAggrRoute
+        tailLogRangeAggrRoute,
+        [AUTH_PERMISSIONS.REPORTING]
       )
     },
     {
@@ -162,7 +166,8 @@ module.exports = (ctx) => {
           req.query.query
         ],
         ENDPOINTS.HISTORY_LOG,
-        getHistoryLogRoute
+        getHistoryLogRoute,
+        [AUTH_PERMISSIONS.ALERTS, AUTH_PERMISSIONS.INVENTORY]
       )
     }
   ]

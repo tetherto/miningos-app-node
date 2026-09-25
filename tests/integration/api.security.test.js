@@ -486,6 +486,18 @@ test('Api security', { timeout: 90000 }, async (main) => {
     })
   })
 
+  await main.test('Api: resource-gated reads deny read-only users', async (n) => {
+    for (const path of [
+      `${ENDPOINTS.METRICS_REVENUE_HOURLY}?start=1&end=2`,
+      `${ENDPOINTS.GLOBAL_DATA}?type=alertParameters`,
+      `${ENDPOINTS.THING_CONFIG}?type=miner&requestType=poolConfig`
+    ]) {
+      await n.test(path, async (t) => {
+        await testEndpointWithAuthAndError(t, httpClient, 'get', `${appNodeBaseUrl}${path}`, readonlyUser, 'ERR_AUTH_FAIL_NO_PERMS', { encoding })
+      })
+    }
+  })
+
   await main.test('Api: get users', async (n) => {
     const api = `${appNodeBaseUrl}${ENDPOINTS.USERS}`
 

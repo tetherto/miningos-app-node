@@ -2,7 +2,7 @@
 
 const { ENDPOINTS, HTTP_METHODS } = require('../../constants')
 const { getCoolingSystemData } = require('../handlers/cooling.system.handlers')
-const { createCachedAuthRoute } = require('../lib/routeHelpers')
+const { createCachedAuthRoute, AUTH_ONLY } = require('../lib/routeHelpers')
 
 module.exports = (ctx) => [
   {
@@ -34,7 +34,8 @@ module.exports = (ctx) => [
       ctx,
       (req) => ['cooling-system', req.query.type, req.query.view],
       ENDPOINTS.COOLING_SYSTEM,
-      getCoolingSystemData
+      getCoolingSystemData,
+      AUTH_ONLY
     )
   }
 ]

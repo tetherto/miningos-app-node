@@ -2,7 +2,7 @@
 
 const { ENDPOINTS, HTTP_METHODS } = require('../../constants')
 const { getPduLayout } = require('../handlers/pdu.layout.handlers')
-const { createCachedAuthRoute } = require('../lib/routeHelpers')
+const { createCachedAuthRoute, AUTH_ONLY } = require('../lib/routeHelpers')
 
 module.exports = (ctx) => [
   {
@@ -31,7 +31,8 @@ module.exports = (ctx) => [
       ctx,
       (req) => ['pdu-layout', req.query.type, req.query.container],
       ENDPOINTS.PDU_LAYOUT,
-      getPduLayout
+      getPduLayout,
+      AUTH_ONLY
     )
   }
 ]

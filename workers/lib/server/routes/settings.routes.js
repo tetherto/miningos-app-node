@@ -5,13 +5,13 @@ const {
   HTTP_METHODS
 } = require('../../constants')
 const { saveUserSettings, getUserSettings } = require('../handlers/users.handlers')
-const { createAuthRoute } = require('../lib/routeHelpers')
+const { createAuthRoute, AUTH_ONLY } = require('../lib/routeHelpers')
 
 module.exports = (ctx) => [
   {
     method: HTTP_METHODS.GET,
     url: ENDPOINTS.USER_SETTINGS,
-    ...createAuthRoute(ctx, getUserSettings)
+    ...createAuthRoute(ctx, getUserSettings, AUTH_ONLY)
   },
   {
     method: HTTP_METHODS.POST,
@@ -28,6 +28,6 @@ module.exports = (ctx) => [
     ...createAuthRoute(ctx, async (ctx, req) => {
       const success = await saveUserSettings(ctx, req)
       return { success }
-    })
+    }, AUTH_ONLY)
   }
 ]

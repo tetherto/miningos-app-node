@@ -5,7 +5,7 @@ const {
   HTTP_METHODS
 } = require('../../constants')
 const { getSitePowerConsumption } = require('../handlers/power.consumption.handlers')
-const { createCachedAuthRoute, rejectTimezone } = require('../lib/routeHelpers')
+const { createCachedAuthRoute, rejectTimezone, AUTH_ONLY } = require('../lib/routeHelpers')
 
 module.exports = (ctx) => {
   return [
@@ -37,7 +37,8 @@ module.exports = (ctx) => {
           req.query.totalTransformerConsumption, req.query.limit
         ],
         ENDPOINTS.SITE_POWER_CONSUMPTION,
-        getSitePowerConsumption
+        getSitePowerConsumption,
+        AUTH_ONLY
       )
     }
   ]

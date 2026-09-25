@@ -2,7 +2,8 @@
 const {
   ENDPOINTS,
   HTTP_METHODS,
-  COMMENT_ACTION
+  COMMENT_ACTION,
+  AUTH_PERMISSIONS
 } = require('../../constants')
 const {
   listThingsRoute,
@@ -13,7 +14,7 @@ const {
   getWorkerConfig,
   getThingConfig
 } = require('../handlers/things.handlers')
-const { createAuthRoute, createCachedAuthRoute } = require('../lib/routeHelpers')
+const { createAuthRoute, createCachedAuthRoute, AUTH_ONLY } = require('../lib/routeHelpers')
 
 const COMMENT_SCHEMA = {
   body: {
@@ -53,7 +54,8 @@ module.exports = (ctx) => [
         req.query.offset, req.query.limit, req.query.fields
       ],
       ENDPOINTS.LIST_THINGS,
-      listThingsRoute
+      listThingsRoute,
+      AUTH_ONLY
     )
   },
   {
@@ -72,20 +74,21 @@ module.exports = (ctx) => [
       ctx,
       (req) => ['list-racks', req.query.type],
       ENDPOINTS.LIST_RACKS,
-      listRacksRoute
+      listRacksRoute,
+      [AUTH_PERMISSIONS.INVENTORY, AUTH_PERMISSIONS.EXPLORER, AUTH_PERMISSIONS.REVENUE]
     )
   },
   {
     method: HTTP_METHODS.POST,
     url: ENDPOINTS.THING_COMMENT,
     schema: COMMENT_SCHEMA,
-    ...createAuthRoute(ctx, (ctx, req) => processThingComment(ctx, req, COMMENT_ACTION.ADD))
+    ...createAuthRoute(ctx, (ctx, req) => processThingComment(ctx, req, COMMENT_ACTION.ADD), [AUTH_PERMISSIONS.COMMENTS])
   },
   {
     method: HTTP_METHODS.PUT,
     url: ENDPOINTS.THING_COMMENT,
     schema: COMMENT_SCHEMA,
-    ...createAuthRoute(ctx, (ctx, req) => processThingComment(ctx, req, COMMENT_ACTION.EDIT))
+    ...createAuthRoute(ctx, (ctx, req) => processThingComment(ctx, req, COMMENT_ACTION.EDIT), [AUTH_PERMISSIONS.COMMENTS])
   },
   {
     method: HTTP_METHODS.DELETE,
@@ -102,7 +105,7 @@ module.exports = (ctx) => [
         required: ['rackId', 'thingId']
       }
     },
-    ...createAuthRoute(ctx, (ctx, req) => processThingComment(ctx, req, COMMENT_ACTION.DELETE))
+    ...createAuthRoute(ctx, (ctx, req) => processThingComment(ctx, req, COMMENT_ACTION.DELETE), [AUTH_PERMISSIONS.COMMENTS])
   },
   {
     method: HTTP_METHODS.GET,
@@ -116,7 +119,7 @@ module.exports = (ctx) => [
         required: ['rackId']
       }
     },
-    ...createAuthRoute(ctx, getThingSettings)
+    ...createAuthRoute(ctx, getThingSettings, [AUTH_PERMISSIONS.SETTINGS])
   },
   {
     method: HTTP_METHODS.PUT,
@@ -138,7 +141,7 @@ module.exports = (ctx) => [
         required: ['rackId', 'entries']
       }
     },
-    ...createAuthRoute(ctx, saveThingSettings)
+    ...createAuthRoute(ctx, saveThingSettings, AUTH_ONLY)
   },
   {
     method: HTTP_METHODS.GET,
@@ -158,7 +161,8 @@ module.exports = (ctx) => [
       ctx,
       (req) => ['worker-config', req.query.fields, req.query.type],
       ENDPOINTS.WORKER_CONFIG,
-      getWorkerConfig
+      getWorkerConfig,
+      [AUTH_PERMISSIONS.INVENTORY]
     )
   },
   {
@@ -174,6 +178,8 @@ module.exports = (ctx) => [
         required: ['type', 'requestType']
       }
     },
-    ...createAuthRoute(ctx, getThingConfig)
+    ...createAuthRoute(ctx, getThingConfig, (req) => req.query.requestType === 'poolConfig'
+      ? [AUTH_PERMISSIONS.POOL_CONFIG]
+      : [AUTH_PERMISSIONS.EXPLORER, AUTH_PERMISSIONS.INVENTORY])
   }
 ]

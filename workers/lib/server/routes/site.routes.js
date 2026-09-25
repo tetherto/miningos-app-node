@@ -4,7 +4,8 @@ const {
   ENDPOINTS,
   HTTP_METHODS,
   AUTH_CAPS,
-  AUTH_LEVELS
+  AUTH_LEVELS,
+  AUTH_PERMISSIONS
 } = require('../../constants')
 const { getSiteLiveStatus, getSiteOverviewGroupsStats, getSiteOverviewUnits, getSiteEfficiency } = require('../handlers/site.handlers')
 const { createCachedAuthRoute } = require('../lib/routeHelpers')
@@ -25,7 +26,8 @@ module.exports = (ctx) => [
       ctx,
       ['site-status-live'],
       ENDPOINTS.SITE_STATUS_LIVE,
-      getSiteLiveStatus
+      getSiteLiveStatus,
+      [AUTH_PERMISSIONS.MINER, AUTH_PERMISSIONS.CONTAINER]
     )
   },
   {

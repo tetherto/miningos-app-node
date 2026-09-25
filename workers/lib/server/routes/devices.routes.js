@@ -2,7 +2,8 @@
 
 const {
   ENDPOINTS,
-  HTTP_METHODS
+  HTTP_METHODS,
+  AUTH_PERMISSIONS
 } = require('../../constants')
 const {
   getContainers,
@@ -33,7 +34,8 @@ module.exports = (ctx) => {
           req.query.limit
         ],
         ENDPOINTS.CONTAINERS,
-        getContainers
+        getContainers,
+        [AUTH_PERMISSIONS.CONTAINER]
       )
     },
     {
@@ -53,7 +55,8 @@ module.exports = (ctx) => {
           req.query.limit
         ],
         ENDPOINTS.CABINETS,
-        getCabinets
+        getCabinets,
+        [AUTH_PERMISSIONS.CABINETS]
       )
     },
     {
@@ -66,7 +69,8 @@ module.exports = (ctx) => {
           req.params.id
         ],
         ENDPOINTS.CABINET_BY_ID,
-        getCabinetById
+        getCabinetById,
+        [AUTH_PERMISSIONS.CABINETS]
       )
     }
   ]

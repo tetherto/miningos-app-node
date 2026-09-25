@@ -164,53 +164,49 @@ test('getThingSettings - with error response', async (t) => {
   t.pass()
 })
 
-test('saveThingSettings - basic functionality', async (t) => {
-  const mockCtx = {
-    authLib: {
-      getTokenPerms: async (token) => {
-        return { write: true }
-      }
-    },
-    ...createMockCtxWithOrks(
-      [{ rpcPublicKey: 'key1' }],
-      async (key, method, payload) => {
-        t.is(method, 'saveWrkSettings', 'should call saveWrkSettings')
-        return { success: true }
-      }
-    )
-  }
-  const mockReq = createMockReq(
-    {},
-    { rackId: 'rack1', entries: {} },
-    { authToken: 'token' }
+const saveSettingsCtx = (allowed, calls) => ({
+  authLib: {
+    tokenHasPerms: async (token, write, perms) => {
+      calls.perms = perms
+      return allowed
+    }
+  },
+  ...createMockCtxWithOrks(
+    [{ rpcPublicKey: 'key1' }],
+    async (key, method, payload) => {
+      if (method === 'listRacks') return [{ id: 'inv-1', type: 'inventory-spare_part' }]
+      calls.saved = payload
+      return { success: true }
+    }
   )
+})
 
-  const result = await saveThingSettings(mockCtx, mockReq, {})
+test('saveThingSettings - requires settings:w on device racks', async (t) => {
+  const calls = {}
+  const mockReq = createMockReq({}, { rackId: 'rack1', entries: {} }, { authToken: 'token' })
 
-  t.ok(Array.isArray(result), 'should return array')
+  const result = await saveThingSettings(saveSettingsCtx(true, calls), mockReq, {})
+
+  t.alike(calls.perms, [`${AUTH_PERMISSIONS.SETTINGS}:${AUTH_LEVELS.WRITE}`], 'should check settings:w')
+  t.is(calls.saved.rackId, 'rack1', 'should call saveWrkSettings')
   t.ok(result[0].success, 'should return success result')
+})
 
-  t.pass()
+test('saveThingSettings - requires inventory:w on inventory racks', async (t) => {
+  const calls = {}
+  const mockReq = createMockReq({}, { rackId: 'inv-1', entries: {} }, { authToken: 'token' })
+
+  await saveThingSettings(saveSettingsCtx(true, calls), mockReq, {})
+
+  t.alike(calls.perms, [`${AUTH_PERMISSIONS.INVENTORY}:${AUTH_LEVELS.WRITE}`], 'should check inventory:w')
 })
 
 test('saveThingSettings - without write permission', async (t) => {
-  const mockCtx = {
-    authLib: {
-      getTokenPerms: async (token) => {
-        return { write: false }
-      }
-    }
-  }
-  const mockReq = createMockReq({}, {}, { authToken: 'token' })
+  const calls = {}
+  const mockReq = createMockReq({}, { rackId: 'rack1', entries: {} }, { authToken: 'token' })
 
-  try {
-    await saveThingSettings(mockCtx, mockReq, {})
-    t.fail('should throw error for missing write permission')
-  } catch (err) {
-    t.is(err.message, 'ERR_WRITE_PERM_REQUIRED', 'should throw ERR_WRITE_PERM_REQUIRED')
-  }
-
-  t.pass()
+  await t.exception(saveThingSettings(saveSettingsCtx(false, calls), mockReq, {}), /ERR_WRITE_PERM_REQUIRED/)
+  t.absent(calls.saved, 'should not save settings')
 })
 
 test('processThingComment - add comment', async (t) => {

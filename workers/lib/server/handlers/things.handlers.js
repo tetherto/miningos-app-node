@@ -4,7 +4,7 @@ const {
   AUTH_LEVELS,
   COMMENT_ACTION
 } = require('../../constants')
-const { parseJsonQueryParam } = require('../../utils')
+const { parseJsonQueryParam, flattenRpcResults } = require('../../utils')
 const { assertSafeMongoQuery } = require('../lib/queryUtils')
 
 async function listThingsRoute (ctx, req, rep) {
@@ -51,8 +51,10 @@ async function getThingSettings (ctx, req, rep) {
 }
 
 async function saveThingSettings (ctx, req, rep) {
-  const { write } = await ctx.authLib.getTokenPerms(req._info.authToken)
-  if (!write) {
+  // Inventory racks keep spare-part subtypes in their settings, edited under inventory:w.
+  const inventoryRacks = flattenRpcResults(await ctx.dataProxy.requestData('listRacks', { type: AUTH_PERMISSIONS.INVENTORY }))
+  const perm = inventoryRacks.some(rack => rack.id === req.body.rackId) ? AUTH_PERMISSIONS.INVENTORY : AUTH_PERMISSIONS.SETTINGS
+  if (!await ctx.authLib.tokenHasPerms(req._info.authToken, false, [`${perm}:${AUTH_LEVELS.WRITE}`])) {
     throw new Error('ERR_WRITE_PERM_REQUIRED')
   }
 

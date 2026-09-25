@@ -3,7 +3,7 @@
 const { ENDPOINTS, HTTP_METHODS } = require('../../constants')
 const { EXPORT_TYPES, EXPORT_FORMATS } = require('../lib/export/registry')
 const { exportRoute } = require('../handlers/export.handlers')
-const { createAuthOnRequest } = require('../lib/routeHelpers')
+const { createAuthOnRequest, AUTH_ONLY } = require('../lib/routeHelpers')
 
 module.exports = (ctx) => [
   {
@@ -26,7 +26,7 @@ module.exports = (ctx) => [
         required: ['type']
       }
     },
-    onRequest: createAuthOnRequest(ctx),
+    onRequest: createAuthOnRequest(ctx, AUTH_ONLY),
     handler: (req, reply) => exportRoute(ctx, req, reply)
   }
 ]

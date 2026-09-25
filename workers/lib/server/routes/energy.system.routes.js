@@ -2,7 +2,7 @@
 
 const { ENDPOINTS, HTTP_METHODS } = require('../../constants')
 const { getEnergySystemData } = require('../handlers/energy.system.handlers')
-const { createCachedAuthRoute } = require('../lib/routeHelpers')
+const { createCachedAuthRoute, AUTH_ONLY } = require('../lib/routeHelpers')
 
 module.exports = (ctx) => [
   {
@@ -29,7 +29,8 @@ module.exports = (ctx) => [
       ctx,
       (req) => ['energy-system', req.query.view],
       ENDPOINTS.ENERGY_SYSTEM,
-      getEnergySystemData
+      getEnergySystemData,
+      AUTH_ONLY
     )
   }
 ]

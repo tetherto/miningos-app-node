@@ -6,8 +6,10 @@ const {
   createAuthOnRequest,
   createCachedHandler,
   createAuthRoute,
-  createCachedAuthRoute
+  createCachedAuthRoute,
+  AUTH_ONLY
 } = require('../../../workers/lib/server/lib/routeHelpers')
+const { routes } = require('../../../workers/lib/server')
 
 test('createAuthHandler - calls handler and sends 200', async (t) => {
   const mockCtx = {}
@@ -51,7 +53,7 @@ test('createAuthOnRequest - calls authCheck', async (t) => {
     send: function () { return this }
   }
 
-  const onRequest = createAuthOnRequest(mockCtx)
+  const onRequest = createAuthOnRequest(mockCtx, AUTH_ONLY)
   try {
     await onRequest(mockReq, mockRep)
     t.ok(true, 'should call authCheck')
@@ -246,11 +248,42 @@ test('createCachedHandler - with function keyParts', async (t) => {
   t.pass()
 })
 
+test('createAuthRoute - requires perms', (t) => {
+  t.exception(() => createAuthRoute({}, async () => ({})), /ERR_ROUTE_PERMS_REQUIRED/)
+  t.exception(() => createCachedAuthRoute({}, ['key'], '/endpoint', async () => ({})), /ERR_ROUTE_PERMS_REQUIRED/)
+  t.exception(() => createAuthOnRequest({}, null), /ERR_ROUTE_PERMS_REQUIRED/)
+})
+
+test('every registered route names its perms', (t) => {
+  const ctx = new Proxy({}, { get: (target, key) => typeof key === 'string' ? {} : undefined })
+  t.execution(() => routes(ctx), 'no route is built without perms')
+})
+
+test('createAuthOnRequest - AUTH_ONLY skips capCheck, function perms resolve per request', async (t) => {
+  const checked = []
+  const mockCtx = {
+    noAuth: false,
+    authLib: {
+      resolveToken: async () => ({ userId: 'test', metadata: {} }),
+      tokenHasPerms: async (token, write, perms) => { checked.push(perms); return true }
+    }
+  }
+  const mockReq = (query) => ({ method: 'GET', headers: { authorization: 'Bearer token123' }, ip: '127.0.0.1', query, _info: {} })
+  const mockRep = { status: function () { return this }, send: function () { return this } }
+
+  await createAuthOnRequest(mockCtx, AUTH_ONLY)(mockReq({}), mockRep)
+  const byType = createAuthOnRequest(mockCtx, (req) => req.query.type === 'secret' ? ['revenue'] : AUTH_ONLY)
+  await byType(mockReq({ type: 'public' }), mockRep)
+  await byType(mockReq({ type: 'secret' }), mockRep)
+
+  t.alike(checked, [['revenue']], 'only the gated request is cap-checked')
+})
+
 test('createAuthRoute - returns route configuration', (t) => {
   const mockCtx = {}
   const mockHandler = async () => ({})
 
-  const route = createAuthRoute(mockCtx, mockHandler)
+  const route = createAuthRoute(mockCtx, mockHandler, AUTH_ONLY)
 
   t.ok(route.onRequest, 'should have onRequest handler')
   t.ok(route.handler, 'should have handler')
@@ -274,7 +307,7 @@ test('createCachedAuthRoute - returns route configuration', (t) => {
   const mockCtx = {}
   const mockHandler = async () => ({})
 
-  const route = createCachedAuthRoute(mockCtx, ['key'], '/endpoint', mockHandler)
+  const route = createCachedAuthRoute(mockCtx, ['key'], '/endpoint', mockHandler, AUTH_ONLY)
 
   t.ok(route.onRequest, 'should have onRequest handler')
   t.ok(route.handler, 'should have handler')

@@ -4,7 +4,8 @@ const {
   ENDPOINTS,
   HTTP_METHODS,
   AUTH_CAPS,
-  AUTH_LEVELS
+  AUTH_LEVELS,
+  AUTH_PERMISSIONS
 } = require('../../constants')
 const { listMiners, listContainerMiners, listFirmwares } = require('../handlers/miners.handlers')
 const { createCachedAuthRoute } = require('../lib/routeHelpers')
@@ -73,7 +74,8 @@ module.exports = (ctx) => [
       ctx,
       (req) => ['list-firmwares'],
       ENDPOINTS.LIST_FIRMWARES,
-      listFirmwares
+      listFirmwares,
+      [AUTH_PERMISSIONS.MINER]
     )
   }
 ]
