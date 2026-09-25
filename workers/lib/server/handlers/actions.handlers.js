@@ -177,7 +177,7 @@ async function pushAction (ctx, req) {
 }
 
 async function voteAction (ctx, req) {
-  const { write, caps } = await ctx.authLib.getTokenPerms(req._info.authToken)
+  const { write, permissions } = await ctx.authLib.getTokenPerms(req._info.authToken)
   if (!write) {
     throw new Error('ERR_WRITE_PERM_REQUIRED')
   }
@@ -186,7 +186,7 @@ async function voteAction (ctx, req) {
     id: req.params.id,
     approve: req.body.approve,
     voter: req._info.user.metadata.email,
-    authPerms: caps
+    authPerms: permissions
   }
 
   return await ctx.dataProxy.requestData('voteAction', payload, (res, resultsArray) => {

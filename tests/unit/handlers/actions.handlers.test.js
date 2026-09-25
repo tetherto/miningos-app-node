@@ -974,12 +974,12 @@ test('voteAction - with valid permissions', async (t) => {
     authLib: {
       getTokenPerms: async () => ({
         write: true,
-        caps: ['actions:vote']
+        permissions: ['miner:r']
       })
     },
     net_r0: {
       jRequest: async (key, method, payload, opts) => {
-        return { success: true, vote: payload.approve }
+        return { success: true, vote: payload.approve, authPerms: payload.authPerms }
       }
     }
   })
@@ -997,6 +997,7 @@ test('voteAction - with valid permissions', async (t) => {
 
   t.ok(Array.isArray(result), 'should return array')
   t.ok(result[0].res.success === true, 'should return successful vote')
+  t.alike(result[0].res.authPerms, ['miner:r'], 'should forward level-bearing permissions')
 
   t.pass()
 })
