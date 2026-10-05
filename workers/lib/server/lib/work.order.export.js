@@ -58,7 +58,13 @@ function _findRepairedMove (moves) {
     moves.find(m => m.role === 'original' && m.toStatus === REPAIRED_PART_STATUS && m.fromStatus !== m.toStatus)
 }
 
-function renderRmaCsv (workOrders) {
+// Moves store the MOS part code; the RMA wants the controller MAC or the HB/PSU serial.
+function renderRmaCsv (workOrders, parts = []) {
+  const partsById = new Map(parts.map(p => [p.id, p.info || {}]))
+  const macOrSn = (move) => {
+    const info = partsById.get(move.partId) || {}
+    return info.macAddress ?? info.serialNum ?? move.partCode
+  }
   const rows = workOrders.map((wo) => {
     const info = wo.info || {}
     const moves = Array.isArray(info.partsMoves) ? info.partsMoves : []
@@ -70,8 +76,8 @@ function renderRmaCsv (workOrders) {
       wo.code,
       minerModel,
       info.deviceIdentifier,
-      repaired.partCode,
-      replaced.partCode,
+      macOrSn(repaired),
+      macOrSn(replaced),
       info.issue,
       info.notes ?? info.finalResult,
       info.remarks,

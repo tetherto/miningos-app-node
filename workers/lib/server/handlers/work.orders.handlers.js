@@ -795,10 +795,14 @@ async function _loadWorkOrdersByIdsOrCodes (ctx, idsParam) {
 async function exportWorkOrdersRma (ctx, req, rep) {
   const wos = (await _loadWorkOrdersByIdsOrCodes(ctx, req.query.ids))
     .filter(wo => wo?.info?.type === WORK_ORDER_TYPES.MICROBT_MINER)
+  const partIds = [...new Set(wos.flatMap(wo => (wo.info.partsMoves || []).map(m => m.partId)).filter(Boolean))]
+  const parts = partIds.length
+    ? flattenRpcResults(await ctx.dataProxy.requestData('listThings', { query: { id: { $in: partIds } }, limit: partIds.length }))
+    : []
 
   rep.header('content-type', 'text/csv; charset=utf-8')
   rep.header('content-disposition', 'attachment; filename="rma.csv"')
-  return rep.send(renderRmaCsv(wos))
+  return rep.send(renderRmaCsv(wos, parts))
 }
 
 // Bulk sibling of exportWorkOrder: N ids, one combined CSV, so a large list-page

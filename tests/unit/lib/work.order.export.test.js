@@ -247,3 +247,24 @@ test('work.order.export: CSV maps a known miner type slug in the deviceModel col
   const idx = lines[0].split(',').indexOf('deviceModel')
   t.is(lines[1].split(',')[idx], 'M63S', 'deviceModel column shows the friendly model name')
 })
+
+test('work.order.export: RMA CSV prints the part serial (HB/PSU) or MAC (controller) instead of the MOS code', (t) => {
+  const wo = {
+    code: 'IVI-3-0058',
+    info: {
+      type: 3,
+      partsMoves: [
+        { role: 'original', partId: 'hb-1', partCode: 'HB-WM-M63SPP-739', fromStatus: 'faulty', toStatus: 'ok_repaired' },
+        { role: 'replacement', partId: 'cb-1', partCode: 'CB-WM-1' }
+      ]
+    }
+  }
+  const parts = [
+    { id: 'hb-1', code: 'HB-WM-M63SPP-739', info: { serialNum: 'QAHB01-WM63SPP00802' } },
+    { id: 'cb-1', code: 'CB-WM-1', info: { serialNum: 'CB-SN', macAddress: '00:1A:2B:3C:4D:5E' } }
+  ]
+  const row = renderRmaCsv([wo], parts).trim().split('\r\n')[1].split(',')
+  t.is(row[3], 'QAHB01-WM63SPP00802', 'repaired HB serial, not HB-WM-M63SPP-739')
+  t.is(row[4], '00:1A:2B:3C:4D:5E', 'replaced controller MAC')
+  t.is(renderRmaCsv([wo]).trim().split('\r\n')[1].split(',')[3], 'HB-WM-M63SPP-739', 'falls back to the move code when the part is gone')
+})
