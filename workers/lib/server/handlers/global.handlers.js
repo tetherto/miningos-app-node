@@ -100,6 +100,7 @@ async function setPoolRebatesData (ctx, data) {
   // Deletes always tombstone the txid in the mempool worker (idempotent, even
   // for manual rows), so a removed transaction can never return via the sync.
   if (data?.remove) {
+    if (data.source === POOL_REBATE_SOURCES.AUTO) return await deleteAutoPoolRebate(ctx, data.txid)
     await ctx.globalDataLib.setGlobalData({ ts: data.ts, remove: true }, GLOBAL_DATA_TYPES.POOL_REBATES)
     if (data.txid) await deleteAutoPoolRebate(ctx, data.txid)
     return true

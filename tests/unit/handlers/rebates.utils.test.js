@@ -142,12 +142,36 @@ test('setGlobalData deletes the manual row and tombstones the txid', async (t) =
   const c = ctx({ setResults: [[true]] })
 
   await setGlobalData(c, {
-    body: { data: { ts: 5, txid: TXID_A, source: 'auto', remove: true } },
+    body: { data: { ts: 5, txid: TXID_A, source: 'manual', remove: true } },
     query: { type: GLOBAL_DATA_TYPES.POOL_REBATES }
   })
 
   t.alike(c.globalDataLib.writes[0], { data: { ts: 5, remove: true }, type: GLOBAL_DATA_TYPES.POOL_REBATES })
   t.is(c.setRequests[0].payload.key, MEMPOOL_EXT_DATA_KEYS.POOL_REBATES_DELETE)
+})
+
+test('setGlobalData auto delete leaves a manual row at the same ts', async (t) => {
+  const c = ctx({ setResults: [[true]] })
+
+  await setGlobalData(c, {
+    body: { data: { ts: 5, txid: TXID_A, source: 'auto', remove: true } },
+    query: { type: GLOBAL_DATA_TYPES.POOL_REBATES }
+  })
+
+  t.is(c.globalDataLib.writes.length, 0)
+  t.alike(c.setRequests[0].payload.value, { txid: TXID_A })
+})
+
+test('setGlobalData auto delete without txid is rejected', async (t) => {
+  const c = ctx()
+
+  await t.exception(() => setGlobalData(c, {
+    body: { data: { ts: 5, source: 'auto', remove: true } },
+    query: { type: GLOBAL_DATA_TYPES.POOL_REBATES }
+  }), /ERR_TXID_REQUIRED/)
+
+  t.is(c.globalDataLib.writes.length, 0)
+  t.is(c.setRequests.length, 0)
 })
 
 test('setGlobalData delete without txid stays local', async (t) => {

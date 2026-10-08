@@ -89,6 +89,7 @@ async function updateAutoPoolRebate (ctx, data) {
 }
 
 async function deleteAutoPoolRebate (ctx, txid) {
+  if (!txid) throw new Error('ERR_TXID_REQUIRED')
   const results = await ctx.dataProxy.requestDataMap(RPC_METHODS.SET_WRK_EXT_DATA, {
     type: WORKER_TYPES.MEMPOOL,
     key: MEMPOOL_EXT_DATA_KEYS.POOL_REBATES_DELETE,
