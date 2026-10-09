@@ -1,6 +1,6 @@
 'use strict'
 
-const { getStartOfDay, zoneOffsetMs, localMonthStartTs, requireZone } = require('./period.utils')
+const { getStartOfDay, zoneOffsetMs, localDayStart, localWeekStart, localMonthStartTs, requireZone } = require('./period.utils')
 const { METRICS_TIME, LOG_KEYS, LOCKED_TIMEZONE_DEFAULT } = require('./constants')
 
 /**
@@ -401,6 +401,61 @@ function rollupLocalMonths (log, timezone) {
   }))
 }
 
+// First instant of the local month (in `timezone`) containing `ts`.
+function localMonthStart (ts, timezone) {
+  const [year, month] = localMonthKey(ts, timezone).split('-').map(Number)
+  return localMonthStartTs(year, month, timezone)
+}
+
+// The day/week/month intervals the metrics endpoints cut in the site's zone. The store's
+// groupRange buckets on the UTC epoch grid ('1W' even starts on a Thursday), so these are
+// rebuilt app-side from hourly buckets - see groupLocalBuckets.
+const LOCAL_BUCKET_STARTS = {
+  '1d': localDayStart,
+  '1w': localWeekStart,
+  '1M': localMonthStart
+}
+
+// Stepping past the bucket's start by more than the longest local day/week/month and
+// re-deriving the start keeps the next boundary right across a DST shift.
+const LOCAL_BUCKET_STEPS_MS = {
+  '1d': 1.5 * METRICS_TIME.ONE_DAY_MS,
+  '1w': 7.5 * METRICS_TIME.ONE_DAY_MS,
+  '1M': 32 * METRICS_TIME.ONE_DAY_MS
+}
+
+function isLocalInterval (interval) {
+  return Object.hasOwn(LOCAL_BUCKET_STARTS, interval)
+}
+
+/**
+ * Groups hourly entries into `interval` buckets in `timezone` ('1d', '1w' or '1M'). Each
+ * bucket's ts/timeRange are clamped to [start, end], so a response never reaches outside
+ * the requested range: the first entry starts at `start` and the last ends at `end`.
+ * Returns { ts, timeRange, entries }; callers aggregate `entries` their own way.
+ */
+function groupLocalBuckets (log, { interval, timezone, start, end }) {
+  const bucketStartOf = LOCAL_BUCKET_STARTS[interval]
+  const zone = requireZone(timezone, 'groupLocalBuckets')
+  const buckets = new Map()
+
+  for (const entry of log) {
+    if (!Number.isFinite(entry?.ts)) continue
+    const bucketStart = bucketStartOf(entry.ts, zone)
+    if (!buckets.has(bucketStart)) buckets.set(bucketStart, [])
+    buckets.get(bucketStart).push(entry)
+  }
+
+  return [...buckets.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([bucketStart, entries]) => {
+      const bucketEnd = bucketStartOf(bucketStart + LOCAL_BUCKET_STEPS_MS[interval], zone) - 1
+      const startTs = Math.max(start, bucketStart)
+      const endTs = Math.min(end, bucketEnd)
+      return { ts: startTs, timeRange: { startTs, endTs }, entries }
+    })
+}
+
 module.exports = {
   parseEntryTs,
   parseEntryTimeRange,
@@ -419,6 +474,9 @@ module.exports = {
   zoneOffsetMs,
   rollupLocalDays,
   rollupLocalMonths,
+  isLocalInterval,
+  groupLocalBuckets,
+  localMonthStart,
   localMonthsInRange,
   localMonthStartTs,
   localMonthKey,

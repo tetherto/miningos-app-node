@@ -190,8 +190,9 @@ test('invoice-breakdown - one row, margin applied over energy, ops and payable a
     'invoice-breakdown',
     { start: START, end: START + 2 * DAY_MS, timezone: 'UTC', format: 'json' },
     {
-      buckets: 2,
-      interval: DAY_MS,
+      // '1d' is rolled up from the store's hourly buckets
+      buckets: 48,
+      interval: HOUR_MS,
       globalData: {
         costParameters: {
           lcoe: { effectiveUsdPerMwh: 50 },
@@ -207,7 +208,7 @@ test('invoice-breakdown - one row, margin applied over energy, ops and payable a
 
   t.is(row.year, 2026)
   t.is(row.month, 8)
-  t.is(row.energyConsumedMwh, 480, '10 MW over two daily buckets')
+  t.is(row.energyConsumedMwh, 480, '10 MW over two days of hourly buckets')
   t.is(row.energyCostsUsd, 24000, '480 MWh x 50 USD/MWh')
   t.is(row.operationalCostUsd, 5000, 'read from the month production costs')
   t.is(row.pctOfNominal, 79.2, 'pool vs nominal over the month, not the miner summary')
@@ -220,10 +221,11 @@ test('invoice-breakdown - one row, margin applied over energy, ops and payable a
 
 test('invoice-breakdown - hours without pool data count as zero delivered, not dropped', async (t) => {
   // 4 hourly buckets, pool samples only in the first 2: the invoice bills the whole
-  // period, so the share halves instead of staying at the covered-hours 79.2%.
+  // period, so the share halves instead of staying at the covered-hours 79.2%. Only the
+  // hourly (localMonth) basis keeps the uncovered hours as their own buckets.
   const { out } = await runExport(
     'invoice-breakdown',
-    { start: START, end: START + 4 * HOUR_MS, timezone: 'UTC', format: 'json' },
+    { start: START, end: START + 4 * HOUR_MS, timezone: 'UTC', localMonth: true, format: 'json' },
     {
       buckets: 4,
       interval: HOUR_MS,
@@ -306,7 +308,7 @@ test('invoice-breakdown - a missing input nulls its dependents, never zeroes the
   const { out } = await runExport(
     'invoice-breakdown',
     { start: START, end: START + 2 * DAY_MS, timezone: 'UTC', format: 'json' },
-    { buckets: 2, interval: DAY_MS, globalData: { costParameters: { marginPct: 10 } } }
+    { buckets: 48, interval: HOUR_MS, globalData: { costParameters: { marginPct: 10 } } }
   )
   const row = JSON.parse(out).breakdown[0]
 

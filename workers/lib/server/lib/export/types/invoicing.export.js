@@ -160,10 +160,11 @@ const invoiceBreakdown = {
     // always sent, read in UTC so a west-of-UTC label timezone does not bill the
     // month before.
     const localMonth = params.localMonth === true || params.localMonth === 'true'
-    const interval = localMonth ? '1h' : '1d'
+    // The UTC month is cut into UTC days; metrics days otherwise default to the site's zone.
+    const query = localMonth ? { start, end, interval: '1h' } : { start, end, interval: '1d', timezone: 'UTC' }
     const [hashrate, consumption, costParameters, productionCosts] = await Promise.all([
-      getHashrate(ctx, { query: { start, end, interval, nominal: true, pool: true } }),
-      getConsumption(ctx, { query: { start, end, interval } }),
+      getHashrate(ctx, { query: { ...query, nominal: true, pool: true } }),
+      getConsumption(ctx, { query }),
       getCostParameters(ctx),
       getProductionCosts(ctx, start, end)
     ])

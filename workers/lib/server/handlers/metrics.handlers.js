@@ -21,7 +21,6 @@ const {
   POOL_HASHRATE_INTERVALS_MS
 } = require('../../constants')
 const {
-  getStartOfDay,
   localDayStart,
   safeDiv,
   flattenRpcResults
@@ -45,6 +44,8 @@ const {
   mergeGroupedField,
   extractKeyEntry,
   rollupLocalMonths,
+  isLocalInterval,
+  groupLocalBuckets,
   localMonthsInRange,
   localMonthKey,
   mhsToThs,
@@ -230,7 +231,10 @@ async function resolveHashrate (ctx, req) {
     return { log: scoped, summary: calculateHashrateSummary(scoped) }
   }
 
-  const { key, groupRange } = getIntervalConfig(resolveInterval(start, end, req.query.interval))
+  const interval = resolveInterval(start, end, req.query.interval)
+  if (isLocalInterval(interval)) return resolveLocalHashrate(ctx, req, { interval, start, end })
+
+  const { key, groupRange } = getIntervalConfig(interval)
   const container = req.query.container || null
   const field = container ? LOG_FIELDS.HASHRATE_SUM_CONTAINER_GROUP : LOG_FIELDS.HASHRATE_SUM
   const aggrField = hashrateAggrField(container)
@@ -284,6 +288,38 @@ async function resolveHashrate (ctx, req) {
   if (req.query.current) {
     summary.currentHashrateMhs = await getCurrentHashrate(ctx, aggrField, container)
   }
+
+  return { log, summary }
+}
+
+// Days and weeks are cut in the site's zone from hourly buckets: the store's own '1D'/'1W'
+// sit on the UTC grid, so they started before `start` and spilled past `end` for any site
+// not on UTC. Each bucket averages its hours, as the store averaged its samples.
+async function resolveLocalHashrate (ctx, req, { interval, start, end }) {
+  const timezone = resolveTimezone(ctx, req)
+  const withNominal = req.query.nominal === true || req.query.nominal === 'true'
+  const withPool = req.query.pool === true || req.query.pool === 'true'
+
+  const hourly = await resolveHashrate(ctx, { ...req, query: { ...req.query, interval: '1h' } })
+
+  const log = groupLocalBuckets(hourly.log, { interval, timezone, start, end }).map(({ ts, timeRange, entries }) => {
+    const hashrateMhs = meanOfField(entries, 'hashrateMhs')
+    const entry = { ts, timeRange, hashrateMhs }
+
+    if (withNominal) {
+      entry.nominalHashrateMhs = meanOfField(entries, 'nominalHashrateMhs')
+      entry.pctOfNominal = entry.nominalHashrateMhs ? (hashrateMhs / entry.nominalHashrateMhs) * 100 : null
+    }
+    // A bucket whose hours all lack a pool sample stays null, as an hourly one does.
+    if (withPool) entry.poolHashrateMhs = meanOfField(entries, 'poolHashrateMhs')
+
+    return entry
+  })
+
+  const summary = calculateHashrateSummary(log, withNominal)
+
+  if (withPool) summary.avgPoolHashrateMhs = calculateAvgPoolHashrate(log)
+  if (req.query.current) summary.currentHashrateMhs = hourly.summary.currentHashrateMhs
 
   return { log, summary }
 }
@@ -420,37 +456,6 @@ function addBucketValues (acc, val) {
   return (acc || 0) + (Number(val) || 0)
 }
 
-function scaleBucketValues (val, factor) {
-  if (val && typeof val === 'object') {
-    return Object.fromEntries(Object.entries(val).map(([meter, v]) => [meter, v * factor]))
-  }
-  return (Number(val) || 0) * factor
-}
-
-function rollupMonthly (log) {
-  const months = new Map()
-
-  for (const entry of log) {
-    const date = new Date(entry.ts)
-    const ts = Date.UTC(date.getUTCFullYear(), date.getUTCMonth())
-    const month = months.get(ts) || {
-      ts,
-      timeRange: { startTs: ts, endTs: Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1) - 1 },
-      days: 0,
-      powerW: null,
-      consumptionMWh: null
-    }
-    month.days++
-    month.powerW = addBucketValues(month.powerW, entry.powerW)
-    month.consumptionMWh = addBucketValues(month.consumptionMWh, entry.consumptionMWh)
-    months.set(ts, month)
-  }
-
-  return [...months.values()]
-    .sort((a, b) => a.ts - b.ts)
-    .map(({ days, ...month }) => ({ ...month, powerW: scaleBucketValues(month.powerW, 1 / days) }))
-}
-
 const ROLLUP_INTERVALS = new Set(['1h', '1d', '1w', '1M'])
 
 // The DCS worker persists hourly averages of the 5-minute power samples in its
@@ -523,42 +528,26 @@ function averageBucketValues (total, counts) {
   return safeDiv(Number(total) || 0, counts) ?? 0
 }
 
-// Coarser buckets built from stored hourly integrals: consumption is the exact
-// sum of the hourly MWh, power the mean over the hours that reported.
-function rollupHourlyToRange (hourly, rangeMs) {
-  const buckets = new Map()
-
-  for (const entry of hourly) {
-    const ts = Math.floor(entry.ts / rangeMs) * rangeMs
-    const bucket = buckets.get(ts) || {
-      ts,
-      timeRange: { startTs: ts, endTs: ts + rangeMs - 1 },
-      counts: null,
-      powerW: null,
-      consumptionMWh: null
+// Days, weeks and months in the site's zone, built from hourly buckets: consumption is the
+// exact sum of the hourly MWh, power the mean over the hours that reported. The store's own
+// '1D'/'1W' sit on the UTC grid, so they started before `start` and spilled past `end`.
+function rollupLocalConsumption (hourly, bucketing) {
+  return groupLocalBuckets(hourly, bucketing).map(({ ts, timeRange, entries }) => {
+    let counts = null
+    let powerW = null
+    let consumptionMWh = null
+    for (const entry of entries) {
+      counts = addBucketCounts(counts, entry.powerW)
+      powerW = addBucketValues(powerW, entry.powerW)
+      consumptionMWh = addBucketValues(consumptionMWh, entry.consumptionMWh)
     }
-    bucket.counts = addBucketCounts(bucket.counts, entry.powerW)
-    bucket.powerW = addBucketValues(bucket.powerW, entry.powerW)
-    bucket.consumptionMWh = addBucketValues(bucket.consumptionMWh, entry.consumptionMWh)
-    buckets.set(ts, bucket)
-  }
-
-  return [...buckets.values()]
-    .sort((a, b) => a.ts - b.ts)
-    .map(({ counts, ...bucket }) => ({ ...bucket, powerW: averageBucketValues(bucket.powerW, counts) }))
+    return { ts, timeRange, powerW: averageBucketValues(powerW, counts), consumptionMWh }
+  })
 }
 
-function buildRollupConsumption (entries, interval, byMeter) {
+function buildRollupConsumption (entries, bucketing, byMeter) {
   const hourly = rollupHourlyLog(entries, byMeter)
-
-  let log
-  if (interval === '1h') {
-    log = hourly
-  } else if (interval === '1M') {
-    log = rollupMonthly(rollupHourlyToRange(hourly, RANGE_BUCKETS['1D']))
-  } else {
-    log = rollupHourlyToRange(hourly, RANGE_BUCKETS[interval === '1w' ? '1W' : '1D'])
-  }
+  const log = isLocalInterval(bucketing.interval) ? rollupLocalConsumption(hourly, bucketing) : hourly
 
   const summary = byMeter
     ? calculateByMeterConsumptionSummary(log)
@@ -568,7 +557,7 @@ function buildRollupConsumption (entries, interval, byMeter) {
 }
 
 async function getConsumption (ctx, req) {
-  const { start, end } = resolveStartEnd(ctx, req)
+  const { start, end, timezone } = resolveStartEnd(ctx, req)
   // Downstream grouped/by-meter/rack paths read start/end straight off req.query,
   // so the converted UTC values have to replace the raw ones here for those to see them.
   req = { ...req, query: { ...req.query, start, end } }
@@ -590,14 +579,16 @@ async function getConsumption (ctx, req) {
   if (byMeter) return getByMeterConsumption(ctx, req)
 
   const interval = resolveInterval(start, end, req.query.interval)
+  const bucketing = { interval, timezone, start, end }
 
   if (canUseEnergyRollup(ctx, start, interval)) {
     const entries = await fetchEnergyRollupEntries(ctx, start, end)
-    if (entries.length) return buildRollupConsumption(entries, interval, false)
+    if (entries.length) return buildRollupConsumption(entries, bucketing, false)
   }
 
-  const monthly = interval === '1M'
-  const { key, groupRange } = getIntervalConfig(monthly ? '1d' : interval)
+  // Local days/weeks/months are rolled up from hourly buckets (see rollupLocalConsumption).
+  const local = isLocalInterval(interval)
+  const { key, groupRange } = getIntervalConfig(local ? '1h' : interval)
 
   // Central-DCS sites report site power through the Siemens DCS worker's stat log
   // (site_power_w), not a powermeter worker
@@ -636,7 +627,7 @@ async function getConsumption (ctx, req) {
     }
   })
 
-  const log = monthly ? rollupMonthly(buckets) : buckets
+  const log = local ? rollupLocalConsumption(buckets, bucketing) : buckets
   const summary = calculateConsumptionSummary(log)
 
   return { log, summary }
@@ -645,21 +636,21 @@ async function getConsumption (ctx, req) {
 // by_meter_power_w is only produced by the DCS worker, so the per-meter breakdown
 // is only meaningful when Central-DCS is enabled.
 async function getByMeterConsumption (ctx, req) {
-  const { start, end } = validateStartEnd(req)
+  const { start, end, timezone } = resolveStartEnd(ctx, req)
 
   if (!isCentralDCSEnabled(ctx)) {
     throw new Error('ERR_BY_METER_REQUIRES_CENTRAL_DCS')
   }
 
   const interval = resolveInterval(start, end, req.query.interval)
+  const bucketing = { interval, timezone, start, end }
 
   if (canUseEnergyRollup(ctx, start, interval)) {
     const entries = await fetchEnergyRollupEntries(ctx, start, end)
-    if (entries.length) return buildRollupConsumption(entries, interval, true)
+    if (entries.length) return buildRollupConsumption(entries, bucketing, true)
   }
 
-  const monthly = interval === '1M'
-  const { key, groupRange } = getIntervalConfig(monthly ? '1d' : interval)
+  const { key, groupRange } = getIntervalConfig(isLocalInterval(interval) ? '1h' : interval)
 
   const res = await ctx.dataProxy.requestData(RPC_METHODS.TAIL_LOG, {
     type: WORKER_TYPES.DCS,
@@ -675,12 +666,12 @@ async function getByMeterConsumption (ctx, req) {
 
   const hours = bucketHours(groupRange)
 
-  return buildByMeterConsumption(firstOrkEntries(res), AGGR_FIELDS.BY_METER_POWER, hours, monthly)
+  return buildByMeterConsumption(firstOrkEntries(res), AGGR_FIELDS.BY_METER_POWER, hours, bucketing)
 }
 
 // by_meter_power_w arrives as a { meter: powerW } map per bucket. Mirror the
 // grouped-consumption shape so each entry carries per-meter power/consumption.
-function buildByMeterConsumption (entries, aggrField, hours, monthly = false) {
+function buildByMeterConsumption (entries, aggrField, hours, bucketing) {
   const buckets = entries.map(val => {
     const raw = val[aggrField]
     const powerW = raw && typeof raw === 'object' ? raw : {}
@@ -695,7 +686,7 @@ function buildByMeterConsumption (entries, aggrField, hours, monthly = false) {
     }
   })
 
-  const log = monthly ? rollupMonthly(buckets) : buckets
+  const log = isLocalInterval(bucketing?.interval) ? rollupLocalConsumption(buckets, bucketing) : buckets
   const summary = calculateByMeterConsumptionSummary(log)
 
   return { log, summary }
@@ -852,7 +843,7 @@ function calculateGroupedConsumptionSummary (log, groupBy) {
 }
 
 async function getEfficiency (ctx, req) {
-  const { start, end } = resolveStartEnd(ctx, req)
+  const { start, end, timezone } = resolveStartEnd(ctx, req)
   // Downstream grouped/rack paths read start/end straight off req.query, so the
   // converted UTC values have to replace the raw ones here for those to see them.
   req = { ...req, query: { ...req.query, start, end } }
@@ -865,12 +856,17 @@ async function getEfficiency (ctx, req) {
     return { log: scoped, summary: calculateEfficiencySummary(scoped) }
   }
 
-  const { key, groupRange } = getIntervalConfig(resolveInterval(start, end, req.query.interval))
+  const interval = resolveInterval(start, end, req.query.interval)
+  const bucketing = { interval, timezone, start, end }
+  // Local days/weeks/months are rolled up from hourly buckets: the store's own '1D'/'1W'
+  // sit on the UTC grid, so they started before `start` and spilled past `end`.
+  const local = isLocalInterval(interval)
+  const { key, groupRange } = getIntervalConfig(local ? '1h' : interval)
 
   // Central-DCS sites have no miner-reported site efficiency stat; derive it from
   // the DCS site meter (site_power_w) over miner hashrate
   if (isCentralDCSEnabled(ctx)) {
-    return getDCSEfficiency(ctx, { key, groupRange, start, end })
+    return getDCSEfficiency(ctx, { key, groupRange, start, end, bucketing: local ? bucketing : null })
   }
 
   const res = await ctx.dataProxy.requestData(RPC_METHODS.TAIL_LOG, {
@@ -885,7 +881,7 @@ async function getEfficiency (ctx, req) {
     aggrFields: { [AGGR_FIELDS.EFFICIENCY]: 1 }
   })
 
-  const log = firstOrkEntries(res).map(val => {
+  const buckets = firstOrkEntries(res).map(val => {
     const timeRange = parseEntryTimeRange(val.ts)
     return {
       ts: parseEntryTs(val.ts),
@@ -894,6 +890,13 @@ async function getEfficiency (ctx, req) {
     }
   })
 
+  const log = local
+    ? groupLocalBuckets(buckets, bucketing).map(({ ts, timeRange, entries }) => ({
+      ts,
+      timeRange,
+      efficiencyWThs: meanOfField(entries, 'efficiencyWThs')
+    }))
+    : buckets
   const summary = calculateEfficiencySummary(log)
 
   return { log, summary }
@@ -902,7 +905,9 @@ async function getEfficiency (ctx, req) {
 // Site-meter efficiency (W/THs) per interval bucket: DCS site_power_w over total
 // miner hashrate for the same bucket. Both series share the interval/groupRange
 // so their timestamps align; we key hashrate by ts and divide per DCS power point.
-async function getDCSEfficiency (ctx, { key, groupRange, start, end }) {
+// With `bucketing`, the hourly power and hashrate are each averaged over the local
+// bucket first, so a bucket's efficiency is its mean power over its mean hashrate.
+async function getDCSEfficiency (ctx, { key, groupRange, start, end, bucketing }) {
   const [powerRes, hashrateRes] = await Promise.all([
     ctx.dataProxy.requestData(RPC_METHODS.TAIL_LOG, {
       type: WORKER_TYPES.DCS,
@@ -933,15 +938,28 @@ async function getDCSEfficiency (ctx, { key, groupRange, start, end }) {
     hashrateByTs.set(val.ts, Number(val[AGGR_FIELDS.HASHRATE_SUM]) || 0)
   }
 
-  const log = firstOrkEntries(powerRes).map(val => {
-    const powerW = Number(val[AGGR_FIELDS.SITE_POWER]) || 0
-    const hashrateThs = mhsToThs(hashrateByTs.get(val.ts) || 0)
+  const points = firstOrkEntries(powerRes).map(val => {
     const timeRange = parseEntryTimeRange(val.ts)
     return {
       ts: parseEntryTs(val.ts),
       ...(timeRange && { timeRange }),
-      efficiencyWThs: hashrateThs > 0 ? powerW / hashrateThs : 0
+      powerW: Number(val[AGGR_FIELDS.SITE_POWER]) || 0,
+      hashrateMhs: hashrateByTs.get(val.ts) || 0
     }
+  })
+
+  const buckets = bucketing
+    ? groupLocalBuckets(points, bucketing).map(({ ts, timeRange, entries }) => ({
+      ts,
+      timeRange,
+      powerW: meanOfField(entries, 'powerW'),
+      hashrateMhs: meanOfField(entries, 'hashrateMhs')
+    }))
+    : points
+
+  const log = buckets.map(({ powerW, hashrateMhs, ...bucket }) => {
+    const hashrateThs = mhsToThs(hashrateMhs)
+    return { ...bucket, efficiencyWThs: hashrateThs > 0 ? powerW / hashrateThs : 0 }
   })
 
   const summary = calculateEfficiencySummary(log)
@@ -1041,12 +1059,14 @@ function calculateGroupedEfficiencySummary (log, groupBy) {
 }
 
 async function getMinerStatus (ctx, req) {
-  const { start, end } = resolveStartEnd(ctx, req)
+  const { start, end, timezone } = resolveStartEnd(ctx, req)
   // getGroupedMinerStatus reads start/end straight off req.query, so the converted
   // UTC values have to replace the raw ones here for it to see them.
   req = { ...req, query: { ...req.query, start, end } }
+  // Days are the site's local calendar days, clamped to the requested range.
+  const bucketing = { interval: '1d', timezone, start, end }
 
-  if (req.query.groupBy) return getGroupedMinerStatus(ctx, req)
+  if (req.query.groupBy) return getGroupedMinerStatus(ctx, req, bucketing)
 
   const results = await ctx.dataProxy.requestData(RPC_METHODS.TAIL_LOG, {
     key: LOG_KEYS.STAT_3H,
@@ -1064,12 +1084,7 @@ async function getMinerStatus (ctx, req) {
     end
   })
 
-  const daily = processMinerStatusData(results)
-  const log = Object.keys(daily).sort().map(dayTs => ({
-    ts: Number(dayTs),
-    ...daily[dayTs]
-  }))
-
+  const log = processMinerStatusData(results, bucketing)
   const summary = calculateMinerStatusSummary(log)
 
   return { log, summary }
@@ -1078,55 +1093,45 @@ async function getMinerStatus (ctx, req) {
 // Averages the day's stat snapshots app-side instead of via groupRange on the
 // worker: the worker-side average skips snapshots where a grouped-count key is
 // absent, so a status seen in a single snapshot was reported at its full count
-// for the whole day.
-function processMinerStatusData (results) {
-  const daily = {}
+// for the whole day. Days are local to `bucketing.timezone` and clamped to
+// [bucketing.start, bucketing.end] - see groupLocalBuckets.
+function processMinerStatusData (results, bucketing) {
+  const snapshots = []
   for (const entry of iterateRpcEntries(results)) {
-    const rawTs = parseEntryTs(entry.ts || entry.timestamp)
-    const ts = rawTs ? getStartOfDay(rawTs) : null
-    if (!ts) continue
-    if (!daily[ts]) {
-      daily[ts] = { total: 0, mining: null, offline: 0, sleep: 0, maintenance: 0, error: 0, snapshots: new Set() }
-    }
-
-    const bucket = daily[ts]
-    bucket.snapshots.add(rawTs)
-    bucket.offline += sumObjectValues(entry[AGGR_FIELDS.OFFLINE_CNT] || entry.aggrFields?.[AGGR_FIELDS.OFFLINE_CNT])
-    bucket.sleep += sumObjectValues(entry[AGGR_FIELDS.SLEEP_CNT] || entry.aggrFields?.[AGGR_FIELDS.SLEEP_CNT])
-    bucket.maintenance += sumObjectValues(entry[AGGR_FIELDS.MAINTENANCE_CNT] || entry.aggrFields?.[AGGR_FIELDS.MAINTENANCE_CNT])
-    bucket.error += sumObjectValues(entry[AGGR_FIELDS.ERROR_CNT] || entry.aggrFields?.[AGGR_FIELDS.ERROR_CNT])
-    bucket.total += sumObjectValues(entry[AGGR_FIELDS.TYPE_CNT]) || entry.total_cnt || entry.count || 0
-
-    const mining = entry[AGGR_FIELDS.MINING_CNT] ?? entry.aggrFields?.[AGGR_FIELDS.MINING_CNT]
-    if (typeof mining === 'number') bucket.mining = (bucket.mining || 0) + mining
+    const ts = parseEntryTs(entry.ts || entry.timestamp)
+    if (ts) snapshots.push({ ts, entry })
   }
 
-  const averaged = {}
-  for (const [ts, bucket] of Object.entries(daily)) {
-    const snapshots = bucket.snapshots.size || 1
-    const offline = Math.round(bucket.offline / snapshots)
-    const sleep = Math.round(bucket.sleep / snapshots)
-    const maintenance = Math.round(bucket.maintenance / snapshots)
-    const error = Math.round(bucket.error / snapshots)
-    const total = Math.round(bucket.total / snapshots)
+  return groupLocalBuckets(snapshots, bucketing).map(({ ts, timeRange, entries }) => {
+    const bucket = { total: 0, mining: null, offline: 0, sleep: 0, maintenance: 0, error: 0, snapshots: new Set() }
+    for (const { ts: rawTs, entry } of entries) {
+      bucket.snapshots.add(rawTs)
+      bucket.offline += sumObjectValues(entry[AGGR_FIELDS.OFFLINE_CNT] || entry.aggrFields?.[AGGR_FIELDS.OFFLINE_CNT])
+      bucket.sleep += sumObjectValues(entry[AGGR_FIELDS.SLEEP_CNT] || entry.aggrFields?.[AGGR_FIELDS.SLEEP_CNT])
+      bucket.maintenance += sumObjectValues(entry[AGGR_FIELDS.MAINTENANCE_CNT] || entry.aggrFields?.[AGGR_FIELDS.MAINTENANCE_CNT])
+      bucket.error += sumObjectValues(entry[AGGR_FIELDS.ERROR_CNT] || entry.aggrFields?.[AGGR_FIELDS.ERROR_CNT])
+      bucket.total += sumObjectValues(entry[AGGR_FIELDS.TYPE_CNT]) || entry.total_cnt || entry.count || 0
+
+      const mining = entry[AGGR_FIELDS.MINING_CNT] ?? entry.aggrFields?.[AGGR_FIELDS.MINING_CNT]
+      if (typeof mining === 'number') bucket.mining = (bucket.mining || 0) + mining
+    }
+
+    const count = bucket.snapshots.size || 1
+    const offline = Math.round(bucket.offline / count)
+    const sleep = Math.round(bucket.sleep / count)
+    const maintenance = Math.round(bucket.maintenance / count)
+    const error = Math.round(bucket.error / count)
+    const total = Math.round(bucket.total / count)
     // Online is the actual mining count (same field the live site header uses;
     // excludes the maintenance container), so the chart agrees with the header
     // regardless of whether the worker's type_cnt includes maintenance miners.
     // Workers without the field fall back to the derived value: their type_cnt
     // still counts maintenance miners, so maintenance is subtracted back out.
     const online = bucket.mining !== null
-      ? Math.round(bucket.mining / snapshots)
+      ? Math.round(bucket.mining / count)
       : Math.max(0, total - offline - sleep - maintenance - error)
-    averaged[ts] = {
-      online,
-      offline,
-      sleep,
-      maintenance,
-      error,
-      timeRange: { startTs: Number(ts), endTs: Number(ts) + METRICS_TIME.ONE_DAY_MS - 1 }
-    }
-  }
-  return averaged
+    return { ts, online, offline, sleep, maintenance, error, timeRange }
+  })
 }
 
 function calculateMinerStatusSummary (log) {
@@ -1166,7 +1171,7 @@ const MINER_STATUS_TYPE_FIELDS = {
   error: AGGR_FIELDS.ERROR_TYPE_CNT
 }
 
-async function getGroupedMinerStatus (ctx, req) {
+async function getGroupedMinerStatus (ctx, req, bucketing) {
   const { start, end } = req.query
 
   const aggrFields = {}
@@ -1181,40 +1186,33 @@ async function getGroupedMinerStatus (ctx, req) {
     end
   })
 
-  const daily = processGroupedMinerStatusData(results)
-  const log = Object.keys(daily).sort().map(dayTs => ({
-    ts: Number(dayTs),
-    ...daily[dayTs]
-  }))
-
-  return { log }
+  return { log: processGroupedMinerStatusData(results, bucketing) }
 }
 
-// Same day-bucket averaging as processMinerStatusData, per miner type.
-function processGroupedMinerStatusData (results) {
-  const daily = {}
+// Same local-day bucket averaging as processMinerStatusData, per miner type.
+function processGroupedMinerStatusData (results, bucketing) {
+  const snapshots = []
   for (const entry of iterateRpcEntries(results)) {
-    const rawTs = parseEntryTs(entry.ts || entry.timestamp)
-    const ts = rawTs ? getStartOfDay(rawTs) : null
-    if (!ts) continue
-    if (!daily[ts]) {
-      daily[ts] = { total: {}, online: {}, offline: {}, sleep: {}, maintenance: {}, error: {}, snapshots: new Set() }
-    }
-    const bucket = daily[ts]
-    bucket.snapshots.add(rawTs)
-    mergeGroupedField(bucket.total, entry[AGGR_FIELDS.TYPE_CNT])
-    mergeGroupedField(bucket.offline, entry[AGGR_FIELDS.OFFLINE_TYPE_CNT])
-    mergeGroupedField(bucket.sleep, entry[AGGR_FIELDS.SLEEP_TYPE_CNT])
-    mergeGroupedField(bucket.maintenance, entry[AGGR_FIELDS.MAINTENANCE_CNT])
-    mergeGroupedField(bucket.error, entry[AGGR_FIELDS.ERROR_TYPE_CNT])
+    const ts = parseEntryTs(entry.ts || entry.timestamp)
+    if (ts) snapshots.push({ ts, entry })
   }
 
-  for (const [ts, bucket] of Object.entries(daily)) {
-    const snapshots = bucket.snapshots.size || 1
-    delete bucket.snapshots
+  return groupLocalBuckets(snapshots, bucketing).map(({ ts, timeRange, entries }) => {
+    const bucket = { total: {}, online: {}, offline: {}, sleep: {}, maintenance: {}, error: {} }
+    const seen = new Set()
+    for (const { ts: rawTs, entry } of entries) {
+      seen.add(rawTs)
+      mergeGroupedField(bucket.total, entry[AGGR_FIELDS.TYPE_CNT])
+      mergeGroupedField(bucket.offline, entry[AGGR_FIELDS.OFFLINE_TYPE_CNT])
+      mergeGroupedField(bucket.sleep, entry[AGGR_FIELDS.SLEEP_TYPE_CNT])
+      mergeGroupedField(bucket.maintenance, entry[AGGR_FIELDS.MAINTENANCE_CNT])
+      mergeGroupedField(bucket.error, entry[AGGR_FIELDS.ERROR_TYPE_CNT])
+    }
+
+    const count = seen.size || 1
     for (const field of ['total', 'offline', 'sleep', 'maintenance', 'error']) {
       for (const key of Object.keys(bucket[field])) {
-        bucket[field][key] = Math.round(bucket[field][key] / snapshots)
+        bucket[field][key] = Math.round(bucket[field][key] / count)
       }
     }
     // type_cnt does not count miners parked in the maintenance container, so
@@ -1224,9 +1222,8 @@ function processGroupedMinerStatusData (results) {
       const online = bucket.total[type] - (bucket.offline[type] || 0) - (bucket.sleep[type] || 0) - (bucket.error[type] || 0)
       bucket.online[type] = Math.max(0, online)
     }
-    bucket.timeRange = { startTs: Number(ts), endTs: Number(ts) + METRICS_TIME.ONE_DAY_MS - 1 }
-  }
-  return daily
+    return { ts, ...bucket, timeRange }
+  })
 }
 
 const MINERS_BY_CONTAINER_AGGR_FIELDS = {
@@ -2443,7 +2440,7 @@ module.exports = {
   calculateHashrateSummary,
   calculateGroupedHashrateSummary,
   getConsumption,
-  rollupMonthly,
+  rollupLocalConsumption,
   calculateConsumptionSummary,
   calculateByMeterConsumptionSummary,
   calculateGroupedConsumptionSummary,

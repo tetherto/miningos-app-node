@@ -6,7 +6,7 @@ const {
   monthlyHashesCache,
   calculateHashrateSummary,
   getConsumption,
-  rollupMonthly,
+  rollupLocalConsumption,
   calculateConsumptionSummary,
   calculateByMeterConsumptionSummary,
   calculateGroupedConsumptionSummary,
@@ -475,8 +475,10 @@ test('getHashrate - interval selects the bucket range', async (t) => {
 
   t.is(captured[0].groupRange, '1H', '1h should bucket hourly')
   t.is(captured[0].key, 'stat-30m', '1h should sample the stat-30m log')
-  t.is(captured[1].groupRange, '1D', '1d should bucket daily')
-  t.is(captured[2].groupRange, '1W', '1w should bucket weekly')
+  // Days and weeks are cut in the site's zone from hourly buckets, not the store's UTC grid.
+  t.is(captured[1].groupRange, '1H', '1d should be rolled up from hourly buckets')
+  t.is(captured[1].key, 'stat-30m', '1d should sample the stat-30m log')
+  t.is(captured[2].groupRange, '1H', '1w should be rolled up from hourly buckets')
   t.pass()
 })
 
@@ -962,240 +964,194 @@ test('getConsumption - byMeter honours an explicit 1h interval', async (t) => {
   t.pass()
 })
 
-test('getConsumption - byMeter applies the 1d interval to the ork query and MWh scaling', async (t) => {
-  let capturedPayload
-  const mockCtx = withDataProxy({
-    conf: {
-      orks: [{ rpcPublicKey: 'key1' }],
-      featureConfig: { centralDCSSetup: { enabled: true, tag: 't-dcs-custom' } }
-    },
-    net_r0: {
-      jRequest: async (key, method, payload) => {
-        capturedPayload = payload
-        return [
-          { ts: 1700006400000, by_meter_power_w: { 'PM-1': 3000000, 'PM-2': 2000000 } },
-          { ts: 1700092800000, by_meter_power_w: { 'PM-1': 1000000, 'PM-2': 2000000 } }
-        ]
-      }
+// A site west of UTC, so a local day (04:00Z-03:59Z) straddles two UTC days: the store's own
+// '1D'/'1W' buckets would start before `start` and spill past `end`.
+const LOCAL_TZ = 'America/Campo_Grande' // UTC-4, no DST
+const L_HOUR = 3600000
+const L_DAY = 24 * L_HOUR
+const L_OCT1 = Date.UTC(2026, 9, 1, 4) // Thu 2026-10-01 00:00 local
+const L_MON_OCT5 = Date.UTC(2026, 9, 5, 4) // Mon 2026-10-05 00:00 local
+const L_NOV1 = Date.UTC(2026, 10, 1, 4) // 2026-11-01 00:00 local
+const L_DEC1 = Date.UTC(2026, 11, 1, 4) // 2026-12-01 00:00 local
+
+const localSiteCtx = (rows, { dcs = false, onRequest = () => {} } = {}) => withDataProxy({
+  conf: {
+    orks: [{ rpcPublicKey: 'key1' }],
+    featureConfig: {
+      lockedTimezone: LOCAL_TZ,
+      ...(dcs && { centralDCSSetup: { enabled: true, tag: 't-dcs-custom' } })
     }
-  })
-
-  const result = await getConsumption(mockCtx, {
-    query: { start: 1700000000000, end: 1700100000000, byMeter: true, interval: '1d' }
-  })
-
-  t.is(capturedPayload.key, 'stat-3h', 'daily interval tails the 3h stat log')
-  t.is(capturedPayload.groupRange, '1D', 'and buckets into 1-day windows')
-  t.is(result.log.length, 2, 'one log entry per daily bucket')
-  t.alike(result.log[0].consumptionMWh, { 'PM-1': 72, 'PM-2': 48 }, 'first bucket per-meter MWh over the 24h span')
-  t.alike(result.log[1].consumptionMWh, { 'PM-1': 24, 'PM-2': 48 }, 'second bucket per-meter MWh over the 24h span')
-  t.is(result.summary.groupedBy['PM-1'].avgPowerW, 2000000, 'PM-1 avg power across both days')
-  t.is(result.summary.groupedBy['PM-1'].totalConsumptionMWh, 96, 'PM-1 consumption sums both days')
-  t.is(result.summary.totalConsumptionMWh, 192, 'site total over both days')
-  t.is(result.summary.avgPowerW, 4000000, 'site avg power is total meter power over bucket count')
-  t.pass()
+  },
+  net_r0: {
+    jRequest: async (key, method, payload) => {
+      onRequest(payload)
+      return typeof rows === 'function' ? rows(payload) : rows
+    }
+  }
 })
 
-test('getConsumption - byMeter applies the 1w interval to the ork query and MWh scaling', async (t) => {
-  let capturedPayload
-  const mockCtx = withDataProxy({
-    conf: {
-      orks: [{ rpcPublicKey: 'key1' }],
-      featureConfig: { centralDCSSetup: { enabled: true, tag: 't-dcs-custom' } }
-    },
-    net_r0: {
-      jRequest: async (key, method, payload) => {
-        capturedPayload = payload
-        return [
-          { ts: 1700006400000, by_meter_power_w: { 'PM-1': 1000000 } },
-          { ts: 1700611200000, by_meter_power_w: { 'PM-1': 2000000 } }
-        ]
-      }
-    }
-  })
+test('getConsumption - 1d, 1w and 1M are rolled up from hourly buckets', async (t) => {
+  const captured = []
+  const ctx = localSiteCtx([], { onRequest: (payload) => captured.push(payload) })
+  const dcsCtx = localSiteCtx([], { dcs: true, onRequest: (payload) => captured.push(payload) })
 
-  const result = await getConsumption(mockCtx, {
-    query: { start: 1700000000000, end: 1700100000000, byMeter: true, interval: '1w' }
-  })
+  for (const interval of ['1d', '1w', '1M']) {
+    await getConsumption(ctx, { query: { start: L_OCT1, end: L_DEC1 - 1, interval } })
+    await getConsumption(dcsCtx, { query: { start: L_OCT1, end: L_DEC1 - 1, interval, byMeter: true } })
+  }
 
-  t.is(capturedPayload.key, 'stat-3h', 'weekly interval tails the 3h stat log')
-  t.is(capturedPayload.groupRange, '1W', 'and buckets into 1-week windows')
-  t.is(result.log.length, 2, 'one log entry per weekly bucket')
-  t.alike(result.log[0].consumptionMWh, { 'PM-1': 168 }, '1 MW over a 168h bucket is 168 MWh')
-  t.alike(result.log[1].consumptionMWh, { 'PM-1': 336 }, '2 MW over a 168h bucket is 336 MWh')
-  t.is(result.summary.groupedBy['PM-1'].totalConsumptionMWh, 504, 'PM-1 consumption sums both weekly buckets')
-  t.pass()
+  t.is(captured.length, 6)
+  for (const payload of captured) {
+    t.is(payload.key, 'stat-30m', 'samples the stat-30m log')
+    t.is(payload.groupRange, '1H', 'asks the store for hourly buckets only')
+  }
 })
 
-test('getConsumption - byMeter applies the 1M interval to the ork query and MWh scaling', async (t) => {
-  let capturedPayload
-  const mockCtx = withDataProxy({
-    conf: {
-      orks: [{ rpcPublicKey: 'key1' }],
-      featureConfig: { centralDCSSetup: { enabled: true, tag: 't-dcs-custom' } }
-    },
-    net_r0: {
-      jRequest: async (key, method, payload) => {
-        capturedPayload = payload
-        return [
-          { ts: 1700006400000, by_meter_power_w: { 'PM-1': 1000000 } },
-          { ts: 1702684800000, by_meter_power_w: { 'PM-1': 2000000 } }
-        ]
-      }
-    }
-  })
+test('getConsumption - daily buckets are the site local days, bounded by start/end', async (t) => {
+  const ctx = localSiteCtx([
+    { ts: L_OCT1, site_power_w: 2000000 },
+    // 03:00Z on Oct 2 is still Oct 1 local - the UTC grid put it on the next day
+    { ts: L_OCT1 + 23 * L_HOUR, site_power_w: 4000000 },
+    { ts: L_OCT1 + L_DAY, site_power_w: 1000000 }
+  ])
+  const start = L_OCT1
+  const end = L_OCT1 + 2 * L_DAY - 1
 
-  const result = await getConsumption(mockCtx, {
-    query: { start: 1700000000000, end: 1705276800000, byMeter: true, interval: '1M' }
-  })
+  const result = await getConsumption(ctx, { query: { start, end, interval: '1d' } })
 
-  t.is(capturedPayload.key, 'stat-3h', 'monthly interval tails the 3h stat log')
-  t.is(capturedPayload.groupRange, '1D', 'via daily buckets, rolled up per calendar month')
-  t.is(result.log.length, 2, 'one log entry per calendar month')
-  t.alike(result.log[0].consumptionMWh, { 'PM-1': 24 }, 'November holds its single covered day, not a full 720h')
-  t.alike(result.log[1].consumptionMWh, { 'PM-1': 48 }, 'December likewise')
-  t.is(result.summary.groupedBy['PM-1'].totalConsumptionMWh, 72, 'PM-1 consumption sums both monthly buckets')
-  t.pass()
+  t.is(result.log.length, 2, 'one entry per local day')
+  t.is(result.log[0].ts, start, 'the first entry starts at the requested start')
+  t.alike(result.log[0].timeRange, { startTs: start, endTs: L_OCT1 + L_DAY - 1 }, 'first local day')
+  t.alike(result.log[1].timeRange, { startTs: L_OCT1 + L_DAY, endTs: end }, 'the last entry ends at the requested end')
+  t.is(result.log[0].consumptionMWh, 6, 'a day sums the MWh of its hours')
+  t.is(result.log[0].powerW, 3000000, 'and averages power over the hours that reported')
+  t.is(result.log[1].consumptionMWh, 1)
+  t.is(result.summary.totalConsumptionMWh, 7)
 })
 
-test('getConsumption - site power applies the 1M interval to the ork query and MWh scaling', async (t) => {
-  let capturedPayload
-  const mockCtx = withDataProxy({
-    conf: { orks: [{ rpcPublicKey: 'key1' }] },
-    net_r0: {
-      jRequest: async (key, method, payload) => {
-        capturedPayload = payload
-        return [
-          { ts: 1700006400000, site_power_w: 2000000 },
-          { ts: 1702684800000, site_power_w: 1000000 }
-        ]
-      }
-    }
-  })
+test('getConsumption - edge buckets are clamped to a start/end inside a day', async (t) => {
+  const start = L_OCT1 + 6 * L_HOUR
+  const end = L_OCT1 + L_DAY + 6 * L_HOUR - 1
+  const ctx = localSiteCtx([
+    { ts: start, site_power_w: 1000000 },
+    { ts: L_OCT1 + L_DAY, site_power_w: 1000000 }
+  ])
 
-  const result = await getConsumption(mockCtx, {
-    query: { start: 1700000000000, end: 1705276800000, interval: '1M' }
-  })
+  const result = await getConsumption(ctx, { query: { start, end, interval: '1d' } })
 
-  t.is(capturedPayload.key, 'stat-3h', 'monthly interval tails the 3h stat log')
-  t.is(capturedPayload.groupRange, '1D', 'via daily buckets, rolled up per calendar month')
-  t.is(result.log.length, 2, 'one entry per calendar month')
-  t.is(result.log[0].consumptionMWh, 48, 'November holds its single covered day, not a full 720h')
-  t.is(result.log[1].consumptionMWh, 24, 'December likewise')
-  t.is(result.summary.avgPowerW, 1500000, 'summary averages power across both monthly buckets')
-  t.is(result.summary.totalConsumptionMWh, 72, 'summary sums consumption across both buckets')
-  t.pass()
+  t.is(result.log[0].ts, start, 'ts never precedes start')
+  t.alike(result.log[0].timeRange, { startTs: start, endTs: L_OCT1 + L_DAY - 1 })
+  t.alike(result.log[1].timeRange, { startTs: L_OCT1 + L_DAY, endTs: end }, 'endTs never passes end')
 })
 
-test('getConsumption - site power applies the 1w interval to the ork query and MWh scaling', async (t) => {
-  let capturedPayload
-  const mockCtx = withDataProxy({
-    conf: { orks: [{ rpcPublicKey: 'key1' }] },
-    net_r0: {
-      jRequest: async (key, method, payload) => {
-        capturedPayload = payload
-        return [
-          { ts: 1700006400000, site_power_w: 2000000 },
-          { ts: 1700611200000, site_power_w: 1000000 }
-        ]
-      }
-    }
-  })
+test('getConsumption - weekly buckets are local Monday weeks', async (t) => {
+  const ctx = localSiteCtx([
+    { ts: Date.UTC(2026, 9, 4, 12), site_power_w: 2000000 }, // Sun Oct 4 local
+    { ts: L_MON_OCT5, site_power_w: 1000000 }, // Mon Oct 5 00:00 local
+    { ts: Date.UTC(2026, 9, 12, 3), site_power_w: 1000000 } // Sun Oct 11 23:00 local
+  ])
+  const start = L_OCT1
+  const end = Date.UTC(2026, 9, 12, 4) - 1
 
-  const result = await getConsumption(mockCtx, {
-    query: { start: 1700000000000, end: 1700100000000, interval: '1w' }
-  })
+  const result = await getConsumption(ctx, { query: { start, end, interval: '1w' } })
 
-  t.is(capturedPayload.key, 'stat-3h', 'weekly interval tails the 3h stat log')
-  t.is(capturedPayload.groupRange, '1W', 'and buckets into 1-week windows')
-  t.is(result.log.length, 2, 'one entry per weekly bucket')
-  t.is(result.log[0].consumptionMWh, 336, '2 MW over a 168h bucket is 336 MWh')
-  t.is(result.log[1].consumptionMWh, 168, '1 MW over a 168h bucket is 168 MWh')
-  t.is(result.summary.avgPowerW, 1500000, 'summary averages power across both weekly buckets')
-  t.is(result.summary.totalConsumptionMWh, 504, 'summary sums consumption across both buckets')
-  t.pass()
+  t.is(result.log.length, 2, 'one entry per local week')
+  t.alike(result.log[0].timeRange, { startTs: start, endTs: L_MON_OCT5 - 1 }, 'partial first week starts at start')
+  t.alike(result.log[1].timeRange, { startTs: L_MON_OCT5, endTs: end }, 'second week runs Monday to the requested end')
+  t.is(result.log[0].consumptionMWh, 2)
+  t.is(result.log[1].consumptionMWh, 2)
 })
 
-// A requested interval makes the ork group raw samples into interval-aligned
-// buckets, each returned with a "<start>-<end>" range-string ts. These consts
-// model two consecutive grouped buckets returned from a single ork.
-const DAY1_TS = '1770854400000-1770940799999'
-const DAY1_START = 1770854400000
-const DAY1_END = 1770940799999
-const DAY2_TS = '1770940800000-1771027199999'
-const DAY2_START = 1770940800000
-const DAY2_END = 1771027199999
+test('getConsumption - monthly buckets are local calendar months', async (t) => {
+  const ctx = localSiteCtx([
+    { ts: L_NOV1 - L_HOUR, site_power_w: 2000000 }, // Oct 31 23:00 local
+    { ts: L_NOV1, site_power_w: 1000000 }
+  ])
+  const start = L_OCT1
+  const end = L_DEC1 - 1
 
-const WEEK1_TS = '1770854400000-1771459199999'
-const WEEK1_START = 1770854400000
-const WEEK1_END = 1771459199999
-const WEEK2_TS = '1771459200000-1772063999999'
-const WEEK2_START = 1771459200000
-const WEEK2_END = 1772063999999
+  const result = await getConsumption(ctx, { query: { start, end, interval: '1M' } })
 
-test('getConsumption - byMeter groups ork entries into interval-aligned buckets', async (t) => {
-  let capturedPayload
-  const mockCtx = withDataProxy({
-    conf: {
-      orks: [{ rpcPublicKey: 'key1' }],
-      featureConfig: { centralDCSSetup: { enabled: true, tag: 't-dcs-custom' } }
-    },
-    net_r0: {
-      jRequest: async (key, method, payload) => {
-        capturedPayload = payload
-        return [
-          { ts: DAY1_TS, by_meter_power_w: { 'PM-1': 3000000, 'PM-2': 2000000 } },
-          { ts: DAY2_TS, by_meter_power_w: { 'PM-1': 1000000, 'PM-2': 2000000 } }
-        ]
-      }
-    }
-  })
-
-  const result = await getConsumption(mockCtx, {
-    query: { start: DAY1_START, end: DAY2_END, byMeter: true, interval: '1d' }
-  })
-
-  t.is(capturedPayload.groupRange, '1D', 'ork is asked to group into 1-day buckets')
-  t.is(result.log.length, 2, 'one log entry per grouped bucket')
-  t.is(result.log[0].ts, DAY1_START, 'bucket ts is normalized to its range start')
-  t.is(typeof result.log[0].ts, 'number', 'ts is a number, not the range string')
-  t.alike(result.log[0].timeRange, { startTs: DAY1_START, endTs: DAY1_END }, 'first bucket exposes its aggregation window')
-  t.alike(result.log[1].timeRange, { startTs: DAY2_START, endTs: DAY2_END }, 'second bucket exposes its aggregation window')
-  t.alike(result.log[0].consumptionMWh, { 'PM-1': 72, 'PM-2': 48 }, 'first bucket per-meter MWh over its 24h window')
-  t.alike(result.log[1].consumptionMWh, { 'PM-1': 24, 'PM-2': 48 }, 'second bucket per-meter MWh over its 24h window')
-  t.is(result.summary.groupedBy['PM-1'].totalConsumptionMWh, 96, 'PM-1 consumption sums both buckets')
-  t.is(result.summary.totalConsumptionMWh, 192, 'site total sums both buckets')
-  t.pass()
+  t.is(result.log.length, 2, 'one entry per local month')
+  t.alike(result.log[0].timeRange, { startTs: start, endTs: L_NOV1 - 1 }, 'October local')
+  t.alike(result.log[1].timeRange, { startTs: L_NOV1, endTs: end }, 'November local')
+  t.is(result.log[0].consumptionMWh, 2, 'the last local hour of October stays in October')
+  t.is(result.log[1].consumptionMWh, 1)
 })
 
-test('getConsumption - site power groups ork entries into interval-aligned buckets', async (t) => {
-  let capturedPayload
-  const mockCtx = withDataProxy({
-    conf: { orks: [{ rpcPublicKey: 'key1' }] },
-    net_r0: {
-      jRequest: async (key, method, payload) => {
-        capturedPayload = payload
-        return [
-          { ts: WEEK1_TS, site_power_w: 2000000 },
-          { ts: WEEK2_TS, site_power_w: 1000000 }
-        ]
-      }
-    }
-  })
+test('getConsumption - byMeter daily buckets roll up per meter over local days', async (t) => {
+  const ctx = localSiteCtx([
+    { ts: L_OCT1, by_meter_power_w: { 'PM-1': 3000000, 'PM-2': 2000000 } },
+    { ts: L_OCT1 + L_HOUR, by_meter_power_w: { 'PM-1': 1000000 } }
+  ], { dcs: true })
+  const start = L_OCT1
+  const end = L_OCT1 + L_DAY - 1
 
-  const result = await getConsumption(mockCtx, {
-    query: { start: WEEK1_START, end: WEEK2_END, interval: '1w' }
-  })
+  const result = await getConsumption(ctx, { query: { start, end, interval: '1d', byMeter: true } })
 
-  t.is(capturedPayload.groupRange, '1W', 'ork is asked to group into 1-week buckets')
-  t.is(result.log.length, 2, 'one entry per grouped bucket')
-  t.is(result.log[0].ts, WEEK1_START, 'bucket ts is normalized to its range start')
-  t.alike(result.log[0].timeRange, { startTs: WEEK1_START, endTs: WEEK1_END }, 'first bucket exposes its aggregation window')
-  t.alike(result.log[1].timeRange, { startTs: WEEK2_START, endTs: WEEK2_END }, 'second bucket exposes its aggregation window')
-  t.is(result.log[0].consumptionMWh, 336, '2 MW over a 168h bucket is 336 MWh')
-  t.is(result.log[1].consumptionMWh, 168, '1 MW over a 168h bucket is 168 MWh')
-  t.is(result.summary.totalConsumptionMWh, 504, 'total sums both weekly buckets')
-  t.pass()
+  t.is(result.log.length, 1)
+  t.alike(result.log[0].timeRange, { startTs: start, endTs: end })
+  t.alike(result.log[0].powerW, { 'PM-1': 2000000, 'PM-2': 2000000 }, 'each meter averages its own reported hours')
+  t.alike(result.log[0].consumptionMWh, { 'PM-1': 4, 'PM-2': 2 }, 'each meter sums its hourly MWh')
+  t.is(result.summary.groupedBy['PM-1'].totalConsumptionMWh, 4)
+})
+
+test('getHashrate - daily buckets are the site local days, bounded by start/end', async (t) => {
+  const captured = []
+  const ctx = localSiteCtx([
+    { ts: L_OCT1, hashrate_mhs_5m_sum_aggr: 100, nominal_hashrate_mhs_sum_aggr: 200 },
+    // 03:00Z on Oct 2 is still Oct 1 local
+    { ts: L_OCT1 + 23 * L_HOUR, hashrate_mhs_5m_sum_aggr: 300, nominal_hashrate_mhs_sum_aggr: 200 },
+    { ts: L_OCT1 + L_DAY, hashrate_mhs_5m_sum_aggr: 50, nominal_hashrate_mhs_sum_aggr: 100 }
+  ], { onRequest: (payload) => captured.push(payload) })
+  const start = L_OCT1
+  const end = L_OCT1 + 2 * L_DAY - 1
+
+  const result = await getHashrate(ctx, { query: { start, end, interval: '1d', nominal: true } })
+
+  t.is(captured[0].groupRange, '1H', 'rolled up from hourly buckets')
+  t.is(result.log.length, 2, 'one entry per local day')
+  t.is(result.log[0].ts, start, 'the first entry starts at the requested start')
+  t.alike(result.log[0].timeRange, { startTs: start, endTs: L_OCT1 + L_DAY - 1 })
+  t.alike(result.log[1].timeRange, { startTs: L_OCT1 + L_DAY, endTs: end }, 'the last entry ends at the requested end')
+  t.is(result.log[0].hashrateMhs, 200, 'a day averages its hours')
+  t.is(result.log[0].nominalHashrateMhs, 200)
+  t.is(result.log[0].pctOfNominal, 100)
+  t.is(result.log[1].pctOfNominal, 50)
+  t.is(result.summary.avgHashrateMhs, 125)
+})
+
+test('getEfficiency - daily buckets are the site local days, bounded by start/end', async (t) => {
+  const start = L_OCT1
+  const end = L_OCT1 + 2 * L_DAY - 1
+  const ctx = localSiteCtx([
+    { ts: L_OCT1, efficiency_w_ths_avg_aggr: 20 },
+    { ts: L_OCT1 + 23 * L_HOUR, efficiency_w_ths_avg_aggr: 30 },
+    { ts: L_OCT1 + L_DAY, efficiency_w_ths_avg_aggr: 40 }
+  ])
+
+  const result = await getEfficiency(ctx, { query: { start, end, interval: '1d' } })
+
+  t.is(result.log.length, 2, 'one entry per local day')
+  t.alike(result.log[0].timeRange, { startTs: start, endTs: L_OCT1 + L_DAY - 1 })
+  t.alike(result.log[1].timeRange, { startTs: L_OCT1 + L_DAY, endTs: end })
+  t.is(result.log[0].efficiencyWThs, 25, 'a day averages its hours')
+  t.is(result.log[1].efficiencyWThs, 40)
+})
+
+test('getEfficiency - central DCS divides the local day mean power by its mean hashrate', async (t) => {
+  const start = L_OCT1
+  const end = L_OCT1 + L_DAY - 1
+  const ctx = localSiteCtx((payload) => payload.type === 'dcs-siemens'
+    ? [{ ts: L_OCT1, site_power_w: 4000 }, { ts: L_OCT1 + 23 * L_HOUR, site_power_w: 2000 }]
+    : [{ ts: L_OCT1, hashrate_mhs_5m_sum_aggr: 100000000 }, { ts: L_OCT1 + 23 * L_HOUR, hashrate_mhs_5m_sum_aggr: 20000000 }],
+  { dcs: true })
+
+  const result = await getEfficiency(ctx, { query: { start, end, interval: '1d' } })
+
+  t.is(result.log.length, 1)
+  t.alike(result.log[0].timeRange, { startTs: start, endTs: end })
+  t.is(result.log[0].efficiencyWThs, 50, '3000 W over 60 TH/s')
 })
 
 test('getConsumption - missing start throws', async (t) => {
@@ -1242,7 +1198,7 @@ test('getConsumption - empty ork results', async (t) => {
   t.pass()
 })
 
-test('getConsumption - MWh scales with the bucket span', async (t) => {
+test('getConsumption - daily MWh is the sum of its hourly MWh', async (t) => {
   const mockCtx = withDataProxy({
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
     net_r0: {
@@ -1255,7 +1211,7 @@ test('getConsumption - MWh scales with the bucket span', async (t) => {
   const daily = await getConsumption(mockCtx, { query: { ...query, interval: '1d' } })
 
   t.is(hourly.log[0].consumptionMWh, 5, '1h bucket at 5 MW is 5 MWh')
-  t.is(daily.log[0].consumptionMWh, 120, '24h bucket at 5 MW is 120 MWh')
+  t.is(daily.log[0].consumptionMWh, 5, 'a day sums the MWh of the hours it holds')
   t.is(hourly.log[0].powerW, daily.log[0].powerW, 'average power is unaffected by bucket span')
   t.pass()
 })
@@ -1562,10 +1518,11 @@ test('getConsumption - monthly rollup sums days built from hourly integrals', as
     query: { start: ROLLUP_SINCE, end: ROLLUP_SINCE + 2 * DAY - 1, interval: '1M' }
   })
 
-  t.is(result.log.length, 1, 'both days land in one UTC month')
-  t.is(result.log[0].ts, Date.UTC(2023, 10), 'month bucket is UTC-aligned')
+  t.is(result.log.length, 1, 'both days land in one month')
+  t.is(result.log[0].ts, ROLLUP_SINCE, 'a month starting before the range is clamped to start')
+  t.alike(result.log[0].timeRange, { startTs: ROLLUP_SINCE, endTs: ROLLUP_SINCE + 2 * DAY - 1 }, 'and ends at end')
   t.is(result.log[0].consumptionMWh, 720, 'month sums the daily sums')
-  t.is(result.log[0].powerW, 15000000, 'month power averages the daily means')
+  t.is(result.log[0].powerW, 15000000, 'month power averages its hours')
   t.pass()
 })
 
@@ -2253,6 +2210,10 @@ test('getMinerStatus - empty ork results', async (t) => {
   t.pass()
 })
 
+// Unbounded UTC days, so these tests see whole-day buckets keyed by their start.
+const UTC_DAYS = { interval: '1d', timezone: 'UTC', start: 0, end: Infinity }
+const byTs = (log) => Object.fromEntries(log.map((entry) => [entry.ts, entry]))
+
 test('processMinerStatusData - processes daily entries', (t) => {
   const results = [[
     {
@@ -2264,7 +2225,7 @@ test('processMinerStatusData - processes daily entries', (t) => {
     }
   ]]
 
-  const daily = processMinerStatusData(results)
+  const daily = byTs(processMinerStatusData(results, UTC_DAYS))
   t.ok(typeof daily === 'object', 'should return object')
   const key = Object.keys(daily)[0]
   t.is(daily[key].offline, 5, 'should extract offline count')
@@ -2276,7 +2237,7 @@ test('processMinerStatusData - processes daily entries', (t) => {
 
 test('processMinerStatusData - handles error results', (t) => {
   const results = [{ error: 'timeout' }]
-  const daily = processMinerStatusData(results)
+  const daily = byTs(processMinerStatusData(results, UTC_DAYS))
   t.ok(typeof daily === 'object', 'should return object')
   t.is(Object.keys(daily).length, 0, 'should be empty for error results')
   t.pass()
@@ -2300,7 +2261,7 @@ test('processMinerStatusData - aggregates multiple orks same day', (t) => {
     }]
   ]
 
-  const daily = processMinerStatusData(results)
+  const daily = byTs(processMinerStatusData(results, UTC_DAYS))
   const key = Object.keys(daily)[0]
   t.is(daily[key].offline, 5, 'should sum offline across orks (3+2)')
   t.is(daily[key].sleep, 5, 'should sum sleep across orks')
@@ -2322,7 +2283,7 @@ test('processMinerStatusData - handles entries with aggrFields wrapper', (t) => 
     }
   ]]
 
-  const daily = processMinerStatusData(results)
+  const daily = byTs(processMinerStatusData(results, UTC_DAYS))
   const key = Object.keys(daily)[0]
   t.is(daily[key].offline, 10, 'should extract from aggrFields wrapper')
   t.is(daily[key].sleep, 5, 'should extract sleep from aggrFields')
@@ -2344,7 +2305,7 @@ test('processMinerStatusData - online comes from the mining count when the worke
   })
   const results = [[snapshot(dayStart, 1243), snapshot(dayStart + threeHours, 1243)]]
 
-  const daily = processMinerStatusData(results)
+  const daily = byTs(processMinerStatusData(results, UTC_DAYS))
   t.is(daily[dayStart].online, 1243, 'online should be the averaged mining count, not total minus maintenance')
   t.is(daily[dayStart].offline, 13, 'offline should stay the averaged offline count')
   t.is(daily[dayStart].maintenance, 49, 'maintenance should stay its own bucket')
@@ -2362,7 +2323,7 @@ test('processMinerStatusData - averages the day snapshots, absent statuses count
     { ts: dayStart + 3 * threeHours, type_cnt: { m50: 100 }, offline_cnt: { 'container-1a': 8 } }
   ]]
 
-  const daily = processMinerStatusData(results)
+  const daily = byTs(processMinerStatusData(results, UTC_DAYS))
   t.is(daily[dayStart].offline, 2, 'offline should average over all snapshots (8/4), not only where present')
   t.is(daily[dayStart].online, 98, 'online should reflect the averaged offline count')
   t.pass()
@@ -2383,7 +2344,7 @@ test('processMinerStatusData - averages snapshots per day across multiple orks',
     ]
   ]
 
-  const daily = processMinerStatusData(results)
+  const daily = byTs(processMinerStatusData(results, UTC_DAYS))
   t.is(daily[dayStart].offline, 3, 'offline should be the fleet sum per tick averaged over ticks ((4+2)/2)')
   t.is(daily[dayStart].online, 97, 'online should derive from the averaged totals (100-3)')
   t.pass()
@@ -2397,7 +2358,7 @@ test('processGroupedMinerStatusData - averages the day snapshots per type', (t) 
     { ts: dayStart + threeHours, type_cnt: { m50: 100, s19: 50 }, offline_type_cnt: { m50: 10 } }
   ]]
 
-  const daily = processGroupedMinerStatusData(results)
+  const daily = byTs(processGroupedMinerStatusData(results, UTC_DAYS))
   t.is(daily[dayStart].offline.m50, 5, 'per-type offline should average over all snapshots (10/2)')
   t.is(daily[dayStart].online.m50, 95, 'per-type online should reflect the averaged offline')
   t.is(daily[dayStart].online.s19, 50, 'types without offline snapshots stay fully online')
@@ -4048,6 +4009,8 @@ test('parseEntryTimeRange - parses a range string into startTs/endTs', (t) => {
   t.is(parseEntryTimeRange(null), null, 'null ts has no range')
 })
 
+// The store's own window is passed through on the hourly path; days/weeks/months are
+// re-cut in the site's zone (see the local-bucket tests).
 test('getHashrate - exposes the aggregation window as timeRange', async (t) => {
   const mockCtx = withDataProxy({
     conf: { orks: [{ rpcPublicKey: 'key1' }] },
@@ -4057,7 +4020,7 @@ test('getHashrate - exposes the aggregation window as timeRange', async (t) => {
   })
 
   const result = await getHashrate(mockCtx, {
-    query: { start: 1770854400000, end: 1771459199999 }
+    query: { start: 1770854400000, end: 1771459199999, interval: '1h' }
   })
 
   t.alike(result.log[0].timeRange, { startTs: RANGE_START, endTs: RANGE_END }, 'timeRange should cover the full window')
@@ -4088,7 +4051,7 @@ test('getConsumption - exposes the aggregation window as timeRange', async (t) =
   })
 
   const result = await getConsumption(mockCtx, {
-    query: { start: 1770854400000, end: 1771459199999 }
+    query: { start: 1770854400000, end: 1771459199999, interval: '1h' }
   })
 
   t.alike(result.log[0].timeRange, { startTs: RANGE_START, endTs: RANGE_END }, 'timeRange should cover the full window')
@@ -4104,7 +4067,7 @@ test('getEfficiency - exposes the aggregation window as timeRange', async (t) =>
   })
 
   const result = await getEfficiency(mockCtx, {
-    query: { start: 1770854400000, end: 1771459199999 }
+    query: { start: 1770854400000, end: 1771459199999, interval: '1h' }
   })
 
   t.alike(result.log[0].timeRange, { startTs: RANGE_START, endTs: RANGE_END }, 'timeRange should cover the full window')
@@ -4125,7 +4088,7 @@ test('getEfficiency - central DCS path normalizes range ts and exposes timeRange
   })
 
   const result = await getEfficiency(mockCtx, {
-    query: { start: 1770854400000, end: 1771459199999 }
+    query: { start: 1770854400000, end: 1771459199999, interval: '1h' }
   })
 
   t.is(result.log[0].ts, RANGE_START, 'ts should be the numeric range start')
@@ -4150,8 +4113,31 @@ test('getMinerStatus - exposes the day window as timeRange', async (t) => {
   t.is(result.log[0].online, 8, 'counts should be preserved')
 })
 
+test('getMinerStatus - days are the site local days, bounded by start/end', async (t) => {
+  const start = L_OCT1
+  const end = L_OCT1 + 2 * L_DAY - 1
+  const ctx = localSiteCtx([
+    { ts: L_OCT1 + 2 * L_HOUR, type_cnt: { m50: 10 }, offline_cnt: { c1: 2 } },
+    // 03:00Z on Oct 2 is still Oct 1 local
+    { ts: L_OCT1 + 23 * L_HOUR, type_cnt: { m50: 10 }, offline_cnt: { c1: 4 } },
+    { ts: L_OCT1 + L_DAY + 2 * L_HOUR, type_cnt: { m50: 10 } }
+  ])
+
+  const plain = await getMinerStatus(ctx, { query: { start, end } })
+  const grouped = await getMinerStatus(ctx, { query: { start, end, groupBy: 'type' } })
+
+  for (const { log } of [plain, grouped]) {
+    t.is(log.length, 2, 'one entry per local day')
+    t.is(log[0].ts, start, 'the first entry starts at the requested start')
+    t.alike(log[0].timeRange, { startTs: start, endTs: L_OCT1 + L_DAY - 1 })
+    t.alike(log[1].timeRange, { startTs: L_OCT1 + L_DAY, endTs: end }, 'the last entry ends at the requested end')
+  }
+  t.is(plain.log[0].offline, 3, 'both Oct 1 local snapshots average into Oct 1')
+  t.is(plain.log[1].offline, 0)
+})
+
 test('processGroupedMinerStatusData - exposes the day window as timeRange', (t) => {
-  const daily = processGroupedMinerStatusData([[{ ts: RANGE_START, type_cnt: { m50: 10 }, offline_type_cnt: { m50: 2 } }]])
+  const daily = byTs(processGroupedMinerStatusData([[{ ts: RANGE_START, type_cnt: { m50: 10 }, offline_type_cnt: { m50: 2 } }]], UTC_DAYS))
 
   const bucket = daily[RANGE_START]
   t.alike(bucket.timeRange, { startTs: RANGE_START, endTs: RANGE_START + DAY_MS - 1 }, 'timeRange should cover the day')
@@ -4541,34 +4527,37 @@ test('getHashrate - grouped results are paged the same way', async (t) => {
   t.pass()
 })
 
-test('rollupMonthly - one bucket per calendar month, energy is the daily sum', (t) => {
+const UTC_MONTHS = { interval: '1M', timezone: 'UTC', start: Date.UTC(2026, 6, 1), end: Date.UTC(2026, 8, 1) - 1 }
+
+test('rollupLocalConsumption - one bucket per calendar month, energy is the hourly sum', (t) => {
   const day = 86400000
   const jul31 = Date.UTC(2026, 6, 31)
-  const daily = [
+  const hourly = [
     { ts: Date.UTC(2026, 6, 1), powerW: 10, consumptionMWh: 0.24 },
     { ts: jul31, powerW: 20, consumptionMWh: 0.48 },
     { ts: jul31 + day, powerW: 30, consumptionMWh: 0.72 }
   ]
 
-  const log = rollupMonthly(daily)
+  const log = rollupLocalConsumption(hourly, UTC_MONTHS)
 
   t.is(log.length, 2, 'July and August, no epoch straddle')
   t.is(log[0].ts, Date.UTC(2026, 6, 1), 'first bucket starts at the calendar month')
   t.is(log[0].timeRange.endTs, Date.UTC(2026, 7, 1) - 1, 'ends at the last ms of the month')
-  t.is(log[0].consumptionMWh, 0.72, 'July energy is the sum of its 2 covered days, not 31 extrapolated')
-  t.is(log[0].powerW, 15, 'power averages over the covered days only')
+  t.is(log[0].consumptionMWh, 0.72, 'July energy is the sum of what it holds, not extrapolated')
+  t.is(log[0].powerW, 15, 'power averages over the reported entries only')
   t.is(log[1].consumptionMWh, 0.72, 'August energy')
+  t.is(log[1].timeRange.endTs, UTC_MONTHS.end, 'the last bucket ends at the requested end')
 })
 
-test('rollupMonthly - per-meter maps roll up meter by meter', (t) => {
-  const log = rollupMonthly([
+test('rollupLocalConsumption - per-meter maps roll up meter by meter', (t) => {
+  const log = rollupLocalConsumption([
     { ts: Date.UTC(2026, 6, 1), powerW: { a: 10, b: 4 }, consumptionMWh: { a: 0.24, b: 0.096 } },
     { ts: Date.UTC(2026, 6, 2), powerW: { a: 20 }, consumptionMWh: { a: 0.48 } }
-  ])
+  ], UTC_MONTHS)
 
   t.is(log.length, 1, 'single month')
   t.alike(log[0].consumptionMWh, { a: 0.72, b: 0.096 }, 'energy summed per meter')
-  t.alike(log[0].powerW, { a: 15, b: 2 }, 'power averaged over the month days')
+  t.alike(log[0].powerW, { a: 15, b: 4 }, 'power averaged over the hours each meter reported')
 })
 
 // ==================== Downtime Tests ====================
