@@ -302,7 +302,7 @@ test('getDailySeries - caches a completed month on ctx and does not refetch it',
   })
 
   const start = Date.UTC(2024, 0, 1)
-  const end = Date.UTC(2024, 1, 1)
+  const end = Date.UTC(2024, 1, 1) - 1
   const first = await getDailySeries(mockCtx, start, end, getConsumption, 'powerW', 'UTC')
   const second = await getDailySeries(mockCtx, start, end, getConsumption, 'powerW', 'UTC')
 
@@ -329,7 +329,7 @@ test('getDailySeries - refresh skips the cached month and stores the fresh rollu
   })
 
   const start = Date.UTC(2024, 0, 1)
-  const end = Date.UTC(2024, 1, 1)
+  const end = Date.UTC(2024, 1, 1) - 1
   const dayTs = Date.UTC(2024, 0, 15)
   await getDailySeries(mockCtx, start, end, getConsumption, 'powerW', 'UTC')
   powerW = 3000000 // a backfill lands after the month was cached
@@ -388,6 +388,97 @@ test('getDailySeries - a different ctx gets its own cache (no cross-request leak
   const ctxB = await getDailySeries(buildCtx(9000000), start, end, getConsumption, 'powerW', 'UTC')
 
   t.not(Object.values(ctxA)[0], Object.values(ctxB)[0], 'a fresh ctx is not served the other ctx\'s cached data')
+  t.pass()
+})
+
+test('getDailySeries - a window ending exactly on a month boundary keeps its last hour, warm or cold', async (t) => {
+  const ctx = {}
+  const spans = []
+  const feb1 = Date.UTC(2024, 1, 1)
+  // hour buckets on the grid only, including the one stamped at the boundary itself
+  const handler = async (c, req) => {
+    spans.push([req.query.start, req.query.end])
+    const log = []
+    for (let ts = Math.ceil(req.query.start / 3600000) * 3600000; ts <= req.query.end; ts += 3600000) {
+      log.push({ ts, powerW: 7 })
+    }
+    return { log }
+  }
+  const jan1 = Date.UTC(2024, 0, 1)
+
+  const cold = await getDailySeries(ctx, jan1, feb1, handler, 'powerW', 'UTC')
+  const warm = await getDailySeries(ctx, jan1, feb1, handler, 'powerW', 'UTC')
+
+  t.is(cold[feb1], 7, 'the boundary hour is a (one-hour) Feb 1 day, as a single-pass fetch reports it')
+  t.alike(warm, cold, 'the warm request answers identically instead of dropping the edge or rejecting it')
+  t.alike(spans[1], [feb1 - 1, feb1], 'only the uncacheable boundary sliver is refetched')
+  t.pass()
+})
+
+test('getDailySeries - concurrent overlapping windows compute each cold month once', async (t) => {
+  const ctx = {}
+  const spans = []
+  const inner = hourlyJanuaryHandler()
+  const handler = async (c, req) => {
+    spans.push([req.query.start, req.query.end])
+    return inner(c, req)
+  }
+  const jan1 = Date.UTC(2024, 0, 1)
+  const feb1 = Date.UTC(2024, 1, 1)
+
+  // The financials tab fires several windows over the same months at once.
+  const [a, b] = await Promise.all([
+    getDailySeries(ctx, jan1, feb1 - 1, handler, 'powerW', 'UTC'),
+    getDailySeries(ctx, jan1, feb1 - 1, handler, 'powerW', 'UTC')
+  ])
+
+  t.is(spans.length, 1, 'the second caller awaits the in-flight month instead of refetching')
+  t.alike(b, a, 'and receives the same rollup')
+  t.pass()
+})
+
+test('getDailySeries - a concurrent refresh still makes its own handler call', async (t) => {
+  const ctx = {}
+  let calls = 0
+  const inner = hourlyJanuaryHandler()
+  const handler = async (c, req) => {
+    calls++
+    return inner(c, req)
+  }
+  const jan1 = Date.UTC(2024, 0, 1)
+  const feb1 = Date.UTC(2024, 1, 1)
+
+  // getRevenueSummary's phase coverage counts on refresh making exactly one
+  // handler call over the whole span, so it must never ride another request.
+  await Promise.all([
+    getDailySeries(ctx, jan1, feb1 - 1, handler, 'powerW', 'UTC', true),
+    getDailySeries(ctx, jan1, feb1 - 1, handler, 'powerW', 'UTC', true)
+  ])
+
+  t.is(calls, 2, 'each refresh caller scans for itself')
+  t.pass()
+})
+
+test('getDailySeries - a failed fetch rejects the waiters and is retried next request', async (t) => {
+  const ctx = {}
+  let calls = 0
+  const inner = hourlyJanuaryHandler()
+  const handler = async (c, req) => {
+    calls++
+    if (calls === 1) throw new Error('ERR_STORE_DOWN')
+    return inner(c, req)
+  }
+  const jan1 = Date.UTC(2024, 0, 1)
+  const feb1 = Date.UTC(2024, 1, 1)
+
+  const results = await Promise.allSettled([
+    getDailySeries(ctx, jan1, feb1 - 1, handler, 'powerW', 'UTC'),
+    getDailySeries(ctx, jan1, feb1 - 1, handler, 'powerW', 'UTC')
+  ])
+
+  t.alike(results.map(r => r.status), ['rejected', 'rejected'], 'the waiter fails with the fetcher, not silently empty')
+  const after = await getDailySeries(ctx, jan1, feb1 - 1, handler, 'powerW', 'UTC')
+  t.is(Object.keys(after).length, 31, 'the failed month is not poisoned: the next request fetches it')
   t.pass()
 })
 
@@ -622,6 +713,89 @@ test('getRevenueSummary - phase rows divide the phase consumption by the phase n
   t.is(totalRow.powerW, 10_000_000, 'the site row is not served the phase series from cache')
   t.ok(totalRow.powerUtilization > 0, 'site rows keep the ratio')
   t.ok(Number.isFinite(totalRow.downtimeMWh), 'and the downtime energy')
+})
+
+test('getRevenueSummary - a phase claims only the rebates addressed to it', async (t) => {
+  // Unique month so the daily-series month cache cannot leak across tests.
+  const dayTs = Date.UTC(2019, 9, 15)
+  const ctx = withDataProxy({
+    conf: {
+      orks: [{ rpcPublicKey: 'key1' }],
+      featureConfig: {
+        centralDCSSetup: { enabled: true },
+        phases: [{
+          id: 'phase1_5',
+          label: 'Phase 1.5',
+          minerTelemetry: false,
+          consumption: { source: 'manual' },
+          pool: {
+            accounts: [{ poolType: 'ocean', username: 'acme-addr' }],
+            rebateAddresses: ['rebate-addr']
+          }
+        }, {
+          id: 'phase2',
+          label: 'Phase 2',
+          minerTelemetry: false,
+          consumption: { source: 'manual' },
+          pool: { accounts: [{ poolType: 'ocean', username: 'other-addr' }] }
+        }]
+      }
+    },
+    net_r0: {
+      jRequest: async (_key, method, payload) => {
+        if (method === 'getHistoricalLogs') {
+          return Array.from({ length: 24 }, (_, h) => ({ ts: dayTs + h * 3600000, totalConsumptionMWh: 0.6 }))
+        }
+        if (method === 'tailLog') {
+          return [{ ts: dayTs, site_power_w: 10_000_000, hashrate_mhs_5m_sum_aggr: 1e9 }]
+        }
+        if (method === 'getWrkExtData') {
+          const key = payload.query && payload.query.key
+          if (key === 'transactions') {
+            return [{
+              ts: dayTs,
+              transactions: [
+                { ts: dayTs, satoshis_net_earned: 100000000, username: 'site-addr' },
+                { ts: dayTs, satoshis_net_earned: 50000000, username: 'acme-addr' }
+              ]
+            }]
+          }
+          if (key === 'HISTORICAL_PRICES') return [{ ts: dayTs, priceUSD: 100000 }]
+          if (key === 'current_price') return [{ currentPrice: 100000 }]
+          return []
+        }
+        if (method === 'getGlobalConfig') {
+          return {
+            nominalPowerAvailability_MW: 10,
+            phaseNominals: { phase1_5: { nominalPower_MW: 1.2 }, phase2: { nominalPower_MW: 1 } }
+          }
+        }
+        return {}
+      }
+    },
+    globalDataLib: {
+      getGlobalData: async () => [
+        { ts: dayTs + 7200000, amountBTC: 0.02, txid: 'r1', receiver: 'rebate-addr', priceUSD: 100000 },
+        { ts: dayTs + 7200000, amountBTC: 0.01, txid: 'r2', receiver: 'treasury-addr', priceUSD: 100000 }
+      ]
+    }
+  })
+
+  const query = { start: dayTs - 1000, end: dayTs + 86400000, overwriteCache: true }
+
+  const phased = await getRevenueSummary(ctx, { query: { ...query, phase: 'phase1_5' } }, {})
+  t.ok(Math.abs(phased.summary.totalRebateBTC - 0.02) < 1e-9, 'the mapped rebate lands on the phase')
+  t.ok(Math.abs(phased.summary.totalPayoutBTC - 0.5) < 1e-9, 'payouts stay scoped to the phase account')
+  t.ok(Math.abs(phased.summary.totalRevenueBTC - 0.52) < 1e-9, 'phase revenue carries its rebate')
+  const phaseRow = phased.log.find(e => e.rebateBTC > 0)
+  t.ok(phaseRow && Math.abs(phaseRow.rebateBTC - 0.02) < 1e-9, 'the day row carries the rebate')
+
+  const unmapped = await getRevenueSummary(ctx, { query: { ...query, phase: 'phase2' } }, {})
+  t.is(unmapped.summary.totalRebateBTC, 0, 'a phase without rebateAddresses claims nothing')
+
+  const total = await getRevenueSummary(ctx, { query }, {})
+  t.ok(Math.abs(total.summary.totalRebateBTC - 0.03) < 1e-9, 'the site total keeps every rebate, mapped or not')
+  t.ok(Math.abs(total.summary.totalRevenueBTC - 1.53) < 1e-9, 'site revenue is payouts plus all rebates')
 })
 
 // A manual-source phase whose ACME entries cover only `hours` of the day.
@@ -1827,7 +2001,7 @@ test('getRevenueSummary - phase costs and capex follow the phase build-out', asy
     {
       id: 'phase1',
       minerTelemetry: true,
-      consumption: { source: 'remainder', meterKey: 'ccm' },
+      consumption: { source: 'remainder', meterKey: 'site-pm' },
       pool: { accounts: [{ poolType: 'ocean', username: 'site-addr' }] }
     },
     {
@@ -1837,10 +2011,11 @@ test('getRevenueSummary - phase costs and capex follow the phase build-out', asy
       pool: { accounts: [{ poolType: 'ocean', username: 'acme-addr' }] }
     }
   ]
+  // A stale Cost Input capex must not leak: capex comes from the global config only.
   const costParameters = {
-    capexUsd: 1000,
+    capexUsd: 99,
     lcoe: { effectiveUsdPerMwh: 50 },
-    phases: { phase1_5: { capexUsd: 400 } }
+    phases: { phase1_5: { capexUsd: 99 } }
   }
   const ctx = withDataProxy({
     conf: { orks: [{ rpcPublicKey: 'key1' }], featureConfig: { centralDCSSetup: { enabled: true }, phases } },
@@ -1850,7 +2025,7 @@ test('getRevenueSummary - phase costs and capex follow the phase build-out', asy
           return Array.from({ length: 24 }, (_, h) => ({ ts: dayTs + h * 3600000, totalConsumptionMWh: 0.6 }))
         }
         if (method === 'tailLog') {
-          return [{ ts: dayTs, site_power_w: 10_000_000, by_meter_power_w: { ccm: 10_000_000 }, hashrate_mhs_5m_sum_aggr: 1e9 }]
+          return [{ ts: dayTs, site_power_w: 10_000_000, by_meter_power_w: { 'site-pm': 10_000_000 }, hashrate_mhs_5m_sum_aggr: 1e9 }]
         }
         if (method === 'getWrkExtData') {
           const key = payload.query && payload.query.key
@@ -1861,7 +2036,14 @@ test('getRevenueSummary - phase costs and capex follow the phase build-out', asy
           if (key === 'current_price') return [{ currentPrice: 100000 }]
           return []
         }
-        if (method === 'getGlobalConfig') return { nominalPowerAvailability_MW: 10, phaseNominals: { phase1: { nominalPower_MW: 8 }, phase1_5: { nominalPower_MW: 1.2 } } }
+        if (method === 'getGlobalConfig') {
+          return {
+            nominalPowerAvailability_MW: 10,
+            phaseNominals: { phase1: { nominalPower_MW: 8 }, phase1_5: { nominalPower_MW: 1.2 } },
+            capexUsd: 1000,
+            phaseCapexUsd: { phase1_5: 400 }
+          }
+        }
         return {}
       }
     },
@@ -1896,22 +2078,30 @@ test('getRevenueSummary - phase costs and capex follow the phase build-out', asy
 
 test('resolveCapex - splits capex along the phase build-outs', (t) => {
   const phases = [
-    { id: 'phase1', consumption: { source: 'remainder', meterKey: 'ccm' } },
+    { id: 'phase1', consumption: { source: 'remainder', meterKey: 'site-pm' } },
     { id: 'phase1_5', consumption: { source: 'manual' } }
   ]
   const ctx = { conf: { featureConfig: { phases } } }
-  const params = { capexUsd: 1000, phases: { phase1_5: { capexUsd: 400 } } }
+  const params = [{ capexUsd: 1000, phaseCapexUsd: { phase1_5: 400 } }]
 
   t.alike(resolveCapex(ctx, null, params), { capexUsd: 1400, capexMissingPhases: [] }, 'site sums both')
   t.alike(resolveCapex(ctx, phases[0], params), { capexUsd: 1000, capexMissingPhases: [] }, 'phase 1 keeps the existing capex')
   t.alike(resolveCapex(ctx, phases[1], params), { capexUsd: 400, capexMissingPhases: [] }, 'phase 1.5 has its own')
 
-  const pending = { capexUsd: 1000 }
+  const pending = [{ capexUsd: 1000 }]
   t.alike(resolveCapex(ctx, null, pending), { capexUsd: 1000, capexMissingPhases: ['phase1_5'] }, 'a pending phase is flagged, not zeroed')
   t.alike(resolveCapex(ctx, phases[1], pending), { capexUsd: null, capexMissingPhases: ['phase1_5'] }, 'phase 1.5 has no capex yet')
-  t.alike(resolveCapex(ctx, phases[0], {}), { capexUsd: null, capexMissingPhases: [] })
+  t.alike(resolveCapex(ctx, phases[0], []), { capexUsd: null, capexMissingPhases: [] })
 
-  t.alike(resolveCapex({ conf: {} }, null, { capexUsd: 1000 }), { capexUsd: 1000, capexMissingPhases: [] }, 'sites without phases are unchanged')
+  t.alike(resolveCapex({ conf: {} }, null, [{ capexUsd: 1000 }]), { capexUsd: 1000, capexMissingPhases: [] }, 'sites without phases are unchanged')
+})
+
+test('resolveCapex - reads the first ork that carries capex', (t) => {
+  const ctx = { conf: {} }
+  const results = [{ error: 'ERR_TIMEOUT' }, [{ nominalAvailablePowerMWh: 22.5 }], [{ capexUsd: 1000 }], { capexUsd: 5 }]
+
+  t.alike(resolveCapex(ctx, null, results), { capexUsd: 1000, capexMissingPhases: [] }, 'skips errors and orks without capex')
+  t.alike(resolveCapex(ctx, null, undefined), { capexUsd: null, capexMissingPhases: [] }, 'no global config is null, not zero')
 })
 
 test('getCostParameters - returns an empty object without globalDataLib', async (t) => {

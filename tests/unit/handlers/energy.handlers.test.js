@@ -360,6 +360,48 @@ test('saveEnergyConsumption - sends only the entries to the DCS worker, aligned 
   })
 })
 
+test('saveEnergyConsumption - clears the cached consumption metrics only after a confirmed write', async (t) => {
+  const LRU = require('lru')
+  const cache = new LRU({ max: 100 })
+  const okCtx = consumptionCtx({ jRequest: async (key, method, payload) => [{ upserted: payload.entries.length }] })
+  okCtx.lru_30s = { cache }
+  okCtx.conf.cacheTiming = {}
+  cache.set('metrics/consumption:phase-1:1:2:-:-:-:-', { stale: true })
+  cache.set('metrics/efficiency:phase-1', 1)
+
+  await saveEnergyConsumption(okCtx, saveReq([consEntry(CONS_H0)]))
+
+  t.alike(cache.keys, ['metrics/efficiency:phase-1'], 'consumption entries dropped, other routes kept')
+
+  const failCtx = consumptionCtx({ jRequest: async () => [] })
+  failCtx.lru_30s = { cache }
+  failCtx.conf.cacheTiming = {}
+  cache.set('metrics/consumption:phase-1:1:2:-:-:-:-', { stale: true })
+  await t.exception(() => saveEnergyConsumption(failCtx, saveReq([consEntry(CONS_H0)])), /ERR_CONSUMPTION_SAVE_FAILED/)
+  t.ok(cache.peek('metrics/consumption:phase-1:1:2:-:-:-:-'), 'kept when nothing was written')
+})
+
+test('saveEnergyConsumption - drops the cached phase-consumption months after a confirmed write', async (t) => {
+  const { phaseHourlyCache, phaseHourlyCacheKey } = require('../../../workers/lib/server/lib/phaseConsumptionCache')
+  const seed = () => phaseHourlyCache.set(phaseHourlyCacheKey('2026-09', 'phase1', 'remainder', 'Site-PM'), [])
+
+  const okCtx = consumptionCtx({ jRequest: async (key, method, payload) => [{ upserted: payload.entries.length }] })
+  okCtx.lru_30s = { cache: new (require('lru'))({ max: 100 }) }
+  okCtx.conf.cacheTiming = {}
+
+  seed()
+  await saveEnergyConsumption(okCtx, saveReq([consEntry(CONS_H0)]))
+  t.is(phaseHourlyCache.size, 0, 'a manual entry invalidates every cached phase month')
+
+  const failCtx = consumptionCtx({ jRequest: async () => [] })
+  failCtx.lru_30s = { cache: new (require('lru'))({ max: 100 }) }
+  failCtx.conf.cacheTiming = {}
+  seed()
+  await t.exception(() => saveEnergyConsumption(failCtx, saveReq([consEntry(CONS_H0)])), /ERR_CONSUMPTION_SAVE_FAILED/)
+  t.is(phaseHourlyCache.size, 1, 'kept when nothing was written')
+  phaseHourlyCache.clear()
+})
+
 test('saveEnergyConsumption - forwards partial entries, zeros and nulls untouched', async (t) => {
   let captured = null
   const ctx = consumptionCtx({

@@ -65,7 +65,7 @@
         "id": "phase1",
         "label": "Phase 1",
         "minerTelemetry": true,
-        "consumption": { "source": "remainder", "meterKey": "ccm" },
+        "consumption": { "source": "remainder", "meterKey": "site-pm" },
         "pool": {
           "accounts": [
             { "poolType": "ocean", "username": "<site-btc-address>" }
@@ -80,7 +80,8 @@
         "pool": {
           "accounts": [
             { "poolType": "ocean", "username": "<acme-btc-address>" }
-          ]
+          ],
+          "rebateAddresses": ["<rebate-receiver-address>"]
         },
         "groups": { "minerType": "HBM", "container": "acme-container" }
       }

@@ -73,3 +73,8 @@ runs:
         else
           npm install --ignore-scripts --no-audit --no-fund
         fi
+        # --ignore-scripts skips sqlite3's install script, leaving no native
+        # binding; run just that one script to fetch its prebuilt binary.
+        if [ -d node_modules/sqlite3 ]; then
+          npm rebuild sqlite3 --no-audit --no-fund
+        fi

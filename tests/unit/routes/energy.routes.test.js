@@ -170,7 +170,9 @@ test('energy routes - consumption POST rejects values Fastify would coerce', asy
     .find(r => r.url === ENDPOINTS.ENERGY_CONSUMPTION && r.method === HTTP_METHODS.POST)
   const app = Fastify()
   app.setErrorHandler((err, req, rep) => rep.code(400).send({ message: err.message }))
-  app.post('/x', { schema: route.schema, preValidation: route.preValidation }, async (req) => req.body)
+  // record the parsed body rather than echoing it back in the response
+  let received
+  app.post('/x', { schema: route.schema, preValidation: route.preValidation }, async (req) => { received = req.body; return {} })
   t.teardown(() => app.close())
 
   const send = (entry) => app.inject({ method: 'POST', url: '/x', payload: { entries: [entry] } })
@@ -178,10 +180,11 @@ test('energy routes - consumption POST rejects values Fastify would coerce', asy
 
   // sanity: without the hook these are silently coerced (the reason it exists)
   const plain = Fastify()
-  plain.post('/x', { schema: route.schema }, async (req) => req.body)
+  let coerced
+  plain.post('/x', { schema: route.schema }, async (req) => { coerced = req.body; return {} })
   t.teardown(() => plain.close())
-  const coerced = await plain.inject({ method: 'POST', url: '/x', payload: { entries: [{ ts: TS, cduConsumptionMWh: '' }] } })
-  t.is(coerced.json().entries[0].cduConsumptionMWh, null, 'an empty string would otherwise become null, i.e. clear a value')
+  await plain.inject({ method: 'POST', url: '/x', payload: { entries: [{ ts: TS, cduConsumptionMWh: '' }] } })
+  t.is(coerced.entries[0].cduConsumptionMWh, null, 'an empty string would otherwise become null, i.e. clear a value')
 
   for (const bad of ['', '7', false, true, [], {}]) {
     const res = await send({ ts: TS, cduConsumptionMWh: bad })
@@ -197,7 +200,7 @@ test('energy routes - consumption POST rejects values Fastify would coerce', asy
   for (const good of [null, 0, 5.5]) {
     const res = await send({ ts: TS, cduConsumptionMWh: good })
     t.is(res.statusCode, 200, `cdu=${JSON.stringify(good)} accepted`)
-    t.is(res.json().entries[0].cduConsumptionMWh, good, 'passed through unchanged')
+    t.is(received.entries[0].cduConsumptionMWh, good, 'passed through unchanged')
   }
 })
 
