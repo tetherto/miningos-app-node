@@ -11,7 +11,8 @@ const {
   parseJsonQueryParam,
   flattenRpcResults,
   localDayStart,
-  localWeekStart
+  localWeekStart,
+  toFiniteOrNull
 } = require('../../utils')
 const {
   resolveStartEnd,
@@ -67,14 +68,17 @@ function flattenPoolStats (results) {
           pool: stat.poolType,
           account: stat.username,
           status: 'active',
-          hashrate: stat.hashrate || 0,
-          hashrate1h: stat.hashrate_1h || 0,
-          hashrate24h: stat.hashrate_24h || 0,
-          workerCount: stat.worker_count || 0,
-          activeWorkerCount: stat.active_workers_count || 0,
-          balance: stat.balance || 0,
-          unsettled: stat.unsettled || 0,
-          revenue24h: stat.revenue_24h || stat.estimated_today_income || 0,
+          // A stat the pool did not report, or reported unreadably (NaN, which the
+          // workers can produce and JSON would send as null anyway), stays null so clients
+          // can show it as missing rather than as a pool that has stopped; a real 0 is kept.
+          hashrate: toFiniteOrNull(stat.hashrate),
+          hashrate1h: toFiniteOrNull(stat.hashrate_1h),
+          hashrate24h: toFiniteOrNull(stat.hashrate_24h),
+          workerCount: toFiniteOrNull(stat.worker_count),
+          activeWorkerCount: toFiniteOrNull(stat.active_workers_count),
+          balance: toFiniteOrNull(stat.balance),
+          unsettled: toFiniteOrNull(stat.unsettled),
+          revenue24h: toFiniteOrNull(stat.revenue_24h) ?? toFiniteOrNull(stat.estimated_today_income),
           yearlyBalances: stat.yearlyBalances || [],
           lastUpdated: stat.timestamp || null
         })
@@ -85,13 +89,19 @@ function flattenPoolStats (results) {
   return pools
 }
 
+// Each total adds the pools that reported that stat. When no pool reported it, the total
+// is null rather than 0, so a site with no readings does not read as a dead site.
 function calculatePoolsSummary (pools) {
+  const addStat = (total, value) => {
+    const v = toFiniteOrNull(value)
+    return v === null ? total : (total ?? 0) + v
+  }
   const totals = pools.reduce((acc, pool) => {
-    acc.totalHashrate += pool.hashrate || 0
-    acc.totalWorkers += pool.workerCount || pool.worker_count || 0
-    acc.totalBalance += pool.balance || 0
+    acc.totalHashrate = addStat(acc.totalHashrate, pool.hashrate)
+    acc.totalWorkers = addStat(acc.totalWorkers, pool.workerCount ?? pool.worker_count)
+    acc.totalBalance = addStat(acc.totalBalance, pool.balance)
     return acc
-  }, { totalHashrate: 0, totalWorkers: 0, totalBalance: 0 })
+  }, { totalHashrate: null, totalWorkers: null, totalBalance: null })
 
   return {
     poolCount: pools.length,

@@ -12,7 +12,8 @@ const {
   escapeRegex,
   csvEscape,
   stableJsonString,
-  listThingsWithCount
+  listThingsWithCount,
+  toFiniteOrNull
 } = require('../../../workers/lib/utils')
 
 const randomIPv4 = () => {
@@ -465,4 +466,14 @@ test('listThingsWithCount - caps data at limit when multiple orks each return up
   t.is(out.data.length, 4, 'capped to limit even though 6 unique items came back across 2 orks')
   t.is(out.totalCount, 6)
   t.is(out.hasMore, true)
+})
+
+test('toFiniteOrNull - keeps a real 0 apart from a missing or unreadable reading', (t) => {
+  t.is(toFiniteOrNull(0), 0, 'a real 0 stays 0')
+  t.is(toFiniteOrNull(12.5), 12.5)
+  t.is(toFiniteOrNull('7'), 7, 'a numeric string still counts')
+  t.is(toFiniteOrNull(' 7 '), 7, 'surrounding whitespace is fine')
+  for (const missing of [null, undefined, '', '   ', NaN, Infinity, -Infinity, 'n/a', false, true, [], {}, [5]]) {
+    t.is(toFiniteOrNull(missing), null, `${String(missing)} is missing`)
+  }
 })

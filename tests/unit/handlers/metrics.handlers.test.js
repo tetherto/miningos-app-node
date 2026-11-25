@@ -6,6 +6,7 @@ const {
   monthlyHashesCache,
   dailyHashesCache,
   calculateHashrateSummary,
+  calculateGroupedHashrateSummary,
   getConsumption,
   rollupLocalConsumption,
   calculateConsumptionSummary,
@@ -7139,4 +7140,143 @@ test('getDowntime - phase=total and no phase serve the site series', async (t) =
     t.is(res.log[0].downtimeRate, 0.4)
     t.is(res.log[0].operationalIssuesRate, 0.4, 'the site keeps its split')
   }
+})
+
+test('calculateGroupedHashrateSummary - keeps a real 0 and reports a group with no readings as null', (t) => {
+  const summary = calculateGroupedHashrateSummary([
+    { ts: 1, hashrateMhs: { 'group-1': 0, 'group-2': null } },
+    { ts: 2, hashrateMhs: { 'group-1': 0, 'group-2': undefined } }
+  ])
+
+  t.is(summary.groupedBy['group-1'].avgHashrateMhs, 0, 'a unit that was down averages a real 0')
+  t.is(summary.groupedBy['group-2'].avgHashrateMhs, null, 'a unit with no readings is null, not 0')
+})
+
+test('calculateGroupedHashrateSummary - a missing sample does not drag the group average down', (t) => {
+  const summary = calculateGroupedHashrateSummary([
+    { ts: 1, hashrateMhs: { 'group-1': 100 } },
+    { ts: 2, hashrateMhs: { 'group-1': null } },
+    { ts: 3, hashrateMhs: { 'group-1': 200 } }
+  ])
+
+  t.is(summary.groupedBy['group-1'].avgHashrateMhs, 150)
+  t.is(summary.avgHashrateMhs, 150, 'the site average follows the group, not the gap')
+})
+
+test('calculateGroupedHashrateSummary - the site average is the sum of the group averages', (t) => {
+  const summary = calculateGroupedHashrateSummary([
+    { ts: 1, hashrateMhs: { A: 100, B: 100 } },
+    { ts: 2, hashrateMhs: { A: null, B: 100 } },
+    { ts: 3, hashrateMhs: { A: 100, B: 100 } }
+  ])
+
+  t.is(summary.groupedBy.A.avgHashrateMhs, 100)
+  t.is(summary.groupedBy.B.avgHashrateMhs, 100)
+  t.is(summary.avgHashrateMhs, 200, 'both sides of the response agree')
+})
+
+test('calculateGroupedHashrateSummary - the site average is null when no group has a reading', (t) => {
+  const summary = calculateGroupedHashrateSummary([
+    { ts: 1, hashrateMhs: { A: null } },
+    { ts: 2, hashrateMhs: null }
+  ])
+
+  t.is(summary.groupedBy.A.avgHashrateMhs, null)
+  t.is(summary.avgHashrateMhs, null)
+})
+
+test('calculateGroupedHashrateSummary - skips non-numeric samples', (t) => {
+  const summary = calculateGroupedHashrateSummary([
+    { ts: 1, hashrateMhs: { 'group-1': 'n/a' } },
+    { ts: 2, hashrateMhs: { 'group-1': '' } },
+    { ts: 3, hashrateMhs: { 'group-1': '50' } }
+  ])
+
+  t.is(summary.groupedBy['group-1'].avgHashrateMhs, 50, 'a numeric string still counts')
+})
+
+test('getHashrate 1d groupBy - a gap in the hourly rows stays a gap through the day rollup', async (t) => {
+  const DAY = Date.UTC(2026, 9, 1)
+  const HOUR = 60 * 60 * 1000
+  const hourRows = [
+    { A: 100, B: null },
+    { A: null, B: null },
+    { A: 200, B: null }
+  ].map((groups, i) => ({ ts: DAY + i * HOUR, hashrate_mhs_5m_type_group_sum_aggr: groups }))
+  const mockCtx = withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: { jRequest: async () => hourRows }
+  })
+
+  const res = await getHashrate(mockCtx, {
+    query: { start: DAY, end: DAY + 24 * HOUR - 1, interval: '1d', groupBy: 'miner' }
+  })
+
+  t.is(res.log.length, 1, 'one day row')
+  t.is(res.log[0].hashrateMhs.A, 150, 'the day averages only the hours A reported in')
+  t.is(res.log[0].hashrateMhs.B, null, 'a unit with no readings that day is null, not 0')
+  t.is(res.summary.groupedBy.A.avgHashrateMhs, 150)
+  t.is(res.summary.groupedBy.B.avgHashrateMhs, null)
+  t.is(res.summary.avgHashrateMhs, 150, 'the site average agrees with the groups')
+})
+
+test('calculateGroupedHashrateSummary - a group present for only part of the range counts only for that part', (t) => {
+  // Miners moved from A to B halfway: the site never ran above 100.
+  const moved = calculateGroupedHashrateSummary([
+    { ts: 1, hashrateMhs: { A: 100 } },
+    { ts: 2, hashrateMhs: { A: 100 } },
+    { ts: 3, hashrateMhs: { B: 100 } },
+    { ts: 4, hashrateMhs: { B: 100 } }
+  ])
+  t.is(moved.groupedBy.A.avgHashrateMhs, 100)
+  t.is(moved.groupedBy.B.avgHashrateMhs, 100)
+  t.is(moved.avgHashrateMhs, 100, 'not 200')
+
+  // Container C (100) added for the last quarter next to A (100).
+  const added = calculateGroupedHashrateSummary([
+    { ts: 1, hashrateMhs: { A: 100 } },
+    { ts: 2, hashrateMhs: { A: 100 } },
+    { ts: 3, hashrateMhs: { A: 100 } },
+    { ts: 4, hashrateMhs: { A: 100, C: 100 } }
+  ])
+  t.is(added.avgHashrateMhs, 125, 'not 200')
+})
+
+test('calculateGroupedHashrateSummary - an entry with no group map is left out of the site average', (t) => {
+  const summary = calculateGroupedHashrateSummary([
+    { ts: 1, hashrateMhs: { A: 100 } },
+    { ts: 2, hashrateMhs: null },
+    { ts: 3, hashrateMhs: { A: 200 } }
+  ])
+  t.is(summary.avgHashrateMhs, 150)
+})
+
+test('calculateGroupedHashrateSummary - an entry with an empty group map is left out of the site average', (t) => {
+  const summary = calculateGroupedHashrateSummary([
+    { ts: 1, hashrateMhs: { A: 100 } },
+    { ts: 2, hashrateMhs: {} },
+    { ts: 3, hashrateMhs: { A: 100 } }
+  ])
+  t.is(summary.avgHashrateMhs, 100)
+})
+
+test('getHashrate 1d groupBy - a day whose hours have only empty maps reads {}, as the 1h rows do', async (t) => {
+  const DAY = Date.UTC(2026, 9, 1)
+  const HOUR = 60 * 60 * 1000
+  const mockCtx = withDataProxy({
+    conf: { orks: [{ rpcPublicKey: 'key1' }] },
+    net_r0: {
+      jRequest: async () => [
+        { ts: DAY, hashrate_mhs_5m_type_group_sum_aggr: {} },
+        { ts: DAY + HOUR, hashrate_mhs_5m_type_group_sum_aggr: {} }
+      ]
+    }
+  })
+
+  const res = await getHashrate(mockCtx, {
+    query: { start: DAY, end: DAY + 24 * HOUR - 1, interval: '1d', groupBy: 'miner' }
+  })
+
+  t.alike(res.log[0].hashrateMhs, {})
+  t.is(res.summary.avgHashrateMhs, null)
 })

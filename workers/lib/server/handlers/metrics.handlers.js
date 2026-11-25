@@ -25,6 +25,7 @@ const {
   localDayStart,
   nextLocalDayStart,
   safeDiv,
+  toFiniteOrNull,
   flattenRpcResults
 } = require('../../utils')
 const {
@@ -703,47 +704,79 @@ function calculateHashrateSummary (log, withNominal = false) {
   return summary
 }
 
+// Sums the readable samples of each group across a set of group maps. A missing sample
+// (null, NaN, ...) is skipped rather than counted as 0, and a group seen only with missing
+// samples is kept with a count of 0, so its average comes out null. Also returns how many
+// maps each group appeared in (missing samples included), how many maps there were, and
+// how many of them listed at least one group (an empty map is an hour with no data).
+function sumGroupSamples (groupMaps) {
+  const totals = {}
+  const counts = {}
+  const present = {}
+  let maps = 0
+  let mapsWithData = 0
+  for (const groups of groupMaps) {
+    if (!groups || typeof groups !== 'object') continue
+    maps += 1
+    if (Object.keys(groups).length) mapsWithData += 1
+    for (const [name, val] of Object.entries(groups)) {
+      if (!(name in totals)) {
+        totals[name] = 0
+        counts[name] = 0
+        present[name] = 0
+      }
+      present[name] += 1
+      const v = toFiniteOrNull(val)
+      if (v === null) continue
+      totals[name] += v
+      counts[name] += 1
+    }
+  }
+  return { totals, counts, present, maps, mapsWithData }
+}
+
 // Each group averages the hours it reported in, as the store averaged its samples; an
-// hour without a group map (no data) is skipped rather than counted as zero.
+// hour without a group map (no data) is skipped rather than counted as zero, and so is a
+// missing sample inside one. (The shared addBucketValues/addBucketCounts also feed the
+// consumption rollups, so the grouped hashrate path keeps its own sums.)
 function rollupLocalGroupedHashrate (hourly, bucketing) {
   return groupLocalBuckets(hourly, bucketing).map(({ ts, timeRange, entries }) => {
-    let counts = null
-    let total = null
-    for (const { hashrateMhs } of entries) {
-      if (!hashrateMhs || typeof hashrateMhs !== 'object') continue
-      counts = addBucketCounts(counts, hashrateMhs)
-      total = addBucketValues(total, hashrateMhs)
-    }
-    return { ts, timeRange, hashrateMhs: total ? averageBucketValues(total, counts) : null }
+    const { totals, counts, maps } = sumGroupSamples(entries.map(({ hashrateMhs }) => hashrateMhs))
+    // null only when no hour had a group map at all; hours with empty maps give {}, as
+    // the 1h path returns them.
+    const hashrateMhs = maps
+      ? Object.fromEntries(Object.keys(totals).map((name) => [name, safeDiv(totals[name], counts[name])]))
+      : null
+    return { ts, timeRange, hashrateMhs }
   })
 }
 
 function calculateGroupedHashrateSummary (log, groupBy) {
   if (!log.length) return { avgHashrateMhs: null }
 
-  const groupTotals = {}
-  const groupCounts = {}
+  // A missing sample is skipped, not counted as 0: it must neither drag the group's average
+  // down nor make a group with no readings look like a unit that was down. A group seen only
+  // with missing samples is still listed, with a null average.
+  const { totals, counts, present, mapsWithData } = sumGroupSamples(log.map((entry) => entry.hashrateMhs))
 
-  for (const entry of log) {
-    const hashrate = entry.hashrateMhs
-    if (typeof hashrate === 'object' && hashrate !== null) {
-      for (const [name, val] of Object.entries(hashrate)) {
-        const v = Number(val) || 0
-        groupTotals[name] = (groupTotals[name] || 0) + v
-        groupCounts[name] = (groupCounts[name] || 0) + 1
-      }
-    }
-  }
-
+  // Site average: each group's average, weighted by the share of the entries with data that
+  // the group was present in (its key exists, missing sample or not):
+  //   siteAvg = Σ avg[g] × present[g] / entriesWithData
+  // A missing sample is not a 0 (the group's average skips it, and its presence still counts),
+  // an entry with no group map, or an empty one, is not counted at all, and a group that only exists for part
+  // of the range (miners moved, a container or phase group added mid-range) contributes only
+  // for the part it existed. When every group is present throughout, this is simply the sum
+  // of the group averages. Null when no group has a reading.
   const byGroup = {}
-  let siteTotal = 0
-  for (const [name, total] of Object.entries(groupTotals)) {
-    byGroup[name] = { avgHashrateMhs: safeDiv(total, groupCounts[name]) }
-    siteTotal += total
+  let siteAvg = null
+  for (const [name, total] of Object.entries(totals)) {
+    const avg = safeDiv(total, counts[name])
+    byGroup[name] = { avgHashrateMhs: avg }
+    if (avg !== null) siteAvg = (siteAvg ?? 0) + (avg * present[name]) / mapsWithData
   }
 
   return {
-    avgHashrateMhs: safeDiv(siteTotal, log.length),
+    avgHashrateMhs: siteAvg,
     groupedBy: byGroup
   }
 }

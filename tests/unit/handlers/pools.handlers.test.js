@@ -112,6 +112,54 @@ test('flattenPoolStats - deduplicates pools across orks', (t) => {
   t.pass()
 })
 
+test('flattenPoolStats - keeps missing stats null and a real 0 as 0', (t) => {
+  const results = [
+    [{
+      ts: '1770000000000',
+      stats: [
+        { poolType: 'f2pool', username: 'silent' },
+        { poolType: 'ocean', username: 'idle', hashrate: 0, balance: 0, revenue_24h: 0, estimated_today_income: 5 }
+      ]
+    }]
+  ]
+  const [silent, idle] = flattenPoolStats(results)
+
+  for (const field of ['hashrate', 'hashrate1h', 'hashrate24h', 'workerCount', 'activeWorkerCount', 'balance', 'unsettled', 'revenue24h']) {
+    t.is(silent[field], null, `missing ${field} should be null`)
+  }
+  t.is(idle.hashrate, 0, 'a real 0 hashrate stays 0')
+  t.is(idle.balance, 0, 'a real 0 balance stays 0')
+  t.is(idle.revenue24h, 0, 'a real 0 revenue is not replaced by the estimate')
+})
+
+test('flattenPoolStats - an unreadable stat (NaN) is null, not passed through', (t) => {
+  const results = [[{
+    ts: '1770000000000',
+    stats: [{ poolType: 'f2pool', username: 'u', hashrate: NaN, unsettled: NaN, balance: '0.5', revenue_24h: NaN, estimated_today_income: 0.2 }]
+  }]]
+  const [pool] = flattenPoolStats(results)
+
+  t.is(pool.hashrate, null)
+  t.is(pool.unsettled, null)
+  t.is(pool.balance, 0.5, 'a numeric string still counts')
+  t.is(pool.revenue24h, 0.2, 'an unreadable revenue_24h falls back to the estimate')
+})
+
+test('flattenPoolStats - falls back to the estimate only when revenue_24h is missing', (t) => {
+  const results = [[{ ts: '1770000000000', stats: [{ poolType: 'f2pool', username: 'u', estimated_today_income: 0.2 }] }]]
+  t.is(flattenPoolStats(results)[0].revenue24h, 0.2)
+})
+
+test('calculatePoolsSummary - treats a missing stat as nothing to add', (t) => {
+  const summary = calculatePoolsSummary([
+    { hashrate: 100, workerCount: 5, balance: 1 },
+    { hashrate: null, workerCount: null, balance: null }
+  ])
+  t.is(summary.totalHashrate, 100)
+  t.is(summary.totalWorkers, 5)
+  t.is(summary.totalBalance, 1)
+})
+
 test('flattenPoolStats - handles error results', (t) => {
   const results = [{ error: 'timeout' }]
   const pools = flattenPoolStats(results)
@@ -142,8 +190,19 @@ test('calculatePoolsSummary - calculates totals', (t) => {
 test('calculatePoolsSummary - handles empty pools', (t) => {
   const summary = calculatePoolsSummary([])
   t.is(summary.poolCount, 0, 'should be zero')
-  t.is(summary.totalHashrate, 0, 'should be zero')
+  t.is(summary.totalHashrate, null, 'nothing reported, so no total rather than a 0')
   t.pass()
+})
+
+test('calculatePoolsSummary - a total is null when no pool reported that stat', (t) => {
+  const summary = calculatePoolsSummary([
+    { hashrate: null, workerCount: null, balance: 0 },
+    { hashrate: null, workerCount: null, balance: null }
+  ])
+  t.is(summary.poolCount, 2)
+  t.is(summary.totalHashrate, null, 'no pool reported hashrate: not a dead site')
+  t.is(summary.totalWorkers, null)
+  t.is(summary.totalBalance, 0, 'a real 0 balance is still a total')
 })
 
 test('getPoolBalanceHistory - happy path', async (t) => {
